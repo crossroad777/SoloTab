@@ -1,0 +1,7 @@
+basic-pitch
+fastapi
+uvicorn[standard]
+python-dotenv
+numpy
+librosa
+madmom

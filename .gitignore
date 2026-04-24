@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+venv312/
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Large Model Files
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.safetensors
+*.bak
+*.npz
+
+# Logs
+*.log
+error.log
+
+# Datasets & Processed Data
+datasets/
+_processed_gaps_data/
+_processed_guitarset_data/
+music-transcription/python/_processed_guitarset_data/
+uploads/
+legacy_archive/
+unified_datasets/
+unified_models/
+SynthTab-main/
+backend/fretnet_models/
+
+# Node
+node_modules/
+frontend/node_modules/
+.npm/
+
+# OS generated files
+.DS_Store
+Thumbs.db

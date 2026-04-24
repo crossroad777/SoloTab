@@ -1,0 +1,19 @@
+=== SoloTab V2.0 SOTA Evaluation Report (Single Baseline) ===
+Total Tracks Tested: 360
+
+Genre: BN (72 tracks) -> Raw Pitch: 0.9219 | TAB Viterbi: 0.9219
+Genre: Funk (72 tracks) -> Raw Pitch: 0.9007 | TAB Viterbi: 0.9007
+Genre: Jazz (72 tracks) -> Raw Pitch: 0.9214 | TAB Viterbi: 0.9214
+Genre: Rock (72 tracks) -> Raw Pitch: 0.9037 | TAB Viterbi: 0.9037
+Genre: SS (72 tracks) -> Raw Pitch: 0.9010 | TAB Viterbi: 0.9010
+--------------------------------------------------
+🏆 OVERALL AVERAGE (Macro)
+[RAW Pitch (AI Ear-Copy Limit)]
+  F1-Score : 0.9098
+  Precision: 0.9128
+  Recall   : 0.9084
+
+[TAB Playable (Viterbi Applied)]
+  F1-Score : 0.9098
+  Precision: 0.9128
+  Recall   : 0.9084
