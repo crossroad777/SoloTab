@@ -287,33 +287,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             report("notes", f"V2.0エンジン検出: {len(notes)} notes ({time.time()-t0:.1f}s)")
 
             # --- Step 2.15: スペクトルエネルギー検証 + ノート発見 ---
-            try:
-                from spectral_verifier import verify_notes_with_spectrum, discover_missing_notes  # type: ignore
-                report("spectral", "スペクトル検証 + ノート発見中...")
-                t_sv = time.time()
-                pre_verify = len(notes)
-                notes = verify_notes_with_spectrum(notes, str(transcription_wav))
-                removed = pre_verify - len(notes)
-                
-                pre_discover = len(notes)
-                all_with_discovered = discover_missing_notes(
-                    notes, transcription_wav,
-                    beats=beats, bpm=bpm,
-                )
-                from collections import Counter
-                pitch_counts = Counter(n.get("pitch", 0) for n in notes)
-                resonance_pitches = {52, 55}
-                filtered_pitches = [p for p, c in pitch_counts.most_common(10) if p not in resonance_pitches]
-                top_pitches = filtered_pitches[:3]  # type: ignore
-                allowed_pitches = set(top_pitches)
-                notes = [
-                    n for n in all_with_discovered
-                    if n.get("source") != "spectral_discovery" or n.get("pitch", 0) in allowed_pitches
-                ]
-                discovered = len(notes) - pre_discover
-                report("spectral", f"検証完了: -{removed}除去 +{discovered}発見 → {len(notes)}ノート ({time.time()-t_sv:.1f}s)")
-            except Exception as e:
-                report("spectral", f"検証スキップ: {e}")
+            # V2.0 (Ultimate Single Conformer) は単体でSOTAを達成しているため、
+            # 旧モデル用のスペクトル補正フィルター（幻覚の原因）をスキップします。
 
             with open(session_dir / "notes.json", "w", encoding="utf-8") as f:
                 json.dump(_to_native({
@@ -365,18 +340,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("filter", f"フィルタエラー: {e}")
 
     # --- Step 2.4: 弦/フレット最適化 ---
-    from string_assigner import assign_strings_dp  # type: ignore
-    for n in notes:
-        n["string"] = 0
-        n["fret"] = 0
-    capo = int(capo_result.get("capo", 0)) if capo_result else 0
-    if capo > 0:
-        capo_tuning = [p + capo for p in tuning]
+    if method != "ultimate_conformer_v2":
+        from string_assigner import assign_strings_dp  # type: ignore
+        for n in notes:
+            n["string"] = 0
+            n["fret"] = 0
+        capo = int(capo_result.get("capo", 0)) if capo_result else 0
+        if capo > 0:
+            capo_tuning = [p + capo for p in tuning]
+        else:
+            capo_tuning = tuning
+        report("assign", f"弦/フレット一括最適化中 ({len(notes)}ノート)...")
+        notes = assign_strings_dp(notes, tuning=capo_tuning, initial_position=initial_position)
+        notes = [n for n in notes if n.get("fret", 0) <= 19]
     else:
-        capo_tuning = tuning
-    report("assign", f"弦/フレット一括最適化中 ({len(notes)}ノート)...")
-    notes = assign_strings_dp(notes, tuning=capo_tuning, initial_position=initial_position)
-    notes = [n for n in notes if n.get("fret", 0) <= 19]
+        report("assign", "V2.0エンジンの高精度運指データを保持（最適化スキップ）")
 
     # --- Step 2.4: コード検出 (musical_filterの前に実行) ---
     chords = []
