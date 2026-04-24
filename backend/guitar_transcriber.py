@@ -41,7 +41,7 @@ _model_cache = {}
 def _get_model_paths():
     """学習済みモデルのパスを取得する。"""
     base = _MT_DIR / "_processed_guitarset_data" / "training_output"
-    target_dir = base / "baseline_model"
+    target_dir = base / "ultimate_single_conformer"
     
     if not target_dir.exists():
         return None, None

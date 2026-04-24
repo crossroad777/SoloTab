@@ -272,20 +272,19 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     if len(available_models) >= 1:
         try:
-            report("notes", f"ノート検出中 (Dynamic MoE 案D — 6モデル統合)...")
-            from moe_ensemble_transcriber import transcribe_dynamic_ensemble  # type: ignore
+            report("notes", f"ノート検出中 (Ultimate Single Conformer V2.0)...")
+            from guitar_transcriber import transcribe_guitar  # type: ignore
 
             t0 = time.time()
-            result = transcribe_dynamic_ensemble(
+            result = transcribe_guitar(
                 transcription_wav,
                 tuning_pitches=tuning_pitches,
-                progress_cb=progress_cb,
-                output_path=str(session_dir / "notes.json"),
+                onset_threshold=0.7,
             )
             notes = result["notes"]
-            method = "ensemble"
-            model_stats = result.get("gating_result", {}) # MoEの重みを統計として使用
-            report("notes", f"アンサンブル検出: {len(notes)} notes ({time.time()-t0:.1f}s)")
+            method = "ultimate_conformer_v2"
+            model_stats = {"model": "ultimate_single_conformer"} 
+            report("notes", f"V2.0エンジン検出: {len(notes)} notes ({time.time()-t0:.1f}s)")
 
             # --- Step 2.15: スペクトルエネルギー検証 + ノート発見 ---
             try:
