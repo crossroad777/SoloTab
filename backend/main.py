@@ -59,7 +59,7 @@ if not shutil.which(YT_DLP_PATH):
 print(f"[SoloTab] FFMPEG: {FFMPEG_PATH}, yt-dlp: {YT_DLP_PATH}")
 
 # Available tunings (for validation)
-from string_assigner import TUNINGS
+from solotab_utils import TUNINGS
 
 # Uploads
 UPLOAD_DIR = PROJECT_ROOT / "uploads"

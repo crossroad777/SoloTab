@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { UploadCloud, Play, Pause, Square, History, Music, ChevronRight, Sun, Moon, Home, Download, Printer, Activity, Repeat, Headphones, VolumeX, Timer, MoreVertical, Edit2, ChevronUp } from "lucide-react";
+import { UploadCloud, Play, Pause, Square, History, Music, ChevronRight, Sun, Moon, Home, Download, Printer, Activity, Repeat, Headphones, VolumeX, Timer, MoreVertical, Edit2, ChevronUp, SkipBack } from "lucide-react";
 import { TabView } from "./components/TabView";
 
 const API_BASE = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8001";
@@ -632,32 +632,57 @@ export default function SoloTabApp() {
               boxSizing: 'border-box'
             }}>
               
-              {/* 1. Track Selector (Removed as requested) */}              {/* 2. Play Button */}
-              <div style={{ display: 'flex', height: '40px', borderRadius: '4px', overflow: 'hidden' }}>
+              {/* 1. Play / Skip Controls */}
+              <div style={{ display: 'flex', height: '40px', borderRadius: '4px', overflow: 'hidden', gap: '4px' }}>
+                <button 
+                  onClick={() => handleSeek(0)}
+                  style={{ background: '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title="最初に戻る"
+                >
+                  <SkipBack size={20} color="#fff" />
+                </button>
                 <button 
                   onClick={togglePlay}
-                  style={{ background: '#22c55e', border: 'none', width: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                  style={{ background: '#22c55e', border: 'none', width: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title={isPlaying ? "一時停止" : "再生"}
                 >
                   {isPlaying ? <Pause size={24} fill="currentColor" color="#000" /> : <Play size={24} fill="currentColor" color="#000" style={{ marginLeft: 3 }} />}
                 </button>
               </div>
 
-              {/* Central Timeline (Time + Progress) */}
-              <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, gap: '4px', minWidth: '150px' }}>
-                <div className="progress-bar-wrapper" style={{ height: '8px', background: '#1a1a1c', borderRadius: '4px', cursor: 'pointer', position: 'relative' }} onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  handleSeek((e.clientX - rect.left) / rect.width * duration);
-                }}>
-                  <div style={{ width: `${progress}%`, background: '#22c55e', height: '100%', borderRadius: '4px', pointerEvents: 'none' }} />
-                  {/* Visual Loop markers */}
-                  {loopA !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
-                  {loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopB/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
-                  {loopA !== null && loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: `${((loopB-loopA)/duration)*100}%`, background: 'rgba(77, 166, 255, 0.3)' }} />}
+              {/* Central Timeline (Time + Draggable Progress) */}
+              <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '12px', minWidth: '150px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px', textAlign: 'right' }}>{formatTime(currentTime)}</span>
+                
+                <div style={{ position: 'relative', flexGrow: 1, height: '24px', display: 'flex', alignItems: 'center' }}>
+                  {/* Visual Progress Bar (Background + Fill + Loop Markers) */}
+                  <div style={{ position: 'absolute', width: '100%', height: '8px', background: '#1a1a1c', borderRadius: '4px', pointerEvents: 'none' }}>
+                    <div style={{ width: `${progress}%`, background: '#22c55e', height: '100%', borderRadius: '4px' }} />
+                    {loopA !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
+                    {loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopB/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
+                    {loopA !== null && loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: `${((loopB-loopA)/duration)*100}%`, background: 'rgba(77, 166, 255, 0.3)' }} />}
+                  </div>
+                  
+                  {/* Interactive Range Slider overlay */}
+                  <input 
+                    type="range"
+                    min={0}
+                    max={duration || 100}
+                    step={0.01}
+                    value={currentTime}
+                    onChange={(e) => handleSeek(Number(e.target.value))}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      margin: 0,
+                      opacity: 0, /* 透明にして見た目は下のバーを活かしつつ、操作はRangeで受ける */
+                      cursor: 'pointer',
+                      height: '100%'
+                    }}
+                  />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 'bold' }}>
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
+
+                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px' }}>{formatTime(duration)}</span>
               </div>
 
               {/* Right Toolbar Group */}
