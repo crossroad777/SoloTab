@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
  * - カスタム青カーソルバー + オートスクロール
  * - ErrorBoundaryでクラッシュ防止
  */
-const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0 }) => {
+const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady }) => {
     const containerRef = useRef(null);
     const wrapperRef = useRef(null);
     const cursorRef = useRef(null);
@@ -227,6 +227,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 const api = new window.alphaTab.AlphaTabApi(wrapperRef.current, settings);
                 apiRef.current = api;
+                if (onApiReady) {
+                    onApiReady(api);
+                }
 
                 // --- ノートクリック → 編集UI ---
                 api.noteMouseDown.on((note, evt) => {
@@ -482,6 +485,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     return (
         <div
             ref={containerRef}
+            className="tab-print-container"
             style={{
                 width: "100%", height: "100%",
                 overflow: "auto", position: "relative",
@@ -531,7 +535,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     }}
                 />
                 {/* AlphaTab renders into this div */}
-                <div ref={wrapperRef} style={{ width: "100%", minHeight: "100vh" }} />
+                <div ref={wrapperRef} className="alpha-tab-wrapper" style={{ width: "100%", minHeight: "100vh" }} />
 
                 {/* ノート編集ポップアップ */}
                 {editNote && (
@@ -641,6 +645,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
             {/* Auto-scroll toggle */}
             <div
+                className="auto-scroll-btn"
                 style={{
                     position: "fixed", bottom: 24, right: 24, zIndex: 50,
                     padding: "8px 16px", borderRadius: 20, cursor: "pointer",
@@ -674,7 +679,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 /* 印刷用 */
                 @media print {
                     body { background: white !important; }
-                    .at-surface { transform: scale(1) !important; }
+                    .at-surface { transform: scale(1) !important; width: 100% !important; overflow: visible !important; }
+                    .at-system { break-inside: avoid !important; page-break-inside: avoid !important; margin-bottom: 16px !important; display: block !important; }
+                    .at-viewport { overflow: visible !important; height: auto !important; display: block !important; }
+                    .tab-print-container { height: auto !important; overflow: visible !important; padding-bottom: 0 !important; }
                 }
             `}</style>
         </div>

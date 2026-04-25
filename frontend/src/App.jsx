@@ -31,6 +31,7 @@ export default function SoloTabApp() {
   const audioRef = useRef(null);
   const sseRef = useRef(null);
   const fileInputRef = useRef(null);
+  const alphaTabApiRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -247,6 +248,7 @@ export default function SoloTabApp() {
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
     // Check for YouTube URL in dropped text
     const dt = e.dataTransfer;
@@ -603,7 +605,12 @@ export default function SoloTabApp() {
                   <button
                     className="home-btn"
                     title="PDF印刷"
-                    onClick={() => window.print()}
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = `${API_BASE}/result/${session.id}/pdf`;
+                      a.download = `${session.fileName || 'tab'}.pdf`;
+                      a.click();
+                    }}
                   >
                     <Printer size={14} style={{ marginRight: 4 }} />PDF
                   </button>
@@ -624,7 +631,7 @@ export default function SoloTabApp() {
             </div>
 
             {/* === Songsterr-Style Player Bar === */}
-            <div style={{
+            <div className="player-control-bar" style={{
               display: 'flex', alignItems: 'center', background: '#252528', color: '#a0a0a5',
               padding: '0 16px', height: '64px', borderTop: '1px solid #1a1a1c', gap: '20px',
               fontFamily: 'Inter, sans-serif',
@@ -712,7 +719,7 @@ export default function SoloTabApp() {
                 </button>
 
                 {/* ======= NEW: NOISE CUT SLIDER ======= */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '0 10px', minWidth: '80px' }} title="AIのノイズ除去レベル。右にするほど細かい倍音ノイズが消えてシンプルになります">
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '0 10px', minWidth: '160px' }} title="AIのノイズ除去レベル。右にするほど細かい倍音ノイズが消えてシンプルになります">
                   <span style={{ fontSize: '9px', color: '#a0a0a5', fontWeight: 'bold', marginBottom: '2px' }}>CUT: {Math.round(noiseGate * 100)}%</span>
                   <input 
                     type="range" min="0" max="0.8" step="0.05" 
@@ -720,32 +727,9 @@ export default function SoloTabApp() {
                     onChange={(e) => setNoiseGate(parseFloat(e.target.value))}
                     onMouseUp={(e) => handleRetune(null, null, parseFloat(e.target.value))}
                     onTouchEnd={(e) => handleRetune(null, null, parseFloat(e.target.value))}
-                    style={{ width: '60px', accentColor: '#4da6ff', cursor: 'pointer' }}
+                    style={{ width: '130px', accentColor: '#4da6ff', cursor: 'pointer' }}
                   />
                 </div>
-
-                {/* エクスポート (Export) */}
-                <button 
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', background: 'transparent', border: 'none', color: '#a0a0a5', cursor: 'pointer' }}
-                  onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = `${API_BASE}/result/${session.id}/musicxml`;
-                      a.download = `${session.fileName || 'tab'}.musicxml`;
-                      a.click();
-                  }}
-                >
-                  <Download size={18} />
-                  <span style={{ fontSize: '9px', marginTop: '4px' }}>エクスポート</span>
-                </button>
-
-                {/* 印刷 (Print) */}
-                <button 
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', background: 'transparent', border: 'none', color: '#a0a0a5', cursor: 'pointer' }}
-                  onClick={() => window.print()}
-                >
-                  <Printer size={18} />
-                  <span style={{ fontSize: '9px', marginTop: '4px' }}>印刷</span>
-                </button>
               </div>
             </div>
 
@@ -760,6 +744,7 @@ export default function SoloTabApp() {
                 onSeek={handleSeek}
                 transpose={transpose}
                 capo={capo}
+                onApiReady={(api) => { alphaTabApiRef.current = api; }}
               />
             </div>
           </>

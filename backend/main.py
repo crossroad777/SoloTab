@@ -515,6 +515,47 @@ async def get_musicxml(session_id: str):
     )
 
 
+@app.get("/result/{session_id}/pdf")
+async def get_pdf(session_id: str):
+    """MusicXMLからTAB譜PDFを生成してダウンロードさせる"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    xml_path = session_dir / "tab.musicxml"
+    if not xml_path.exists():
+        raise HTTPException(status_code=404, detail="MusicXML not generated")
+
+    pdf_path = session_dir / "tab.pdf"
+
+    try:
+        from pdf_renderer import musicxml_to_pdf
+        musicxml_to_pdf(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+
+    if not pdf_path.exists():
+        raise HTTPException(status_code=500, detail="PDF file was not created")
+
+    filename = s.get("filename", session_id)
+    if "." in filename:
+        filename = filename.rsplit(".", 1)[0]
+
+    from urllib.parse import quote
+    safe_filename = f"{filename}.pdf"
+    try:
+        safe_filename.encode("latin-1")
+        cd = f'attachment; filename="{safe_filename}"'
+    except UnicodeEncodeError:
+        cd = f"attachment; filename*=UTF-8''{quote(safe_filename)}"
+
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        headers={"Content-Disposition": cd},
+    )
+
+
 class RetuneRequest(BaseModel):
     tuning: str
     capo: Optional[int] = 0

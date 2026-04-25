@@ -20,8 +20,7 @@ import numpy as np  # type: ignore
 from beat_detector import detect_beats  # type: ignore
 
 
-from solotab_utils import _to_native  # type: ignore
-from string_assigner import STANDARD_TUNING, TUNINGS  # type: ignore
+from solotab_utils import _to_native, STANDARD_TUNING, TUNINGS  # type: ignore
 from tab_renderer import notes_to_tab_musicxml  # type: ignore
 
 

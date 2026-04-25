@@ -931,45 +931,79 @@ h6 {
     box-shadow: none !important;
   }
 
-  body {
+  body, html {
     background: white !important;
     color: black !important;
     overflow: visible !important;
     height: auto !important;
+    display: block !important;
   }
 
-  #root {
+  #root, #root > div {
     height: auto !important;
     overflow: visible !important;
+    display: block !important;
   }
 
   .app-header,
+  .player-control-bar,
   .player-bar,
   .result-header,
   .home-btn,
   .toast,
   .at-cursor-beat,
-  .at-cursor-bar {
+  .at-cursor-bar,
+  .auto-scroll-btn {
     display: none !important;
   }
 
   .app-main {
     overflow: visible !important;
+    display: block !important;
   }
 
   .tab-container {
     overflow: visible !important;
     height: auto !important;
     background: white !important;
+    display: block !important;
+    padding-bottom: 0 !important;
   }
 
   .tab-container>div {
     overflow: visible !important;
     height: auto !important;
     padding-bottom: 0 !important;
+    display: block !important;
   }
 
   .alphaTabSurface {
     position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  .alphaTabSurface > div {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    page-break-after: always;
+    display: block !important;
+    margin-bottom: 20px !important;
+  }
+
+  .tab-print-container {
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 0 !important;
+    display: block !important;
+  }
+
+  .alpha-tab-wrapper {
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
   }
 }
