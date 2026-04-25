@@ -194,9 +194,10 @@ h6 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  padding: 40px;
+  gap: 12px;
+  padding: 20px 40px;
   position: relative;
+  overflow-y: auto;
 }
 
 .upload-screen .ambient-glow {
@@ -211,23 +212,23 @@ h6 {
 }
 
 .hero-logo-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--st-gradient-brand);
   color: white;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
   animation: brandGlow 4s ease-in-out infinite;
 }
 
 .hero-title {
-  font-size: 72px;
+  font-size: 56px;
   font-weight: 900;
   letter-spacing: -0.04em;
-  margin-bottom: 24px;
+  margin-bottom: 8px;
   font-family: 'Outfit', sans-serif;
   background: linear-gradient(135deg, #f59e0b 0%, #fb923c 40%, #ef4444 100%);
   -webkit-background-clip: text;
@@ -240,9 +241,9 @@ h6 {
 .hero-subtitle {
   color: var(--st-text-dim);
   font-weight: 500;
-  margin-bottom: 48px;
-  font-size: 18px;
-  line-height: 1.6;
+  margin-bottom: 16px;
+  font-size: 16px;
+  line-height: 1.5;
   text-align: center;
 }
 
@@ -253,7 +254,7 @@ h6 {
 .upload-card {
   width: 100%;
   max-width: 420px;
-  padding: 40px 24px;
+  padding: 24px 24px;
   background: var(--st-surface);
   border: 1px solid var(--st-border);
   border-radius: 24px;
@@ -325,7 +326,7 @@ h6 {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 12px;
   width: 100%;
   max-width: 420px;
   color: var(--st-text-muted);

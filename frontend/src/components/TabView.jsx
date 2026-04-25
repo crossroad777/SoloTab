@@ -17,6 +17,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const timeRef = useRef(0);
     const playingRef = useRef(false);
     const initKeyRef = useRef(null);
+    const surfaceOffsetRef = useRef({ x: 0, y: 0 });
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -47,17 +48,25 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         const beats = beatsDataRef.current;
 
         // AlphaTabから小節の座標を取得
+        // Y/高さはスタッフシステム（1段）の境界を使用し、X/幅は個別小節から取得
+        // → エフェクト記号(let ring, vibrato等)による小節ごとのY変動を排除
         const barCoords = [];
         for (const system of systems) {
             const sgBars = system.bars;
             if (!sgBars) continue;
+            const sysVb = system.visualBounds;
             for (const sgBar of sgBars) {
                 const barIndex = sgBar.index;
-                const vb = sgBar.visualBounds;
-                if (barIndex == null || !vb || vb.x == null) continue;
+                const barVb = sgBar.visualBounds;
+                if (barIndex == null || !barVb || barVb.x == null) continue;
                 barCoords.push({
                     barIndex,
-                    vb: { x: vb.x, y: vb.y, w: vb.w, h: vb.h },
+                    vb: {
+                        x: barVb.x,
+                        y: sysVb ? sysVb.y : barVb.y,
+                        w: barVb.w,
+                        h: sysVb ? sysVb.h : barVb.h,
+                    },
                 });
             }
         }
@@ -373,6 +382,25 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 api.renderFinished.on(() => {
                     if (destroyed) return;
                     setLoading(false);
+
+                    // AlphaTab surface要素のオフセットを計測（カーソル補正用）
+                    try {
+                        const wrapper = wrapperRef.current;
+                        if (wrapper) {
+                            // AlphaTabが生成するcanvas/svg surface要素を探す
+                            const surface = wrapper.querySelector('.at-surface, canvas, svg');
+                            if (surface) {
+                                const wrapperRect = wrapper.getBoundingClientRect();
+                                const surfaceRect = surface.getBoundingClientRect();
+                                surfaceOffsetRef.current = {
+                                    x: surfaceRect.left - wrapperRect.left,
+                                    y: surfaceRect.top - wrapperRect.top,
+                                };
+                                console.log(`[TabView] Surface offset: x=${surfaceOffsetRef.current.x}, y=${surfaceOffsetRef.current.y}`);
+                            }
+                        }
+                    } catch { /* noop */ }
+
                     // Build BeatMap with retries
                     const tryBuild = (attempt) => {
                         if (destroyed || boundsReadyRef.current) return;
@@ -452,9 +480,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 const beat = findBeat(ms);
                 if (beat) {
                     const { x, y, h } = beat.vb;
+                    const off = surfaceOffsetRef.current;
                     cursor.style.display = "block";
-                    cursor.style.left = `${x}px`;
-                    cursor.style.top = `${y}px`;
+                    cursor.style.left = `${x + off.x}px`;
+                    cursor.style.top = `${y + off.y}px`;
                     cursor.style.width = `${beat.vb.w}px`;
                     cursor.style.height = `${h}px`;
 
