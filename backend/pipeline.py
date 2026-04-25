@@ -230,131 +230,52 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         preprocessed_path = session_dir / "preprocessed.wav"
         try:
-            from ensemble_transcriber import preprocess_audio_for_transcription  # type: ignore
+            from ensemble_transcriber import preprocess_audio_for_transcription
             preprocess_audio_for_transcription(guitar_wav, str(preprocessed_path))
             transcription_wav = str(preprocessed_path)
-            report("preprocess", f"前処理完了 ({time.time()-t0:.1f}s)")
+            report("preprocess", f"前処理適用（メロディ強調・ベース抑制） ({time.time()-t0:.1f}s)")
         except Exception as e:
             print(f"[pipeline] Preprocessing failed, using original: {e}")
             transcription_wav = guitar_wav
 
-    # --- Step 3: Note Detection (アンサンブル優先) ---
-    # FretNet(6fold) + SynthTab(fine-tuned) + CRNN + SynthTab-EGDB のアンサンブルをメインに使用。
-    # Basic Pitchはギター専用モデルが利用不可の場合のフォールバック。
-    
+    # --- Step 3: Note Detection (純粋な MoE アンサンブル) ---
     ensemble_success = False
     notes = []
     method = "none"
     model_stats = {}
 
-    # === メイン経路: アンサンブル方式 ===
-    available_models = []
     try:
-        from fretnet_transcriber import is_model_available as fretnet_available  # type: ignore
-        if fretnet_available():
-            available_models.append("fretnet")
-    except ImportError:
-        pass
-    try:
-        from synthtab_transcriber import is_model_available as synthtab_available  # type: ignore
-        if synthtab_available():
-            available_models.append("synthtab")
-    except ImportError:
-        pass
-    try:
-        from guitar_transcriber import is_model_available as crnn_available  # type: ignore
-        if crnn_available():
-            available_models.append("crnn")
-    except ImportError:
-        pass
-
-    report("notes", f"利用可能モデル: {available_models}")
-
-    if len(available_models) >= 1:
-        try:
-            report("notes", f"ノート検出中 (Ultimate Single Conformer V2.0)...")
-            from guitar_transcriber import transcribe_guitar  # type: ignore
-
-            t0 = time.time()
-            result = transcribe_guitar(
-                transcription_wav,
-                tuning_pitches=tuning_pitches,
-                onset_threshold=0.7,
-            )
-            notes = result["notes"]
-            method = "ultimate_conformer_v2"
-            model_stats = {"model": "ultimate_single_conformer"} 
-            report("notes", f"V2.0エンジン検出: {len(notes)} notes ({time.time()-t0:.1f}s)")
-
-            # --- Step 2.15: スペクトルエネルギー検証 + ノート発見 ---
-            # V2.0 (Ultimate Single Conformer) は単体でSOTAを達成しているため、
-            # 旧モデル用のスペクトル補正フィルター（幻覚の原因）をスキップします。
-
-            with open(session_dir / "notes.json", "w", encoding="utf-8") as f:
-                json.dump(_to_native({
-                    "notes": notes, "total_count": len(notes), "tuning": tuning_name,
-                    "method": method, "model_stats": model_stats,
-                }), f, ensure_ascii=False, indent=2)
-            ensemble_success = True
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            report("notes", f"アンサンブル失敗: {e}, Basic Pitchにフォールバック")
-
-    if not ensemble_success:
-        try:
-            report("notes", "ノート検出中 (Basic Pitch — フォールバック)...")
-            from note_detector import detect_notes, filter_guitar_range  # type: ignore
-            from string_assigner import assign_strings_dp  # type: ignore
-            t0 = time.time()
-            note_result = detect_notes(transcription_wav, onset_threshold=0.7, frame_threshold=0.3, min_note_length_ms=50)
-            raw_notes = note_result["notes"]
-            notes = filter_guitar_range(raw_notes, min_velocity=0.2)
-            try:
-                from spectral_verifier import verify_notes_with_spectrum  # type: ignore
-                notes = verify_notes_with_spectrum(notes, str(transcription_wav), sr=22050)
-            except: pass
-            
-            notes = assign_strings_dp(notes, tuning=tuning)
-            method = "basic_pitch"
-        except Exception as e:
-            notes = []
-            method = "none"
-
-    # --- Step 2.35: 共通・倍音フィルタ ---
-    try:
-        from note_filter import apply_all_filters
-        report("filter", "総合・ノイズフィルタ適用中...")
-        pre_f_len = len(notes)
-        notes_result = apply_all_filters(
-            notes,
-            velocity_threshold=0.6,    # Keep 2-model consensus (0.65) and above
-            min_duration_sec=0.05,     # KI: Captures fast grace notes and rapid passages
-            max_notes_per_beat=6,      # KI: Allows for dense arpeggios spanning all 6 strings
-            beats=beats, bpm=bpm
+        from pure_moe_transcriber import transcribe_pure_moe
+        report("notes", "純粋なMoE推論中 (6モデル統合のみ、他フィルタ排除)...")
+        t0 = time.time()
+        
+        # 閾値を 3/6 票、確率は最大値(np.max)でピーク保持、閾値0.5で検出
+        notes = transcribe_pure_moe(
+            str(transcription_wav), 
+            vote_threshold=3, 
+            onset_threshold=0.5
         )
-        notes = notes_result["notes"]
-        filter_stats = notes_result["stats"]
-        report("filter", f"フィルタ完了: {pre_f_len} -> {len(notes)} notes (カット率: {filter_stats.get('reduction_pct', 0)}%)")
-    except Exception as e:
-        report("filter", f"フィルタエラー: {e}")
+        
+        method = "pure_moe"
+        model_stats = {
+            "ensemble_notes": len(notes)
+        }
+        
+        report("notes", f"MoE抽出完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
 
-    # --- Step 2.4: 弦/フレット最適化 ---
-    if method != "ultimate_conformer_v2":
-        from string_assigner import assign_strings_dp  # type: ignore
-        for n in notes:
-            n["string"] = 0
-            n["fret"] = 0
-        capo = int(capo_result.get("capo", 0)) if capo_result else 0
-        if capo > 0:
-            capo_tuning = [p + capo for p in tuning]
-        else:
-            capo_tuning = tuning
-        report("assign", f"弦/フレット一括最適化中 ({len(notes)}ノート)...")
-        notes = assign_strings_dp(notes, tuning=capo_tuning, initial_position=initial_position)
-        notes = [n for n in notes if n.get("fret", 0) <= 19]
-    else:
-        report("assign", "V2.0エンジンの高精度運指データを保持（最適化スキップ）")
+        with open(session_dir / "notes.json", "w", encoding="utf-8") as f:
+            json.dump(_to_native({
+                "notes": notes, "total_count": len(notes), "tuning": tuning_name,
+                "method": method, "model_stats": model_stats,
+            }), f, ensure_ascii=False, indent=2)
+        ensemble_success = True
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        report("notes", f"MoE失敗: {e}, Basic Pitchにフォールバック")
+
+    # 不要な後処理（Basic Pitchフォールバック、ノイズフィルタ、DP弦割り当て、リズム量子化）は
+    # Pure MoE の精度を阻害することが判明したため、V2.0 本番デフォルトとして完全に廃止しました。
 
     # --- Step 2.4: コード検出 (musical_filterの前に実行) ---
     chords = []

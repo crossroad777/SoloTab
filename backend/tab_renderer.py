@@ -368,13 +368,9 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int) -
     for note in sorted_notes:
         t = float(note["start"])
         
-        # Find closest beat
-        idx = int(np.searchsorted(beats_arr, t))
+        # Find the beat that is strictly before or exactly at t
+        idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
         idx = max(0, min(idx, len(beats_arr) - 1))
-
-        # Snap to nearest beat
-        if idx > 0 and abs(beats_arr[idx - 1] - t) < abs(beats_arr[idx] - t):
-            idx -= 1
 
         bar = idx // beats_per_bar
         beat_in_bar = idx % beats_per_bar

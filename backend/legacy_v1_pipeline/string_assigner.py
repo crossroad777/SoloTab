@@ -390,14 +390,14 @@ def get_possible_positions(pitch: int, tuning: Optional[List[int]] = None,
 # --- 重みパラメータ ---
 WEIGHTS = {
     # 位置コスト
-    "w_fret_height":          1.2,    # KI: Reduced freedom to stick to 5th-12th blindly
-    "w_high_fret_extra":      8.0,    # ハイフレットの基本ペナルティを大幅アップ
-    "w_low_string_high_fret": 4.0,    # 4〜6弦のハイフレットはありえないので激重に
-    "w_sweet_spot_bonus":    -3.0,    # 0〜7フレットに滞在する強力なボーナス
+    "w_fret_height":          0.8,    # KI: Lowered to allow utilization of 5th-12th fret range without penalty
+    "w_high_fret_extra":      3.0,    # KI: Applied later (9f instead of 7f)
+    "w_low_string_high_fret": 4.0,
+    "w_sweet_spot_bonus":    -1.5,    # KI: Expanded to 9th fret
 
     # 遷移コスト
-    "w_movement":             8.0,    # 移動ペナルティを緩和し、間違ったポジションから開放弦等へ逃げられるようにする
-    "w_position_shift":      30.0,    
+    "w_movement":             15.0,   # KI: High penalty to ensure digits stay in a 4-fret "position"
+    "w_position_shift":      50.0,    # KI: Severe penalty for jumping over 4 frets
     "w_string_switch":        2.0,    
     "w_same_string_repeat":   5.0,    
 
@@ -408,7 +408,7 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,    
 
     # 音色コスト
-    "w_open_string_bonus":   -8.0,    # 開放弦回帰を復活。局所最適化から抜け出しやすくする
+    "w_open_string_bonus":   -1.0,    # KI: Should be subtle. Over-valuing leads to unplayable "open string forcing".
     "w_open_match_bonus":    -5.0,    
     "w_barre_bonus":         -5.0,    
 
@@ -469,16 +469,16 @@ def _position_cost(s: int, f: int, pitch: int = 0) -> float:
     # フレット高コスト
     cost += f * WEIGHTS["w_fret_height"]
 
-    # ハイフレットの追加コスト（ソロギターでは7f以降はコスト大とする）
-    if f > 7:
-        extra = (f - 7) * WEIGHTS["w_high_fret_extra"]
+    # ハイフレットの追加コスト（ソロギターでは9f以降はコスト大とする）
+    if f > 9:
+        extra = (f - 9) * WEIGHTS["w_high_fret_extra"]
         # 低弦(4-6弦)のハイフレットはさらにコスト増（絶対に避けるべき）
         if s >= 4:
             extra *= WEIGHTS["w_low_string_high_fret"]
         cost += extra
 
-    # Sweet spot ボーナス (0-7fに戻す)
-    if 0 <= f <= 7:
+    # Sweet spot ボーナス (0-9f)
+    if 0 <= f <= 9:
         cost += WEIGHTS["w_sweet_spot_bonus"]
 
     return cost

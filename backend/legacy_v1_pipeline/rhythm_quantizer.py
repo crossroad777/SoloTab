@@ -9,7 +9,7 @@ TAB譜のリズム表記を自然にする。
 """
 
 import numpy as np
-from typing import List
+from typing import List, Tuple, Dict
 
 
 def _build_mixed_grid(beats: np.ndarray, straight_subdivisions: int = 4,
@@ -46,10 +46,11 @@ def _build_mixed_grid(beats: np.ndarray, straight_subdivisions: int = 4,
     return np.array(sorted(grid_set))
 
 
-def quantize_notes(notes: List[dict], beats: List[float], 
+def quantize_notes(notes: List[Dict], beats: List[float], 
                    grid_subdivisions: int = 4,
                    snap_threshold_ratio: float = 0.4,
-                   enable_triplet: bool = True) -> List[dict]:
+                   enable_triplet: bool = True,
+                   cluster_threshold: float = 0.06) -> List[Dict]:
     """
     ノートのstart/endをビートグリッド（16分音符+3連符混合）にスナップする。
 
@@ -86,7 +87,7 @@ def quantize_notes(notes: List[dict], beats: List[float],
     # === 前処理: 微小な時間ズレの和音クラスタリング ===
     # アコースティックギターのストロークやアルペジオにおける物理的な発音ズレ（通常0.01〜0.08秒程度）を、
     # 楽譜上では「同時の和音」として綺麗に縦に並べるために、互いに近いノートの開始時刻を統一する。
-    cluster_threshold = 0.06  # 60ms以内のズレは同じ和音とみなす
+    # cluster_threshold = 0.06  # (引数化)
     notes_sorted = sorted(notes, key=lambda n: n["start"])
     clustered_notes = []
     

@@ -617,6 +617,13 @@ def filter_bass_octave_harmonics(notes: List[Dict],
         v = n.get("velocity", 0.5)
         dur = n.get("end", t) - t
         
+        # 1弦の音（string=1）は実際に弾かれた音である可能性が高いため、
+        # 倍音フィルタの対象外とする。特にE4(64)はギターの1弦開放弦であり、
+        # ベース音E2/E3の倍音ではなく実音。
+        if n.get("string") == 1:
+            keep.append(n)
+            continue
+        
         # このノートがベース音のオクターブ上ピッチか？
         if pitch in octave_map:
             bass_info = octave_map[pitch]
@@ -650,6 +657,7 @@ def apply_all_filters(notes: List[Dict],
                       min_duration_sec: float = 0.1,
                       enable_harmonics: bool = True,
                       enable_position_window: bool = True,
+                      enable_open_resonance: bool = True,
                       window_size: int = 7,
                       max_notes_per_beat: int = 6,
                        beats: Optional[List[float]] = None,
@@ -683,9 +691,16 @@ def apply_all_filters(notes: List[Dict],
     stats["min_duration"] = pre - len(notes)
     
     # 4. 開放弦共鳴ノート除去
-    pre = len(notes)
-    notes = filter_open_string_resonance(notes)
-    stats["open_resonance"] = pre - len(notes)
+    if enable_open_resonance:
+        pre = len(notes)
+        notes = filter_open_string_resonance(notes)
+        stats["open_resonance"] = pre - len(notes)
+        
+    # 4.5. 1拍あたりの最大ノート数制限
+    if max_notes_per_beat > 0 and max_notes_per_beat < 20:
+        pre = len(notes)
+        notes = filter_max_per_beat(notes, beats, bpm, max_notes=max_notes_per_beat)
+        stats["max_per_beat"] = pre - len(notes)
     
     # 5. 倍音フィルタ（ハーモニクス保持版）
     if enable_harmonics:
@@ -698,11 +713,7 @@ def apply_all_filters(notes: List[Dict],
     notes = filter_bass_octave_harmonics(notes)
     stats["bass_octave"] = pre - len(notes)
     
-    # 6. 1拍あたり最大ノート数制限
-    pre = len(notes)
-    notes = filter_max_per_beat(notes, beats=beats, bpm=bpm, 
-                                 max_notes=max_notes_per_beat)
-    stats["max_per_beat"] = pre - len(notes)
+    # Removed redundant filter_max_per_beat
     
     # 7. ポジション固定ウィンドウ（ノート除去ではなくリマップ）
     if enable_position_window:

@@ -428,7 +428,7 @@ def _detect_ts_accent_pattern(
         if cv < 0.15:  # ビート間隔が非常に均一（CV < 15%）
             # 中テンポ(60-100BPM)のアルペジオ曲 → 3/4が自然
             if 60 <= bpm_if_3 <= 100:
-                arpeggio_bonus_3 = 0.05
+                arpeggio_bonus_3 = 0.5  # 強烈なボーナスを与えて133BPMの16分音符ではなく88BPMの3連符として認識させる
                 print(f"[beat_detector] Arpeggio pattern detected (CV={cv:.3f}), "
                       f"3/4 bonus +{arpeggio_bonus_3}")
 
@@ -511,11 +511,13 @@ def _detect_beats_librosa(wav_path: str) -> dict:
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     bpm = float(tempo) if not hasattr(tempo, '__len__') else float(tempo[0])
+    
+    # 拍子推定を呼び出す
+    ts, dbeats = _detect_time_signature(wav_path, beat_times, bpm)
 
-    # librosa fallback では拍子推定なし
     return {
         "beats": beat_times.tolist(),
         "bpm": round(bpm, 1),
-        "time_signature": "4/4",
-        "downbeats": beat_times[::4].tolist() if len(beat_times) > 0 else [],
+        "time_signature": ts,
+        "downbeats": dbeats,
     }
