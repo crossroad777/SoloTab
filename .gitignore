@@ -62,3 +62,6 @@ generated/
 
 # External tools (binaries)
 tools/
+
+# Logs directory
+backend/logs/
