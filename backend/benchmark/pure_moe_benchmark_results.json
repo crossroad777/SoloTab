@@ -1,0 +1,26 @@
+{
+  "config": {
+    "vote_threshold": 3,
+    "onset_threshold": 0.5,
+    "style": "all"
+  },
+  "summary": {
+    "mean_precision": 0.38461538461538464,
+    "mean_recall": 0.6766917293233082,
+    "mean_f1": 0.49046321525885556,
+    "median_f1": 0.49046321525885556,
+    "std_f1": 0.0,
+    "num_songs": 1
+  },
+  "per_song": [
+    {
+      "precision": 0.38461538461538464,
+      "recall": 0.6766917293233082,
+      "f1": 0.49046321525885556,
+      "gt_count": 133,
+      "pred_count": 234,
+      "name": "00_BN1-129-Eb_comp",
+      "time": 3.8446481227874756
+    }
+  ]
+}

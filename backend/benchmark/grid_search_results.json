@@ -1,0 +1,588 @@
+{
+  "best": {
+    "vote_threshold": 5,
+    "onset_threshold": 0.8,
+    "vote_prob_threshold": 0.5,
+    "mean_f1": 0.8477563114374896,
+    "mean_precision": 0.8499403742981375,
+    "mean_recall": 0.8479552515997333
+  },
+  "all": [
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8477563114374896,
+      "mean_precision": 0.8499403742981375,
+      "mean_recall": 0.8479552515997333
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8463978806807707,
+      "mean_precision": 0.8358406959518766,
+      "mean_recall": 0.8595013954130987
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8455170822563512,
+      "mean_precision": 0.8329552270738139,
+      "mean_recall": 0.860775415193236
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8454876552822517,
+      "mean_precision": 0.8328250588868246,
+      "mean_recall": 0.8608593236213727
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8454876552822517,
+      "mean_precision": 0.8328250588868246,
+      "mean_recall": 0.8608593236213727
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8454876552822517,
+      "mean_precision": 0.8328250588868246,
+      "mean_recall": 0.8608593236213727
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8454695890042594,
+      "mean_precision": 0.840101836517388,
+      "mean_recall": 0.8533214083712775
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8441694406539972,
+      "mean_precision": 0.8374156035222984,
+      "mean_recall": 0.8536716857007007
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8428093215464098,
+      "mean_precision": 0.8328662644253247,
+      "mean_recall": 0.8555473044022632
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8419850322281691,
+      "mean_precision": 0.8312065826780826,
+      "mean_recall": 0.8557510623541494
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8416961835076592,
+      "mean_precision": 0.8306472977140907,
+      "mean_recall": 0.855832299561507
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8406763714541202,
+      "mean_precision": 0.8169305107546408,
+      "mean_recall": 0.8681857196819805
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8406614764061193,
+      "mean_precision": 0.8281202278208266,
+      "mean_recall": 0.8563933091927892
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8405964482080598,
+      "mean_precision": 0.8279663751568968,
+      "mean_recall": 0.8564190757278481
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.840356214163327,
+      "mean_precision": 0.827447642096377,
+      "mean_recall": 0.8564953997710887
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8400791261627067,
+      "mean_precision": 0.8268217799844221,
+      "mean_recall": 0.8565981288675313
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8399496034421425,
+      "mean_precision": 0.8265845757540894,
+      "mean_recall": 0.8565753638968587
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.8,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.839780069931243,
+      "mean_precision": 0.8262286660477389,
+      "mean_recall": 0.856624510641586
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8396116160837582,
+      "mean_precision": 0.8149220981398224,
+      "mean_recall": 0.8683401917849968
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8371667024076983,
+      "mean_precision": 0.8073242559798454,
+      "mean_recall": 0.8717656182369357
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8370482762080909,
+      "mean_precision": 0.8078722874112093,
+      "mean_recall": 0.8709829466801083
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8367489850468698,
+      "mean_precision": 0.8071678648886572,
+      "mean_recall": 0.8711751898389036
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8367489850468698,
+      "mean_precision": 0.8071678648886572,
+      "mean_recall": 0.8711751898389036
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8367489850468698,
+      "mean_precision": 0.8071678648886572,
+      "mean_recall": 0.8711751898389036
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8362106983725688,
+      "mean_precision": 0.8050613740036798,
+      "mean_recall": 0.8723737427460969
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8362091342592448,
+      "mean_precision": 0.805000537865659,
+      "mean_recall": 0.8724415007711165
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8362091342592448,
+      "mean_precision": 0.805000537865659,
+      "mean_recall": 0.8724415007711165
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8343454829885403,
+      "mean_precision": 0.8016668889890861,
+      "mean_recall": 0.8723073615026449
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8337734349459393,
+      "mean_precision": 0.8004925560145637,
+      "mean_recall": 0.8725881548685106
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8333216408388782,
+      "mean_precision": 0.8000674939715863,
+      "mean_recall": 0.8721815985724738
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.829539671076689,
+      "mean_precision": 0.7913922657749547,
+      "mean_recall": 0.8743684598641699
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8295196450747265,
+      "mean_precision": 0.7914096893125772,
+      "mean_recall": 0.8742918148462873
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8285839543719841,
+      "mean_precision": 0.7897710135314886,
+      "mean_recall": 0.8743337175947444
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8273471216985551,
+      "mean_precision": 0.7870369289202276,
+      "mean_recall": 0.8749584977620998
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8273431372017325,
+      "mean_precision": 0.7857372009249526,
+      "mean_recall": 0.8764709478712557
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8268704350638287,
+      "mean_precision": 0.7862410605784599,
+      "mean_recall": 0.8748915058672787
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8268391025627995,
+      "mean_precision": 0.7837758852007666,
+      "mean_recall": 0.8777602953738068
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8267676784852006,
+      "mean_precision": 0.7832528270827901,
+      "mean_recall": 0.8781511850201004
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.7,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8261545135421863,
+      "mean_precision": 0.7848320866609356,
+      "mean_recall": 0.8750787957740105
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8260925174726427,
+      "mean_precision": 0.7830105671757214,
+      "mean_recall": 0.8771124827133588
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8260925174726427,
+      "mean_precision": 0.7830105671757214,
+      "mean_recall": 0.8771124827133588
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8260925174726427,
+      "mean_precision": 0.7830105671757214,
+      "mean_recall": 0.8771124827133588
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8241922152022435,
+      "mean_precision": 0.7780642350109916,
+      "mean_recall": 0.8791216341554502
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8239177359026508,
+      "mean_precision": 0.7774096261541105,
+      "mean_recall": 0.8793225208752701
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8239177359026508,
+      "mean_precision": 0.7774096261541105,
+      "mean_recall": 0.8793225208752701
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8229059173519074,
+      "mean_precision": 0.7748539850931736,
+      "mean_recall": 0.8802945859521086
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.821788280451929,
+      "mean_precision": 0.7725342090499284,
+      "mean_recall": 0.8807986616590228
+    },
+    {
+      "vote_threshold": 5,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8217323939004462,
+      "mean_precision": 0.7724327188354064,
+      "mean_recall": 0.8808056410001729
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8189615498364057,
+      "mean_precision": 0.7678091661283958,
+      "mean_recall": 0.8805205295244546
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8183614177990837,
+      "mean_precision": 0.7665331338117435,
+      "mean_recall": 0.8808341142505883
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8178169496701798,
+      "mean_precision": 0.7660622734321527,
+      "mean_recall": 0.8802792717831777
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8133973495146437,
+      "mean_precision": 0.7572483556845262,
+      "mean_recall": 0.8819264692732849
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8132273056234295,
+      "mean_precision": 0.7568053264261978,
+      "mean_recall": 0.8821870603371686
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8132273056234295,
+      "mean_precision": 0.7568053264261978,
+      "mean_recall": 0.8821870603371686
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.5,
+      "mean_f1": 0.8132273056234295,
+      "mean_precision": 0.7568053264261978,
+      "mean_recall": 0.8821870603371686
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8132213520870838,
+      "mean_precision": 0.7562377135649301,
+      "mean_recall": 0.8829024734007581
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8128328825158001,
+      "mean_precision": 0.7563877423412322,
+      "mean_recall": 0.8817908036268591
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8120078960870989,
+      "mean_precision": 0.7538262435391547,
+      "mean_recall": 0.8833504843991012
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8120078960870989,
+      "mean_precision": 0.7538262435391547,
+      "mean_recall": 0.8833504843991012
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8111387141532118,
+      "mean_precision": 0.7522109261246709,
+      "mean_recall": 0.8835366136648802
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.6,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8104168586814274,
+      "mean_precision": 0.7519723548367049,
+      "mean_recall": 0.8822437263639559
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8080016267863734,
+      "mean_precision": 0.7462816619649216,
+      "mean_recall": 0.8844341110271112
+    },
+    {
+      "vote_threshold": 4,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.807499105982231,
+      "mean_precision": 0.7453716940333389,
+      "mean_recall": 0.8845291809656086
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.8022500926520874,
+      "mean_precision": 0.7360560206972022,
+      "mean_recall": 0.8853628213093767
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.8022442873972829,
+      "mean_precision": 0.7361433731469812,
+      "mean_recall": 0.8852726996187846
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.7973323224131567,
+      "mean_precision": 0.727200530789333,
+      "mean_recall": 0.886516583795916
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.4,
+      "mean_f1": 0.7973323224131567,
+      "mean_precision": 0.727200530789333,
+      "mean_recall": 0.886516583795916
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.5,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.7960064214869605,
+      "mean_precision": 0.7251955634937267,
+      "mean_recall": 0.8862851791340811
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.7953394233773583,
+      "mean_precision": 0.7235907812859337,
+      "mean_recall": 0.8870227556752879
+    },
+    {
+      "vote_threshold": 3,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.7933340215084791,
+      "mean_precision": 0.720112628161453,
+      "mean_recall": 0.8873536479335046
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.4,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.7836403742298969,
+      "mean_precision": 0.7038328109452802,
+      "mean_recall": 0.8885924023332599
+    },
+    {
+      "vote_threshold": 2,
+      "onset_threshold": 0.3,
+      "vote_prob_threshold": 0.3,
+      "mean_f1": 0.7770292436519769,
+      "mean_precision": 0.6929987129675139,
+      "mean_recall": 0.8893386535159741
+    }
+  ]
+}

@@ -30,7 +30,7 @@ error.log
 datasets/
 _processed_gaps_data/
 _processed_guitarset_data/
-music-transcription/python/_processed_guitarset_data/
+music-transcription/
 uploads/
 legacy_archive/
 unified_datasets/
@@ -46,3 +46,19 @@ frontend/node_modules/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# IDE / Editor
+.vscode/
+.agent/
+.idea/
+
+# Temporary & Generated
+scratch/
+generated/
+*.wav
+*.mp3
+*.lnk
+*.pdf
+
+# External tools (binaries)
+tools/
