@@ -14,10 +14,15 @@ import config
 from model import architecture
 from guitar_transcriber import _frames_to_notes
 
-def transcribe_pure_moe(wav_path: str, vote_threshold: int = 3, onset_threshold: float = 0.5) -> list:
+def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold: float = 0.8, vote_prob_threshold: float = 0.5) -> list:
     """
     指定された6つの特化モデルのみを使って純粋に音符を検出するトランスクライバ。
     他のフィルタリングや後処理（DP等）は一切行わず、モデルの出力を忠実に返す。
+
+    最適パラメータ (GuitarSet FT後):
+      vote_threshold=5, onset_threshold=0.8, vote_prob_threshold=0.5
+      → Test分割(36曲) F1=0.8310 (P=0.8417, R=0.8257)
+      → 全360曲(参考値) F1=0.8478 (P=0.8499, R=0.8480)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Extracting CQT features for {os.path.basename(wav_path)} ...")
@@ -31,12 +36,12 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 3, onset_threshold:
     features = torch.tensor(log_cqt, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
     
     models_to_test = [
-        "finetuned_martin_finger_model",
-        "finetuned_taylor_finger_model",
-        "finetuned_luthier_finger_model",
-        "finetuned_martin_pick_model",
-        "finetuned_taylor_pick_model",
-        "finetuned_luthier_pick_model"
+        "finetuned_martin_finger_guitarset_ft",
+        "finetuned_taylor_finger_guitarset_ft",
+        "finetuned_luthier_finger_guitarset_ft",
+        "finetuned_martin_pick_guitarset_ft",
+        "finetuned_taylor_pick_guitarset_ft",
+        "finetuned_luthier_pick_guitarset_ft",
     ]
     
     all_onset_probs = []
@@ -82,8 +87,8 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 3, onset_threshold:
     all_fret_preds = np.array(all_fret_preds)
     
     # 多数決ロジック
-    # 0.4以上の確率を出したモデルの数を数える
-    binary_votes = all_onset_probs > 0.4
+    # vote_prob_threshold以上の確率を出したモデルの数を数える
+    binary_votes = all_onset_probs > vote_prob_threshold
     vote_counts = np.sum(binary_votes, axis=0) # [Frames, Strings]
     
     # ピークを維持するため、平均ではなく最大の確率を採用
