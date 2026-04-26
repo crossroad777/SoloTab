@@ -396,7 +396,7 @@ export default function SoloTabApp() {
         <div className="drag-overlay">
           <UploadCloud size={120} className="drag-icon" />
           <h2>Drop to analyze</h2>
-          <p>音声ファイルまたはYouTubeリンク</p>
+          <p>音声ファイルをドロップ</p>
         </div>
       )}
 
@@ -442,35 +442,13 @@ export default function SoloTabApp() {
                 <UploadCloud size={40} />
               </div>
               <h4>音源をドラッグ＆ドロップ</h4>
-              <p>MP3, WAV, M4A, FLAC または YouTubeリンク</p>
+              <p>MP3, WAV, M4A, FLAC</p>
               <button className="select-btn" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
                 ファイルを選択
               </button>
             </div>
 
-            {/* YouTube URL */}
-            <div className="yt-divider">
-              <div className="line" />
-              <span>または</span>
-              <div className="line" />
-            </div>
-            <div className="youtube-input-row">
-              <input
-                type="text"
-                value={ytUrl}
-                onChange={(e) => setYtUrl(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && ytUrl.trim()) handleYouTubeUpload(ytUrl.trim()); }}
-                placeholder="YouTube URLを貼り付け"
-              />
-              <button
-                className={`yt-go-btn ${ytUrl.trim() ? 'active' : 'inactive'}`}
-                disabled={!ytUrl.trim()}
-                onClick={() => { if (ytUrl.trim()) handleYouTubeUpload(ytUrl.trim()); }}
-              >
-                <Play size={14} fill="currentColor" />
-                解析
-              </button>
-            </div>
+
 
             {status === STATUS.FAILED && (
               <div className="error-message" style={{ marginTop: 16 }}>
@@ -605,11 +583,21 @@ export default function SoloTabApp() {
                   <button
                     className="home-btn"
                     title="PDF印刷"
-                    onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = `${API_BASE}/result/${session.id}/pdf`;
-                      a.download = `${session.fileName || 'tab'}.pdf`;
-                      a.click();
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`${API_BASE}/result/${session.id}/pdf`);
+                        if (!res.ok) throw new Error("PDF生成失敗");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const baseName = (session.fileName || 'tab').replace(/\.[^.]+$/, '');
+                        a.download = `${baseName}.pdf`;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                      } catch(e) { _showToast("PDF: " + e.message); }
                     }}
                   >
                     <Printer size={14} style={{ marginRight: 4 }} />PDF
@@ -617,11 +605,21 @@ export default function SoloTabApp() {
                   <button
                     className="home-btn"
                     title="MusicXMLダウンロード"
-                    onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = `${API_BASE}/result/${session.id}/musicxml`;
-                      a.download = `${session.fileName || 'tab'}.musicxml`;
-                      a.click();
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
+                        if (!res.ok) throw new Error("MusicXML取得失敗");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const baseName = (session.fileName || 'tab').replace(/\.[^.]+$/, '');
+                        a.download = `${baseName}.musicxml`;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                      } catch(e) { _showToast("MusicXML: " + e.message); }
                     }}
                   >
                     <Download size={14} style={{ marginRight: 4 }} />MusicXML

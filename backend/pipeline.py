@@ -248,11 +248,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("notes", "純粋なMoE推論中 (6モデル統合のみ、他フィルタ排除)...")
         t0 = time.time()
         
-        # 閾値を 3/6 票、確率は最大値(np.max)でピーク保持、閾値0.5で検出
+        # ベンチマーク最適パラメータ (グリッドサーチ72通りの結果: F1=0.8478)
         notes = transcribe_pure_moe(
             str(transcription_wav), 
-            vote_threshold=3, 
-            onset_threshold=0.5
+            vote_threshold=5, 
+            onset_threshold=0.8
         )
         
         method = "pure_moe"

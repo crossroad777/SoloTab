@@ -21,7 +21,17 @@ def _ensure_fonts():
     global _FONT_REGISTERED
     if _FONT_REGISTERED:
         return
-    # Windows標準の日本語フォント
+
+    # 方法1: reportlab 内蔵 CID フォント（最も確実）
+    try:
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
+        _FONT_REGISTERED = True
+        return
+    except Exception:
+        pass
+
+    # 方法2: OS のフォントファイル
     candidates = [
         ("C:/Windows/Fonts/meiryo.ttc", "Meiryo", 0),
         ("C:/Windows/Fonts/msgothic.ttc", "MSGothic", 0),
@@ -41,7 +51,7 @@ def _ensure_fonts():
 
 def _get_jp_font():
     """利用可能な日本語フォント名を返す"""
-    for name in ["Meiryo", "MSGothic"]:
+    for name in ["HeiseiKakuGo-W5", "Meiryo", "MSGothic"]:
         try:
             pdfmetrics.getFont(name)
             return name
