@@ -167,16 +167,23 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
 def _correct_bpm_basic(raw_bpm: float) -> float:
     """
     BPMの倍取り/半取りを補正。
-    ギターの一般的なテンポ範囲(50-180BPM)に収める。
+    ギターの一般的なテンポ範囲(50-160BPM)に収める。
+    
+    ギター曲の実態:
+    - アルペジオ/バラード: 60-100 BPM
+    - ポップス/ロック: 100-140 BPM
+    - 速い曲: 140-160 BPM
+    - 160超は極めて稀（ビートの倍取りの可能性が高い）
     """
     bpm = raw_bpm
 
-    # 倍取り補正: BPM > 180 → 半分にする
-    while bpm > 180:
+    # 倍取り補正: BPM > 160 → 半分にする
+    # (旧: 180だったが、ギター曲で160超はほぼ倍取り)
+    while bpm > 160:
         bpm /= 2
 
-    # 半取り補正: BPM < 50 → 倍にする
-    while bpm < 50:
+    # 半取り補正: BPM < 45 → 倍にする
+    while bpm < 45:
         bpm *= 2
 
     return bpm
@@ -492,13 +499,14 @@ def _bpm_naturalness_score(bpm: float) -> float:
     """
     BPMが音楽的に自然な範囲にあるかのスコア。
     60-120 BPMが最も自然（アコギ曲の典型的テンポ範囲）。
+    120-160 は倍取りの可能性があるため低めにスコアリング。
     """
     if 60 <= bpm <= 120:
         return 1.0
-    elif 50 <= bpm < 60 or 120 < bpm <= 140:
-        return 0.7
-    elif 40 <= bpm < 50 or 140 < bpm <= 180:
-        return 0.4
+    elif 50 <= bpm < 60 or 120 < bpm <= 135:
+        return 0.6
+    elif 45 <= bpm < 50 or 135 < bpm <= 160:
+        return 0.3
     else:
         return 0.1
 

@@ -735,6 +735,88 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     return {"status": "ok", "action": action, "total_notes": len(notes)}
 
 
+class NoteAddRequest(BaseModel):
+    start: float          # 開始時間（秒）
+    end: float            # 終了時間（秒）
+    pitch: int            # MIDIノート番号
+    string: int = 1       # 弦番号 (1-6)
+    fret: int = 0         # フレット番号
+
+
+@app.post("/result/{session_id}/notes")
+async def add_note(session_id: str, request: NoteAddRequest):
+    """ノートを追加 → MusicXML再生成"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    assigned_path = session_dir / "notes_assigned.json"
+    if not assigned_path.exists():
+        raise HTTPException(status_code=404, detail="Notes not found")
+    
+    import json as json_mod
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        notes = json_mod.load(f)
+    
+    # 新しいノートを作成
+    new_note = {
+        "start": request.start,
+        "end": request.end,
+        "pitch": request.pitch,
+        "string": request.string,
+        "fret": request.fret,
+        "velocity": 0.7,
+        "technique": None,
+    }
+    
+    # 時間順でソートされた位置に挿入
+    insert_idx = 0
+    for i, n in enumerate(notes):
+        if float(n.get("start", 0)) > request.start:
+            insert_idx = i
+            break
+        insert_idx = i + 1
+    
+    notes.insert(insert_idx, new_note)
+    
+    # Save updated notes
+    with open(assigned_path, "w", encoding="utf-8") as f:
+        json_mod.dump(notes, f, ensure_ascii=False, indent=2)
+    
+    # Regenerate MusicXML
+    from tab_renderer import notes_to_tab_musicxml
+    tuning_name = s.get("tuning", "standard")
+    tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
+    capo = s.get("capo", 0)
+    if capo > 0:
+        tuning = [p + capo for p in tuning]
+    
+    beats_path = session_dir / "beats.json"
+    beats, bpm = [], s.get("bpm", 120)
+    time_sig = s.get("time_signature", "4/4")
+    if beats_path.exists():
+        with open(beats_path, "r") as f:
+            bd = json_mod.load(f)
+        beats = bd.get("beats", [])
+        bpm = bd.get("bpm", bpm)
+        time_sig = bd.get("time_signature", time_sig)
+    
+    xml_content, _ = notes_to_tab_musicxml(
+        notes, beats=beats, bpm=bpm,
+        title=s.get("filename", session_id),
+        tuning=tuning,
+        time_signature=time_sig,
+    )
+    with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
+        f.write(xml_content)
+    
+    s["total_notes"] = len(notes)
+    save_session(session_id)
+    
+    return {"status": "ok", "action": "added", "note_index": insert_idx, "total_notes": len(notes)}
+
+
 @app.get("/result/{session_id}/notes")
 async def get_notes(session_id: str):
     if session_id not in sessions:

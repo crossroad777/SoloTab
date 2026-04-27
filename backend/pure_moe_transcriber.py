@@ -42,6 +42,7 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
         "finetuned_martin_pick_guitarset_ft",
         "finetuned_taylor_pick_guitarset_ft",
         "finetuned_luthier_pick_guitarset_ft",
+        "finetuned_gibson_thumb_guitarset_ft",
     ]
     
     all_onset_probs = []

@@ -287,3 +287,5 @@ While numerically comparable to the single model (Test F1=0.8386, mix audio), Pu
 2. **Funk/Rock genre accuracy**: Strengthen discrimination between percussive noise and ghost notes
 3. **Architecture evolution**: Integrate Self-Attention mechanisms for a CRNN→Transformer-based transition
 4. **Unified audio source evaluation**: Conduct benchmarks on both mic and mix audio sources
+
+

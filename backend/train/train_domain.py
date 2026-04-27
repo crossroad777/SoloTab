@@ -21,7 +21,7 @@ import glob
 import shutil
 
 # Imports
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 mt_python_dir = os.path.join(project_root, "music-transcription", "python")
 if mt_python_dir not in sys.path:
     sys.path.insert(0, mt_python_dir)

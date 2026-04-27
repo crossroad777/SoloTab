@@ -22,6 +22,410 @@ from typing import List, Tuple, Optional, Dict
 from itertools import product as iter_product
 from collections import Counter
 import math
+import json
+import os
+import numpy as np
+
+# =============================================================================
+# 弦分類器 (String Classifier CNN) — 音声CQT特徴量から弦を推定
+# =============================================================================
+
+_STRING_CLASSIFIER = None  # lazy-loaded
+_STRING_CLASSIFIER_CQT_CACHE = {}  # audio_path -> CQT array
+
+def _load_string_classifier():
+    """弦分類器CNNモデルをlazy-load。"""
+    global _STRING_CLASSIFIER
+    if _STRING_CLASSIFIER is not None:
+        return _STRING_CLASSIFIER
+    
+    model_path = os.path.join(os.path.dirname(__file__), "string_classifier.pth")
+    if not os.path.exists(model_path):
+        _STRING_CLASSIFIER = False  # モデルなし
+        return False
+    
+    try:
+        import torch
+        from string_classifier import StringClassifierCNN, N_BINS, CONTEXT_FRAMES
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = StringClassifierCNN(n_bins=N_BINS, n_frames=CONTEXT_FRAMES).to(device)
+        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+        model.eval()
+        
+        _STRING_CLASSIFIER = {'model': model, 'device': device}
+        print(f"[string_assigner] 弦分類器ロード完了 (device={device})")
+        return _STRING_CLASSIFIER
+    except Exception as e:
+        print(f"[string_assigner] 弦分類器ロード失敗: {e}")
+        _STRING_CLASSIFIER = False
+        return False
+
+
+def _compute_cqt_cached(audio_path: str) -> Optional[np.ndarray]:
+    """CQTスペクトログラムをキャッシュ付きで計算。"""
+    if audio_path in _STRING_CLASSIFIER_CQT_CACHE:
+        return _STRING_CLASSIFIER_CQT_CACHE[audio_path]
+    
+    try:
+        import librosa
+        import soundfile as sf
+        from string_classifier import SR, HOP_LENGTH, N_BINS
+        
+        y, sr_orig = sf.read(audio_path)
+        if len(y.shape) > 1:
+            y = y.mean(axis=1)
+        if sr_orig != SR:
+            y = librosa.resample(y, orig_sr=sr_orig, target_sr=SR)
+        
+        cqt = np.abs(librosa.cqt(y, sr=SR, hop_length=HOP_LENGTH,
+                                  n_bins=N_BINS, bins_per_octave=12))
+        cqt = librosa.amplitude_to_db(cqt, ref=np.max)
+        cqt = (cqt + 80) / 80
+        cqt = np.clip(cqt, 0, 1)
+        
+        _STRING_CLASSIFIER_CQT_CACHE[audio_path] = cqt
+        return cqt
+    except Exception as e:
+        print(f"[string_assigner] CQT計算エラー: {e}")
+        return None
+
+
+def _predict_string_probs(audio_path: str, onset_time: float,
+                           midi_pitch: int) -> Optional[Dict[int, float]]:
+    """弦分類器で弦確率を予測。Returns: {1: prob, ..., 6: prob} or None."""
+    clf = _load_string_classifier()
+    if not clf:
+        return None
+    
+    cqt = _compute_cqt_cached(audio_path)
+    if cqt is None:
+        return None
+    
+    try:
+        import torch
+        from string_classifier import SR, HOP_LENGTH, CONTEXT_FRAMES
+        
+        frame_idx = int(onset_time * SR / HOP_LENGTH)
+        half_ctx = CONTEXT_FRAMES // 2
+        
+        if frame_idx - half_ctx < 0 or frame_idx + half_ctx >= cqt.shape[1]:
+            return None
+        
+        patch = cqt[:, frame_idx - half_ctx:frame_idx + half_ctx + 1]
+        device = clf['device']
+        patch_tensor = torch.FloatTensor(patch).unsqueeze(0).unsqueeze(0).to(device)
+        pitch_tensor = torch.FloatTensor([(midi_pitch - 40) / 45.0]).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            logits = clf['model'](patch_tensor, pitch_tensor)
+            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+        
+        return {s + 1: float(probs[s]) for s in range(6)}
+    except Exception:
+        return None
+
+# =============================================================================
+# 音楽理論エンジン: 典型フォームDB + コード情報統合
+# (坂井論文 2024「主旋律と和音を同時に演奏するソロギターのためのタブ譜生成」準拠)
+# =============================================================================
+
+# 典型フォームDBのロード
+_CHORD_FORMS_DB = None
+_CHORD_FORMS_LOOKUP = None
+
+def _load_chord_forms_db():
+    """典型フォームDBをロードする（遅延初期化）。"""
+    global _CHORD_FORMS_DB, _CHORD_FORMS_LOOKUP
+    if _CHORD_FORMS_DB is not None:
+        return
+    db_path = os.path.join(os.path.dirname(__file__), "chord_forms_db.json")
+    if os.path.exists(db_path):
+        with open(db_path, "r", encoding="utf-8") as f:
+            _CHORD_FORMS_DB = json.load(f)
+        # ルックアップテーブル構築
+        _CHORD_FORMS_LOOKUP = {}
+        for form in _CHORD_FORMS_DB:
+            chord = form["chord"]
+            if chord not in _CHORD_FORMS_LOOKUP:
+                _CHORD_FORMS_LOOKUP[chord] = []
+            _CHORD_FORMS_LOOKUP[chord].append(form)
+    else:
+        _CHORD_FORMS_DB = []
+        _CHORD_FORMS_LOOKUP = {}
+
+
+# コード構成音マッピング（ルートからの半音数）
+_CHORD_INTERVALS = {
+    "major": [0, 4, 7], "minor": [0, 3, 7], "7": [0, 4, 7, 10],
+    "m7": [0, 3, 7, 10], "maj7": [0, 4, 7, 11], "dim": [0, 3, 6],
+    "dim7": [0, 3, 6, 9], "aug": [0, 4, 8], "sus4": [0, 5, 7],
+    "sus2": [0, 2, 7], "m7b5": [0, 3, 6, 10], "6": [0, 4, 7, 9],
+}
+
+def _parse_chord_name(chord_str: str) -> Tuple[int, str]:
+    """コード名からルートPCとクオリティを抽出。
+    例: 'Am7' -> (9, 'm7'), 'C#dim' -> (1, 'dim'), 'G' -> (7, 'major')
+    """
+    if not chord_str or chord_str in ('N', 'X', 'NC', 'N.C.'):
+        return (-1, '')
+    note_map = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
+    s = chord_str.strip()
+    if not s or s[0] not in note_map:
+        return (-1, '')
+    root_pc = note_map[s[0]]
+    idx = 1
+    if idx < len(s) and s[idx] == '#':
+        root_pc = (root_pc + 1) % 12
+        idx += 1
+    elif idx < len(s) and s[idx] == 'b':
+        root_pc = (root_pc - 1) % 12
+        idx += 1
+    quality_str = s[idx:].lower()
+    if quality_str in ('', 'maj'):
+        quality = 'major'
+    elif quality_str in ('m', 'min', 'mi'):
+        quality = 'minor'
+    elif quality_str in ('7', 'dom7'):
+        quality = '7'
+    elif quality_str in ('m7', 'min7', 'mi7'):
+        quality = 'm7'
+    elif quality_str in ('maj7', 'ma7'):
+        quality = 'maj7'
+    elif quality_str in ('dim', 'o'):
+        quality = 'dim'
+    elif quality_str in ('dim7', 'o7'):
+        quality = 'dim7'
+    elif quality_str in ('aug', '+'):
+        quality = 'aug'
+    elif quality_str in ('sus4', 'sus'):
+        quality = 'sus4'
+    elif quality_str == 'sus2':
+        quality = 'sus2'
+    elif quality_str in ('m7b5', 'hdim', 'hdim7'):
+        quality = 'm7b5'
+    else:
+        quality = 'major'  # デフォルト
+    return (root_pc, quality)
+
+
+def _get_chord_notes_pc(root_pc: int, quality: str) -> List[int]:
+    """コードの構成音のピッチクラスリストを返す。"""
+    intervals = _CHORD_INTERVALS.get(quality, [0, 4, 7])
+    return [(root_pc + iv) % 12 for iv in intervals]
+
+
+def _get_chord_at_time(chords: List[dict], time_sec: float) -> Optional[dict]:
+    """指定時刻のコード情報を返す。"""
+    if not chords:
+        return None
+    for chord in chords:
+        start = chord.get('start', chord.get('time', 0))
+        end = chord.get('end', start + chord.get('duration', 999))
+        if start <= time_sec < end:
+            return chord
+    return None
+
+
+def _typical_form_match_cost(combo: Tuple[Tuple[int, int], ...],
+                             chord_name: str,
+                             tuning: List[int]) -> float:
+    """
+    典型フォーム一致コスト (坂井論文 3.6 typical(qn) に相当)。
+    
+    combo の押弦パターンが典型フォームDBのいずれかと一致すれば低コスト、
+    一致しなければ高コスト。
+    
+    Returns
+    -------
+    float : 一致すれば 0.0, 部分一致なら 5.0, 不一致なら 12.0
+    """
+    _load_chord_forms_db()
+    if not _CHORD_FORMS_LOOKUP or not chord_name:
+        return 0.0  # DB未ロードまたはコード不明時はペナルティなし
+    
+    # comboから6弦のフレット配列を構築
+    combo_frets = [-1] * 6  # 6弦→1弦
+    for s, f in combo:
+        idx = 6 - s  # string 6→index 0, string 1→index 5
+        if 0 <= idx < 6:
+            combo_frets[idx] = f
+    
+    # コード名の正規化（DBのキーと照合）
+    root_pc, quality = _parse_chord_name(chord_name)
+    if root_pc < 0:
+        return 0.0
+    
+    NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    QUALITY_SUFFIX = {
+        "major": "", "minor": "m", "7": "7", "m7": "m7", "maj7": "maj7",
+        "dim": "dim", "dim7": "dim7", "aug": "aug", "sus4": "sus4", "sus2": "sus2",
+        "m7b5": "m7b5", "6": "6",
+    }
+    db_key = NOTE_NAMES[root_pc] + QUALITY_SUFFIX.get(quality, "")
+    
+    forms = _CHORD_FORMS_LOOKUP.get(db_key, [])
+    if not forms:
+        return 0.0  # DBにコードがない場合はペナルティなし
+    
+    best_match = 0  # 一致した弦の数
+    for form in forms:
+        db_frets = form["frets"]
+        match_count = 0
+        for i in range(6):
+            if combo_frets[i] >= 0 and db_frets[i] >= 0:
+                if combo_frets[i] == db_frets[i]:
+                    match_count += 1
+        best_match = max(best_match, match_count)
+    
+    sounding = sum(1 for f in combo_frets if f >= 0)
+    if sounding == 0:
+        return 0.0
+    
+    match_ratio = best_match / sounding
+    if match_ratio >= 0.8:
+        return 0.0    # ほぼ完全一致
+    elif match_ratio >= 0.5:
+        return 5.0    # 部分一致
+    else:
+        return 12.0   # 不一致
+
+
+def _music_theory_output_cost(combo: Tuple[Tuple[int, int], ...],
+                              chord_name: str,
+                              tuning: List[int]) -> float:
+    """
+    音楽理論に基づく出力コスト (坂井論文 3.6 C((xn,cn)|qn) に相当)。
+    
+    1. 同時発音数コスト voices(qn): 発音数が多いほど響きが豊か → 報酬
+    2. 典型フォーム一致コスト typical(qn)
+    3. ルート音制約: 最低音がコードのルート音と一致 → 報酬
+    4. 構成音一致: 発音する音がコード構成音に含まれている → 報酬
+    """
+    cost = 0.0
+    
+    if not chord_name:
+        return 0.0
+    
+    root_pc, quality = _parse_chord_name(chord_name)
+    if root_pc < 0:
+        return 0.0
+    
+    chord_pcs = _get_chord_notes_pc(root_pc, quality)
+    
+    # --- 1. 同時発音数コスト (voices) ---
+    n_sounding = len(combo)
+    if n_sounding >= 2:
+        cost += -3.0 * n_sounding  # 発音数が多いほど報酬
+    
+    # --- 2. 典型フォーム一致コスト ---
+    cost += _typical_form_match_cost(combo, chord_name, tuning)
+    
+    # --- 3. ルート音 = 最低音 制約 ---
+    if n_sounding >= 2:
+        # 各弦のピッチを計算
+        pitches = []
+        for s, f in combo:
+            idx = 6 - s
+            if 0 <= idx < len(tuning):
+                pitches.append((tuning[idx] + f, s))
+        if pitches:
+            pitches.sort()  # 低い音から
+            bass_pc = pitches[0][0] % 12
+            if bass_pc == root_pc:
+                cost += -15.0  # ルート音がベースにある → 大きな報酬
+            else:
+                cost += 8.0    # ルート音がベースにない → ペナルティ
+    
+    # --- 4. 構成音一致 ---
+    for s, f in combo:
+        idx = 6 - s
+        if 0 <= idx < len(tuning):
+            pc = (tuning[idx] + f) % 12
+            if pc in chord_pcs:
+                cost += -2.0  # 構成音一致 → 報酬
+            else:
+                cost += 3.0   # 非構成音 → ペナルティ
+    
+    return cost
+
+
+def _chord_form_position_cost(s: int, f: int, chord_name: str,
+                               tuning: List[int]) -> float:
+    """
+    ソロギター用: 単音がコードフォーム内にあるかのコスト。
+    
+    改良版: 複数フォームにマッチする場合、以下の優先順位で選択:
+    1. オープンフォーム > バレーフォーム
+    2. 低ポジション > 高ポジション
+    3. フォーム中心からの距離が近いほど大きなボーナス
+    """
+    _load_chord_forms_db()
+    if not _CHORD_FORMS_LOOKUP or not chord_name:
+        return 0.0
+    
+    root_pc, quality = _parse_chord_name(chord_name)
+    if root_pc < 0:
+        return 0.0
+    
+    NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    QUALITY_SUFFIX = {
+        "major": "", "minor": "m", "7": "7", "m7": "m7", "maj7": "maj7",
+        "dim": "dim", "dim7": "dim7", "aug": "aug", "sus4": "sus4", "sus2": "sus2",
+        "m7b5": "m7b5", "6": "6",
+    }
+    db_key = NOTE_NAMES[root_pc] + QUALITY_SUFFIX.get(quality, "")
+    forms = _CHORD_FORMS_LOOKUP.get(db_key, [])
+    if not forms:
+        return 0.0
+    
+    idx = 6 - s  # string番号→配列index
+    if idx < 0 or idx >= 6:
+        return 0.0
+    
+    # マッチするフォームを全て収集し、ベストを選択
+    best_bonus = 0.0
+    for form in forms:
+        db_frets = form["frets"]
+        if db_frets[idx] != f:
+            continue
+        
+        form_pos = form.get("position", 0)
+        source = form.get("source", "")
+        
+        # フォームの「中心フレット」を計算（押弦フレットの平均）
+        pressed = [fr for fr in db_frets if fr > 0]
+        form_center = sum(pressed) / len(pressed) if pressed else 0
+        
+        # ベースボーナス: フォームの種別で決定
+        if source in ("open", "extra") and form_pos == 0:
+            base_bonus = -12.0  # オープンフォームは最優先
+        elif form_pos <= 2:
+            base_bonus = -6.0   # ローポジション
+        elif form_pos <= 7:
+            base_bonus = -3.0   # 中ポジション
+        else:
+            base_bonus = -1.0   # ハイポジション
+        
+        # 距離減衰: ノートのフレットがフォーム中心から離れるほどボーナス減少
+        dist = abs(f - form_center)
+        decay = max(0.3, 1.0 - dist * 0.15)
+        bonus = base_bonus * decay
+        
+        best_bonus = min(best_bonus, bonus)
+    
+    if best_bonus < 0:
+        return best_bonus
+    
+    # コードの構成音かどうかもチェック
+    chord_pcs = _get_chord_notes_pc(root_pc, quality)
+    if 0 <= idx < len(tuning):
+        pc = (tuning[idx] + f) % 12
+        if pc in chord_pcs:
+            return -3.0  # コード構成音だがフォーム外 → 小さいボーナス
+    
+    return 0.0  # フォーム外・非構成音 → ペナルティなし
+
 
 # 標準チューニング: 6弦→1弦 (低→高)
 STANDARD_TUNING = [40, 45, 50, 55, 59, 64]  # E2, A2, D3, G3, B3, E4
@@ -206,16 +610,16 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 # --- 重みパラメータ ---
 WEIGHTS = {
     # 位置コスト
-    "w_fret_height":          0.8,    # フレット高に比例するコスト（低くして中フレットを使いやすく）
-    "w_high_fret_extra":      3.0,    # 9フレット超の追加コスト（緩和）
+    "w_fret_height":          0.05,   # フレット高コスト (PDL最適化: 0.8→0.05 中フレット許容)
+    "w_high_fret_extra":      4.5,    # 9f超追加コスト (PDL最適化: 3.0→4.5 極端なハイポジ回避)
     "w_low_string_high_fret": 1.5,    # 低弦(4-6弦)ハイフレット倍率
-    "w_sweet_spot_bonus":    -1.5,    # sweet spot (0-9f) ボーナス (負=良い)
+    "w_sweet_spot_bonus":    -1.0,    # sweet spot (0-9f) ボーナス (PDL最適化: -1.5→-1.0)
 
     # 遷移コスト（ポジション連続性を強く重視）
     "w_movement":            15.0,    # ポジション移動コスト (フレット差に比例)
     "w_position_shift":      50.0,    # ポジション跨ぎ追加コスト (4f超の移動)
     "w_string_switch":        2.0,    # 弦切り替えコスト (弦距離に比例)
-    "w_same_string_repeat":   5.0,    # ⑧ 右手PIMA: 同弦連打ペナルティ
+    "w_same_string_repeat":   5.5,    # ⑧ 右手PIMA: 同弦連打ペナルティ (PDL最適化: 5.0→5.5)
 
     # 人間工学コスト
     "w_fret_span":          100.0,    # 和音フレットスパンコスト
@@ -449,6 +853,17 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             if not positions:
                 # 音域外: フォールバック割り当て
                 positions = [_fallback_position(note["pitch"], tuning, max_fret)]
+            
+            # CNN弦分類器による候補プルーニング
+            cnn_probs = note.get('cnn_string_probs')
+            if cnn_probs and len(positions) > 1:
+                max_prob = max(cnn_probs.values())
+                if max_prob > 0.5:  # CNNが自信を持っている場合のみ
+                    pruned = [(s, f) for s, f in positions
+                              if s in cnn_probs and cnn_probs[s] >= 0.05]
+                    if len(pruned) >= 1:
+                        positions = pruned
+            
             group_candidates.append(positions)
         else:
             # 和音: 事前に割り当て、候補はその結果のみ
@@ -466,7 +881,10 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 elif group_candidates[pgi] is not None:
                     break  # まだ未決定の単音
             chord_notes = [dict(n) for n in group]
-            assigned = _assign_chord_notes(chord_notes, tuning, max_fret, prev_f)
+            # 音楽理論: コード名を取得して典型フォーム一致コストに使用
+            chord_name = group[0].get("_chord_name", "")
+            assigned = _assign_chord_notes(chord_notes, tuning, max_fret, prev_f,
+                                           chord_name=chord_name)
             chord_results[gi] = assigned
             # 和音の結果をViterbi用の「固定候補」として設定
             fingering = tuple((n["string"], n["fret"]) for n in assigned)
@@ -492,7 +910,13 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 cnn_bonus = -cnn_probs[s] * 30.0  # ボーナス (コスト減)
         # 初期ポジションからの距離
         init_cost = abs(f - initial_position) * WEIGHTS["w_movement"] * 0.3 if f > 0 else 0.0
-        total = pos_cost + tmb_cost + cnn_bonus + init_cost
+        # ⑪ ソロギター用: コードフォーム内ポジション優先
+        chord_form_cost = 0.0
+        if len(groups[0]) == 1:
+            chord_name = groups[0][0].get("_chord_name", "")
+            if chord_name:
+                chord_form_cost = _chord_form_position_cost(s, f, chord_name, tuning)
+        total = pos_cost + tmb_cost + cnn_bonus + init_cost + chord_form_cost
         trellis[0][(s, f)] = (total, None)
 
     # Forward pass
@@ -521,15 +945,34 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
 
-            # CNN弦推定ヒント
+            # CNN弦分類器ヒント
             if is_single:
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
                 if cnn_probs and s in cnn_probs:
                     emission -= cnn_probs[s] * 30.0
+                # ⑪ ソロギター用: コードフォーム内ポジション優先
+                chord_name = groups[gi][0].get("_chord_name", "")
+                if chord_name:
+                    emission += _chord_form_position_cost(s, f, chord_name, tuning)
 
             # 全ての前状態からの遷移を評価
+            # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
+            ioi = 999.0  # デフォルト: 制限なし
+            prev_time = groups[gi - 1][0].get("start", 0)
+            cur_time = groups[gi][0].get("start", 0)
+            ioi = max(0.01, cur_time - prev_time)
+            # 人間の指の移動速度: 約12フレット/秒が限界
+            # IOI=0.1s → max_reach=1.2f, IOI=0.5s → max_reach=6f, IOI=1s → 12f
+            max_fret_reach = min(MAX_FRET, max(2, int(ioi * 12)))
+
             for (prev_s, prev_f), (prev_cost, _) in prev_trellis.items():
                 trans = _transition_cost(s, f, prev_s, prev_f)
+                
+                # IOI制約: 物理的に不可能なフレットジャンプにペナルティ
+                fret_jump = abs(f - prev_f) if (f > 0 and prev_f > 0) else 0
+                if fret_jump > max_fret_reach:
+                    trans += (fret_jump - max_fret_reach) * 15.0  # 超過分に大きなペナルティ
+                
                 total = prev_cost + emission + trans
 
                 if total < best_cost:
@@ -598,89 +1041,121 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 def _minimax_postprocess(notes: List[dict], tuning: List[int],
                          max_fret: int) -> List[dict]:
     """
-    Minimax後処理: 最大遷移コストの箇所を局所的に再最適化。
-
-    Viterbiは合計コスト最小化だが、「1箇所だけ超難しいジャンプ」が残る場合がある。
-    このパスで最大コストの遷移を見つけ、前後のウィンドウ内で局所再最適化する。
+    Minimax Viterbi DP (Hori & Sagayama, ISMIR 2016) による後処理。
+    
+    通常のViterbi (sum-optimal) の結果に対して、
+    Minimax基準 (最大単ステップコストの最小化) で再最適化する。
+    
+    更新式:
+      δ_t(j) = min_i [ max(δ_{t-1}(i), step_cost(i→j)) ]
+    
+    これにより「1箇所だけ超難しいジャンプ」を全体的に回避する。
+    sum-optimalの結果とminimax-optimalの結果を比較し、
+    minimax解の方が最大ステップコストが小さい場合にのみ置換する。
     """
     if len(notes) < 3:
         return notes
-
-    # 各ノート間の遷移コストを計算
-    transition_costs = []
-    for i in range(1, len(notes)):
-        s, f = notes[i].get("string", 1), notes[i].get("fret", 0)
-        ps, pf = notes[i - 1].get("string", 1), notes[i - 1].get("fret", 0)
-        cost = _transition_cost(s, f, ps, pf)
-        transition_costs.append((i, cost))
-
-    if not transition_costs:
+    
+    # --- Phase 1: 各ノートの候補ポジションを列挙 ---
+    candidates_list = []
+    for note in notes:
+        pitch = note.get("pitch", 0)
+        positions = get_possible_positions(pitch, tuning, max_fret)
+        if not positions:
+            positions = [(note.get("string", 1), note.get("fret", 0))]
+        candidates_list.append(positions)
+    
+    n = len(notes)
+    
+    # --- Phase 2: Minimax Viterbi DP ---
+    # mm_trellis[i][(s,f)] = (max_step_cost_on_path, backpointer)
+    mm_trellis = [{} for _ in range(n)]
+    
+    # 初期化: 最初のノートのステップコストは位置コストのみ
+    for s, f in candidates_list[0]:
+        step_cost = _position_cost(s, f) + _timbre_cost(s, f, tuning)
+        mm_trellis[0][(s, f)] = (step_cost, None)
+    
+    # Forward pass (minimax semiring)
+    for i in range(1, n):
+        # IOI計算
+        prev_time = notes[i - 1].get("start", 0)
+        cur_time = notes[i].get("start", 0)
+        ioi = max(0.01, cur_time - prev_time)
+        max_fret_reach = min(max_fret, max(2, int(ioi * 12)))
+        
+        for s, f in candidates_list[i]:
+            best_max_cost = float('inf')
+            best_prev = None
+            
+            emission = _position_cost(s, f) + _timbre_cost(s, f, tuning)
+            
+            for (prev_s, prev_f), (prev_max, _) in mm_trellis[i - 1].items():
+                trans = _transition_cost(s, f, prev_s, prev_f)
+                
+                # IOI制約
+                fret_jump = abs(f - prev_f) if (f > 0 and prev_f > 0) else 0
+                if fret_jump > max_fret_reach:
+                    trans += (fret_jump - max_fret_reach) * 15.0
+                
+                step_cost = emission + trans
+                # Minimax: パス上の最大ステップコストを追跡
+                path_max = max(prev_max, step_cost)
+                
+                if path_max < best_max_cost:
+                    best_max_cost = path_max
+                    best_prev = (prev_s, prev_f)
+            
+            if best_prev is not None:
+                mm_trellis[i][(s, f)] = (best_max_cost, best_prev)
+    
+    if not mm_trellis[-1]:
         return notes
-
-    # 最大遷移コストの閾値 (上位5%の遷移をターゲット)
-    costs_sorted = sorted([c for _, c in transition_costs], reverse=True)
-    threshold = costs_sorted[max(0, len(costs_sorted) // 20)]  # 上位5%
-    threshold = max(threshold, 50.0)  # 最低閾値
-
-    # 問題のある遷移を特定し、前後3ノートの範囲で再最適化
-    for idx, cost in transition_costs:
-        if cost < threshold:
-            continue
-
-        # 再最適化ウィンドウ: [idx-2, idx+2]
-        window_start = max(0, idx - 2)
-        window_end = min(len(notes), idx + 3)
-
-        # ウィンドウ内のノートの代替ポジションを試す
-        target_note = notes[idx]
-        target_positions = get_possible_positions(
-            target_note["pitch"], tuning, max_fret
-        )
-        if not target_positions or len(target_positions) <= 1:
-            continue
-
-        # 現在のウィンドウ全体の遷移コスト合計
-        current_window_cost = 0.0
-        for wi in range(window_start + 1, window_end):
-            s, f = notes[wi].get("string", 1), notes[wi].get("fret", 0)
-            ps, pf = notes[wi - 1].get("string", 1), notes[wi - 1].get("fret", 0)
-            current_window_cost += _transition_cost(s, f, ps, pf)
-
-        # 各代替ポジションで試行
-        best_alt = None
-        best_alt_cost = current_window_cost
-
-        for alt_s, alt_f in target_positions:
-            if alt_s == target_note.get("string") and alt_f == target_note.get("fret"):
-                continue  # 現在と同じ
-
-            # 一時的に入れ替えてウィンドウコストを計算
-            orig_s, orig_f = target_note.get("string", 1), target_note.get("fret", 0)
-            target_note["string"] = alt_s
-            target_note["fret"] = alt_f
-
-            alt_window_cost = 0.0
-            for wi in range(window_start + 1, window_end):
-                s, f = notes[wi].get("string", 1), notes[wi].get("fret", 0)
-                ps, pf = notes[wi - 1].get("string", 1), notes[wi - 1].get("fret", 0)
-                alt_window_cost += _transition_cost(s, f, ps, pf)
-
-            # 位置コストも考慮
-            alt_window_cost += _position_cost(alt_s, alt_f)
-            current_with_pos = current_window_cost + _position_cost(orig_s, orig_f)
-
-            if alt_window_cost < best_alt_cost:
-                best_alt_cost = alt_window_cost
-                best_alt = (alt_s, alt_f)
-
-            # 元に戻す
-            target_note["string"] = orig_s
-            target_note["fret"] = orig_f
-
-        if best_alt:
-            target_note["string"] = best_alt[0]
-            target_note["fret"] = best_alt[1]
-
+    
+    # --- Phase 3: Backtrack minimax最適パス ---
+    best_final = min(mm_trellis[-1].items(), key=lambda x: x[1][0])
+    mm_path = [None] * n
+    current = best_final[0]
+    mm_path[-1] = current
+    
+    for i in range(n - 1, 0, -1):
+        _, prev = mm_trellis[i][current]
+        if prev is None:
+            break
+        mm_path[i - 1] = prev
+        current = prev
+    
+    # --- Phase 4: sum-optimal vs minimax-optimal の比較 ---
+    # 現在のパス(sum-optimal)の最大ステップコストを計算
+    sum_max_step = 0.0
+    for i in range(1, n):
+        s, f = notes[i].get("string", 1), notes[i].get("fret", 0)
+        ps, pf = notes[i-1].get("string", 1), notes[i-1].get("fret", 0)
+        step = _transition_cost(s, f, ps, pf) + _position_cost(s, f)
+        sum_max_step = max(sum_max_step, step)
+    
+    # minimax-optimalの最大ステップコスト
+    mm_max_step = best_final[1][0]
+    
+    # minimaxの方が最大ステップコストが小さい場合にのみ置換
+    # 保守的閾値: sum-optimalの最大ステップが100以上(明らかに弾けない)
+    # かつminimax解が50%以上改善する場合にのみ適用
+    if sum_max_step > 100.0 and mm_max_step < sum_max_step * 0.5:
+        replaced = 0
+        for i in range(n):
+            if mm_path[i] is None:
+                continue
+            new_s, new_f = mm_path[i]
+            old_s = notes[i].get("string", 1)
+            old_f = notes[i].get("fret", 0)
+            if new_s != old_s or new_f != old_f:
+                notes[i]["string"] = new_s
+                notes[i]["fret"] = new_f
+                replaced += 1
+        if replaced > 0:
+            print(f"[Minimax Viterbi] {replaced}ノート改善 "
+                  f"(max_step: {sum_max_step:.1f} → {mm_max_step:.1f})")
+    
     return notes
 
 
@@ -709,9 +1184,11 @@ def _fallback_position(pitch: int, tuning: List[int],
 
 def _score_chord(combo: Tuple[Tuple[int, int], ...],
                  prev_fingering: Optional[List[Tuple[int, int]]],
-                 tuning: List[int]) -> float:
+                 tuning: List[int],
+                 chord_name: str = "") -> float:
     """
     和音のスコアリング (高いほど良い)。
+    音楽理論コスト（典型フォーム一致、ルート音制約、構成音一致）を統合。
 
     Parameters
     ----------
@@ -771,15 +1248,22 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
         if melody_string <= 3:
             score -= WEIGHTS["w_melody_high_string"]  # 負の重み → スコア加算
 
+    # ⑩ 音楽理論コスト (坂井論文準拠: 典型フォーム一致 + ルート音 + 構成音)
+    if chord_name:
+        theory_cost = _music_theory_output_cost(combo, chord_name, tuning)
+        score -= theory_cost  # コストを減算 → スコア化
+
     return score
 
 
 def _assign_chord_notes(notes: List[dict], tuning: List[int],
                         max_fret: int,
-                        prev_fingering: Optional[List[Tuple[int, int]]]) -> List[dict]:
+                        prev_fingering: Optional[List[Tuple[int, int]]],
+                        chord_name: str = "") -> List[dict]:
     """
     和音のフィンガリング割り当て。
     全組み合わせを列挙し、_score_chord でスコアリング。
+    音楽理論コスト（典型フォーム一致、ルート音制約）を統合。
     """
     # 各ノートのポジション候補を取得
     note_positions = []
@@ -807,7 +1291,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
         if len(set(strings_used)) != len(strings_used):
             continue
 
-        score = _score_chord(combo, prev_fingering, tuning)
+        score = _score_chord(combo, prev_fingering, tuning, chord_name=chord_name)
 
         if score > best_score:
             best_score = score
@@ -858,13 +1342,16 @@ def _group_simultaneous(notes: List[dict], threshold: float = 0.03) -> List[List
 
 def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                       max_fret: int = MAX_FRET,
-                      initial_position: float = 0.0) -> List[dict]:
+                      initial_position: float = 0.0,
+                      chords: List[dict] = None,
+                      audio_path: str = None) -> List[dict]:
     """
     Assign (string, fret) to each note using Viterbi DP + Minimax postprocessing.
 
-    研究論文ベースの改善版:
+    研究論文ベースの改善版 + 音楽理論統合:
     - Viterbi DP: フレーズ全体で最適パス探索
     - 多属性コスト関数: 位置/遷移/人間工学/音色の4カテゴリ
+    - 音楽理論コスト: 典型フォーム一致/ルート音/構成音 (坂井論文準拠)
     - Minimax後処理: 最大難度の1手を回避
     - ポジション依存フレットスパン: ローポジションはスパン3、ハイはスパン5
 
@@ -872,6 +1359,9 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     ----------
     initial_position : float
         キー検出結果から推定される初期ポジション中心フレット。
+    chords : List[dict], optional
+        コード検出結果。各要素: {'start': float, 'end': float, 'chord': str}
+        Viterbiの出力コストに音楽理論的制約を加えるために使用。
     """
     if tuning is None:
         tuning = STANDARD_TUNING
@@ -879,7 +1369,63 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     if not notes:
         return notes
 
+    # 音楽理論エンジン: 典型フォームDBをロード
+    if chords:
+        _load_chord_forms_db()
+        print(f"[string_assigner] 音楽理論エンジン起動: {len(chords)}コード区間, "
+              f"典型フォームDB={len(_CHORD_FORMS_DB or [])}個")
+
+    # 弦分類器CNN: audio_pathが指定されている場合、各ノートに弦確率を注入
+    if audio_path and os.path.exists(audio_path):
+        clf = _load_string_classifier()
+        if clf:
+            injected = 0
+            for note in notes:
+                if 'cnn_string_probs' not in note:  # 既存のpropsを上書きしない
+                    probs = _predict_string_probs(
+                        audio_path, note.get('start', 0), note.get('pitch', 60)
+                    )
+                    if probs:
+                        note['cnn_string_probs'] = probs
+                        injected += 1
+            if injected > 0:
+                print(f"[string_assigner] 弦分類器CNN: {injected}/{len(notes)}ノートに弦確率注入")
+
     # Group simultaneous notes (within 10ms — アルペジオの順次音を分離)
+    # CNN弦分類器が利用可能な場合: CNN-first + DP後段修正
+    has_cnn = any(note.get('cnn_string_probs') for note in notes)
+    
+    if has_cnn:
+        # === CNN-first アーキテクチャ ===
+        # Step 1: CNN argmaxで弦を決定（物理的可能性チェック付き）
+        for note in notes:
+            cnn_probs = note.get('cnn_string_probs')
+            positions = get_possible_positions(note["pitch"], tuning, max_fret)
+            if not positions:
+                positions = [_fallback_position(note["pitch"], tuning, max_fret)]
+            
+            if cnn_probs:
+                # CNN確率の高い順に物理的に可能な弦を選択
+                sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
+                assigned = False
+                for s_cand, prob in sorted_strings:
+                    pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                    if pos_for_string:
+                        note["string"] = pos_for_string[0][0]
+                        note["fret"] = pos_for_string[0][1]
+                        assigned = True
+                        break
+                if not assigned:
+                    note["string"] = positions[0][0]
+                    note["fret"] = positions[0][1]
+            else:
+                # CNN確率なし: デフォルト割り当て
+                note["string"] = positions[0][0]
+                note["fret"] = positions[0][1]
+        
+        return notes
+    
+    # === 従来のViterbi DP アーキテクチャ（CNN未使用時）===
     groups = _group_simultaneous(notes, threshold=0.01)
 
     # フレーズに分割 (0.5秒以上の休符で区切る)
@@ -898,6 +1444,15 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     result = []
 
     for phrase in phrases:
+        # 和音グループにコード情報を付与
+        if chords:
+            for group in phrase:
+                group_time = group[0].get("start", 0)
+                chord_info = _get_chord_at_time(chords, group_time)
+                if chord_info:
+                    for note in group:
+                        note["_chord_name"] = chord_info.get("chord", "")
+
         # Viterbi DPでフレーズ全体を最適化
         phrase_result = _viterbi_single_notes(
             phrase, tuning, max_fret, initial_position
@@ -906,8 +1461,5 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
 
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
-
-    # ポストプロセスは不要 — Viterbi DPの最適化結果を尊重する
-    # （以前の「開放弦強制戻し」はDPの成果を台無しにしていたため除去）
 
     return result

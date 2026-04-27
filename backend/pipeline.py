@@ -273,10 +273,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         traceback.print_exc()
         report("notes", f"MoE失敗: {e}, Basic Pitchにフォールバック")
 
-    # 不要な後処理（Basic Pitchフォールバック、ノイズフィルタ、DP弦割り当て、リズム量子化）は
-    # Pure MoE の精度を阻害することが判明したため、V2.0 本番デフォルトとして完全に廃止しました。
-
-    # --- Step 2.4: コード検出 (musical_filterの前に実行) ---
+    # --- Step 2.4: コード検出 ---
     chords = []
     try:
         from chord_detector import detect_chords  # type: ignore
@@ -289,8 +286,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("chords", f"コード検出スキップ: {e}")
 
+    # --- テクニック検出 (h/p/slide/bend) ---
     report("technique", "テクニック検出中 (h/p/slide/bend)...")
-
     try:
         from technique_detector import detect_techniques, add_techniques_to_musicxml_notes  # type: ignore
         t0 = time.time()
@@ -301,15 +298,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("technique", f"テクニック検出スキップ: {e}")
 
-    # --- Palm Mute / Harmonic 検出 (テクニック分類CNN) ---
+    # --- Palm Mute / Harmonic 検出 ---
     report("technique_pm", "PM/NH検出中...")
     try:
         from ensemble_transcriber import _annotate_techniques  # type: ignore
         t0 = time.time()
-        # 既存のh/p/slideを保持し、technique=Noneのノートのみ対象
         pre_techs = {i: n.get("technique") for i, n in enumerate(notes) if n.get("technique")}
         notes = _annotate_techniques(str(guitar_wav), notes, report=lambda msg: report("technique_pm", msg))
-        # h/p/slideが上書きされた場合は復元
         for i, tech in pre_techs.items():
             if i < len(notes) and tech in ("h", "p", "/", "\\"):
                 notes[i]["technique"] = tech
@@ -319,7 +314,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("technique_pm", f"PM/NH検出スキップ: {e}")
 
-    # --- Step 2.9: チューニング推定 ---
+    # --- チューニング推定 ---
     tuning_suggestion = {"tuning": tuning_name, "confidence": 0}
     try:
         from tuning_detector import detect_tuning  # type: ignore
@@ -331,6 +326,33 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             report("tuning_detect", f"チューニング確認: {tuning_name}")
     except Exception as e:
         report("tuning_detect", f"チューニング推定スキップ: {e}")
+
+    # --- Step: 弦/フレット最適化 (Viterbi DP) ---
+    # Pure MoE のノート検出精度は維持しつつ、運指のみ DP で最適化する。
+    # MoE の個別モデルは音響的に最も確からしい弦を出力するが、
+    # フレーズ全体の演奏可能性（ポジション連続性、指の物理制約）は考慮していない。
+    # Viterbi DP はフレーズ全体で最適な弦/フレットパスを探索する。
+    report("assign", "運指最適化中 (Viterbi DP)...")
+    t0 = time.time()
+    try:
+        from string_assigner import assign_strings_dp  # type: ignore
+
+        # カポ適用チューニング
+        capo = capo_result.get("capo", 0)
+        if capo > 0:
+            dp_tuning = [p + capo for p in tuning]
+        else:
+            dp_tuning = tuning
+
+        notes = assign_strings_dp(
+            notes,
+            tuning=dp_tuning,
+            initial_position=initial_position,
+            chords=chords,  # 音楽理論エンジン: コード情報をViterbi DPに渡す
+        )
+        report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        report("assign", f"運指最適化スキップ（MoE出力をそのまま使用）: {e}")
 
     # Save assigned notes
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
@@ -361,6 +383,25 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         json.dump(_to_native(tech_map), f)
 
     report("musicxml", f"TAB譜生成完了 ({time.time()-t0:.1f}s)")
+
+    # --- Step: MuseScoreによる五線譜+TAB譜PDF生成 ---
+    try:
+        from musescore_renderer import render_pdf_with_musescore
+        report("pdf", "五線譜+TAB譜PDF生成中 (MuseScore)...")
+        t0 = time.time()
+        pdf_path = session_dir / "tab.pdf"
+        render_pdf_with_musescore(str(musicxml_path), str(pdf_path), title=title or "Guitar TAB")
+        report("pdf", f"PDF生成完了 ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        report("pdf", f"MuseScore PDF生成スキップ: {e}")
+        # フォールバック: 旧reportlabレンダラー
+        try:
+            from pdf_renderer import musicxml_to_pdf
+            pdf_path = session_dir / "tab.pdf"
+            musicxml_to_pdf(str(musicxml_path), str(pdf_path), title=title or "Guitar TAB")
+            report("pdf", f"PDF生成完了 (reportlab fallback)")
+        except Exception as e2:
+            report("pdf", f"PDF生成失敗: {e2}")
 
     return {
         "bpm": bpm,

@@ -68,7 +68,7 @@ MARGIN_TOP = 20 * mm
 MARGIN_BOTTOM = 20 * mm
 STAFF_LINE_SPACING = 8  # 弦間の間隔(pt)
 STAFF_HEIGHT = STAFF_LINE_SPACING * 5  # 6弦なので5間隔
-SYSTEM_SPACING = 32  # 段間の余白(pt)
+SYSTEM_SPACING = 48  # 段間の余白(pt) — リズムステム描画スペース含む
 NOTES_AREA_WIDTH = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT
 BAR_MIN_WIDTH = 80  # 1小節の最小幅(pt)
 
@@ -129,7 +129,12 @@ def musicxml_to_pdf(musicxml_path: str, output_path: str, title: str = "Guitar T
     
     # タイトル
     c.setFont(jp_font, 16)
-    c.drawCentredString(PAGE_W / 2, y, title)
+    display_title = title
+    if c.stringWidth(display_title, jp_font, 16) > PAGE_W - 80:
+        c.setFont(jp_font, 12)
+        if c.stringWidth(display_title, jp_font, 12) > PAGE_W - 80:
+            display_title = display_title[:40] + "..."
+    c.drawCentredString(PAGE_W / 2, y, display_title)
     y -= 20
     
     # メタ情報
@@ -176,10 +181,21 @@ def _parse_measures(root: ET.Element) -> list:
     if part is None:
         return measures
     
+    # divisionsを取得（MusicXMLのquarter noteあたりのdivision数）
+    divisions = 12  # デフォルト
+    div_el = root.find(".//attributes/divisions")
+    if div_el is not None and div_el.text:
+        divisions = int(div_el.text)
+    
     for measure_el in part.findall("measure"):
         measure_num = measure_el.get("number", "?")
         notes = []
         chord_name = None
+        
+        # divisionsの更新（小節内で変わる場合）
+        local_div = measure_el.find("attributes/divisions")
+        if local_div is not None and local_div.text:
+            divisions = int(local_div.text)
         
         # コード(Harmony)
         harmony = measure_el.find("harmony")
@@ -221,14 +237,18 @@ def _parse_measures(root: ET.Element) -> list:
             
             is_chord = note_el.find("chord") is not None
             
+            # duration情報
+            dur_el = note_el.find("duration")
+            dur_divs = int(dur_el.text) if dur_el is not None and dur_el.text else divisions
+            type_el = note_el.find("type")
+            note_type = type_el.text if type_el is not None and type_el.text else "quarter"
+            
             # テクニック情報
             technique = "normal"
             harmonic = technical.find("harmonic")
             if harmonic is not None:
                 technique = "harmonic"
-            
-            notehead = note_el.find("notehead")
-            if notehead is not None and notehead.text == "x":
+            elif note_el.find(".//ghost") is not None:
                 technique = "ghost"
             
             notes.append({
@@ -236,6 +256,9 @@ def _parse_measures(root: ET.Element) -> list:
                 "fret": fret_num,
                 "chord": is_chord,
                 "technique": technique,
+                "duration": dur_divs,
+                "type": note_type,
+                "divisions": divisions,
             })
         
         measures.append({
@@ -309,7 +332,14 @@ def _draw_system(c: canvas.Canvas, x: float, y: float, width: float,
 
 def _draw_notes_in_bar(c: canvas.Canvas, bar_x: float, y: float,
                        bar_width: float, notes: list):
-    """1小節内のノートを描画"""
+    """1小節内のノートを描画（フレット番号 + リズムステム）
+    
+    音楽理論に基づく配置ルール:
+    - ノートのX座標は duration（拍内の位置）に比例させる
+    - リズムステムは拍（beat）単位でグループ化して連桁（beam）
+    - 全音符=ステムなし, 2分=ステム+白丸, 4分=ステムのみ
+    - 8分=1本ビーム, 16分=2本ビーム
+    """
     if not notes:
         return
     
@@ -326,17 +356,38 @@ def _draw_notes_in_bar(c: canvas.Canvas, bar_x: float, y: float,
     if current_group:
         groups.append(current_group)
     
-    # 各グループを均等配置
-    num_groups = len(groups)
-    padding = 10  # 小節端からの余白
+    # --- Duration比例配置 ---
+    # 各グループのtick位置を計算し、小節幅に比例配置する
+    divisions = notes[0].get("divisions", 12) if notes else 12
+    beats_per_bar = 4  # TODO: 拍子情報をmeasureから渡す
+    bar_total_ticks = divisions * beats_per_bar
+    
+    # 各グループの開始tick位置を累積計算
+    tick_positions = []
+    current_tick = 0
+    for group in groups:
+        tick_positions.append(current_tick)
+        dur = group[0].get("duration", divisions)
+        current_tick += dur
+    
+    padding = 8  # 小節端からの余白
     usable_width = bar_width - padding * 2
     
+    # リズムステムの基準位置（タブ譜6弦線の4pt下）
+    stem_base_y = y - STAFF_HEIGHT - 4
+    group_render_data = []  # 描画用データ
+    
     for g_idx, group in enumerate(groups):
-        if num_groups == 1:
-            note_x = bar_x + bar_width / 2
-        else:
-            note_x = bar_x + padding + (g_idx / (num_groups)) * usable_width + usable_width / (num_groups * 2)
+        # Duration比例のX座標
+        tick = tick_positions[g_idx]
+        ratio = tick / max(bar_total_ticks, 1)
+        note_x = bar_x + padding + ratio * usable_width
         
+        # グループのnote typeを取得（先頭ノートから）
+        note_type = group[0].get("type", "quarter")
+        group_dur = group[0].get("duration", divisions)
+        
+        # --- フレット番号の描画 ---
         for note in group:
             string_idx = note["string"] - 1  # 0-indexed (0=1弦=上)
             note_y = y - string_idx * STAFF_LINE_SPACING
@@ -349,14 +400,181 @@ def _draw_notes_in_bar(c: canvas.Canvas, bar_x: float, y: float,
             
             # フレット番号
             c.setFont("Helvetica-Bold", 8)
-            if note["technique"] == "harmonic":
+            if note.get("technique") == "harmonic":
                 c.setFillColorRGB(0, 0.5, 0)
-            elif note["technique"] == "ghost":
+            elif note.get("technique") == "ghost":
                 c.setFillColorRGB(0.5, 0.5, 0.5)
             else:
                 c.setFillColorRGB(0, 0, 0)
             c.drawCentredString(note_x, note_y - 3, fret_text)
             c.setFillColorRGB(0, 0, 0)
+        
+        # グループ描画データを保存
+        group_render_data.append({
+            "x": note_x,
+            "type": note_type,
+            "duration": group_dur,
+            "tick": tick,
+        })
+    
+    # --- リズムステム＆ビームの描画 ---
+    _draw_rhythm_notation(c, group_render_data, stem_base_y, divisions)
+
+
+def _draw_rhythm_notation(c: canvas.Canvas, groups: list, base_y: float, divisions: int):
+    """
+    TAB譜のリズム表記を音楽理論に基づいて描画する。
+    
+    音楽理論ルール:
+    1. 全音符(whole): ステムなし
+    2. 2分音符(half): ステムのみ（下向き縦線）
+    3. 4分音符(quarter): ステムのみ（下向き縦線）
+    4. 8分音符(eighth): ステム + 旗1本。連続する場合は1本の水平ビームで連結
+    5. 16分音符(16th): ステム + 旗2本。連続する場合は2本の水平ビームで連結
+    6. ビーム（連桁）は1拍（= divisions ticks）の範囲内でのみ連結する
+    """
+    if not groups:
+        return
+    
+    stem_len = 12
+    stem_top = base_y
+    stem_bottom = base_y - stem_len
+    beam_thickness = 2.0
+    beam_spacing = 3.5  # 1本目と2本目のビーム間隔
+    
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setFillColorRGB(0, 0, 0)
+    
+    # --- Step 1: 全グループにステムを描画 ---
+    for g in groups:
+        x = g["x"]
+        ntype = g["type"]
+        c.setLineWidth(0.8)
+        
+        if ntype == "whole":
+            # 全音符: ステムなし（何も描かない）
+            pass
+        elif ntype == "half":
+            # 2分音符: ステムのみ
+            c.line(x, stem_top, x, stem_bottom)
+        else:
+            # 4分・8分・16分: ステムを描画
+            c.line(x, stem_top, x, stem_bottom)
+    
+    # --- Step 2: 8分・16分音符を拍（beat）単位でグループ化 ---
+    divs = max(1, divisions)
+    beam_groups = []
+    current_beam = []
+    
+    for g in groups:
+        ntype = g["type"]
+        tick = g.get("tick", 0)
+        beat_idx = int(tick / divs)
+        
+        if ntype in ("eighth", "16th"):
+            # 拍が変わったら新グループ
+            if current_beam and current_beam[-1]["_beat"] != beat_idx:
+                beam_groups.append(current_beam)
+                current_beam = []
+            g["_beat"] = beat_idx
+            current_beam.append(g)
+        else:
+            # 全音符・2分・4分はビームを切る
+            if current_beam:
+                beam_groups.append(current_beam)
+                current_beam = []
+    if current_beam:
+        beam_groups.append(current_beam)
+    
+    # --- Step 3: 各ビームグループの描画 ---
+    for bg in beam_groups:
+        if len(bg) == 1:
+            # 孤立した8分/16分 → 旗（flag）を描く
+            _draw_flag(c, bg[0]["x"], stem_bottom, bg[0]["type"])
+        else:
+            # 複数ノート → 水平ビーム（beam）で連結
+            start_x = bg[0]["x"]
+            end_x = bg[-1]["x"]
+            
+            # 1本目のビーム（8分音符レベル）
+            c.setLineWidth(beam_thickness)
+            c.line(start_x, stem_bottom, end_x, stem_bottom)
+            
+            # 2本目のビーム（16分音符レベル）
+            # 16分音符が連続する区間のみ2本目を描く
+            _draw_16th_sub_beams(c, bg, stem_bottom, beam_spacing, beam_thickness)
+    
+    c.setLineWidth(0.5)  # リセット
+
+
+def _draw_flag(c: canvas.Canvas, x: float, stem_bottom: float, note_type: str):
+    """
+    孤立した8分/16分音符の旗（flag）を描画する。
+    旗は右向きの短い曲線（近似として斜め線）。
+    """
+    c.setLineWidth(1.2)
+    flag_len = 6
+    flag_drop = 4  # 旗の垂れ下がり
+    
+    # 1本目の旗
+    p = c.beginPath()
+    p.moveTo(x, stem_bottom)
+    p.curveTo(x + flag_len * 0.3, stem_bottom - flag_drop * 0.2,
+              x + flag_len * 0.7, stem_bottom + flag_drop * 0.3,
+              x + flag_len, stem_bottom + flag_drop)
+    c.drawPath(p, stroke=1, fill=0)
+    
+    if note_type == "16th":
+        # 2本目の旗（3.5pt上にずらす）
+        offset = 3.5
+        p2 = c.beginPath()
+        p2.moveTo(x, stem_bottom + offset)
+        p2.curveTo(x + flag_len * 0.3, stem_bottom + offset - flag_drop * 0.2,
+                   x + flag_len * 0.7, stem_bottom + offset + flag_drop * 0.3,
+                   x + flag_len, stem_bottom + offset + flag_drop)
+        c.drawPath(p2, stroke=1, fill=0)
+
+
+def _draw_16th_sub_beams(c: canvas.Canvas, bg: list, stem_bottom: float,
+                         beam_spacing: float, beam_thickness: float):
+    """
+    ビームグループ内で16分音符が連続する区間に2本目のサブビームを描画する。
+    
+    音楽理論ルール:
+    - 8分音符の間に挟まれた単独16分 → 短いサブビーム（自ノート側に寄せる）
+    - 連続16分 → 区間全体に2本目ビーム
+    """
+    c.setLineWidth(beam_thickness)
+    sub_y = stem_bottom + beam_spacing
+    
+    i = 0
+    while i < len(bg):
+        if bg[i]["type"] == "16th":
+            # 連続する16分音符の区間を見つける
+            j = i
+            while j < len(bg) and bg[j]["type"] == "16th":
+                j += 1
+            
+            if j - i == 1:
+                # 単独16分 → 短いサブビーム
+                x = bg[i]["x"]
+                if i > 0:
+                    # 前のノートの方向に寄せる
+                    prev_x = bg[i - 1]["x"]
+                    c.line(prev_x + (x - prev_x) * 0.5, sub_y, x, sub_y)
+                elif i < len(bg) - 1:
+                    # 後のノートの方向に寄せる
+                    next_x = bg[i + 1]["x"]
+                    c.line(x, sub_y, x + (next_x - x) * 0.5, sub_y)
+                else:
+                    c.line(x, sub_y, x + 5, sub_y)
+            else:
+                # 連続16分 → 区間全体にサブビーム
+                c.line(bg[i]["x"], sub_y, bg[j - 1]["x"], sub_y)
+            
+            i = j
+        else:
+            i += 1
 
 
 if __name__ == "__main__":
@@ -370,3 +588,4 @@ if __name__ == "__main__":
     
     result = musicxml_to_pdf(xml_path, pdf_path)
     print(f"PDF generated: {result}")
+
