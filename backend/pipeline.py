@@ -349,6 +349,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             tuning=dp_tuning,
             initial_position=initial_position,
             chords=chords,  # 音楽理論エンジン: コード情報をViterbi DPに渡す
+            audio_path=str(wav_path),  # CNN弦分類器: 音声特徴量から弦推定
         )
         report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
