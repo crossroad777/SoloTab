@@ -1396,17 +1396,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     has_cnn = any(note.get('cnn_string_probs') for note in notes)
     
     if has_cnn:
-        # === CNN+LSTM ハイブリッド アーキテクチャ ===
-        # LSTMがCNN確率+ピッチ+タイミングの文脈を考慮して弦を予測 (val 98.92%)
-        try:
-            from fingering_model import predict_strings as lstm_predict
-            notes = lstm_predict(notes, tuning=tuning)
-            print(f"[string_assigner] LSTM hybrid: {len(notes)} notes assigned")
-            return notes
-        except Exception as e:
-            print(f"[string_assigner] LSTM fallback to CNN-first: {e}")
+        # === CNN-first アーキテクチャ + 開放弦優先 ===
+        # LSTM hybrid は GuitarSet Hex→マイク音声のドメインギャップで汎化失敗のため無効化
+        OPEN_STRING_PROB_THRESHOLD = 0.01
         
-        # === CNN-first フォールバック ===
         for note in notes:
             cnn_probs = note.get('cnn_string_probs')
             positions = get_possible_positions(note["pitch"], tuning, max_fret)
@@ -1414,18 +1407,32 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                 positions = [_fallback_position(note["pitch"], tuning, max_fret)]
             
             if cnn_probs:
-                sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
-                assigned = False
-                for s_cand, prob in sorted_strings:
-                    pos_for_string = [(s, f) for s, f in positions if s == s_cand]
-                    if pos_for_string:
-                        note["string"] = pos_for_string[0][0]
-                        note["fret"] = pos_for_string[0][1]
-                        assigned = True
-                        break
-                if not assigned:
-                    note["string"] = positions[0][0]
-                    note["fret"] = positions[0][1]
+                # 開放弦優先チェック
+                open_positions = [(s, f) for s, f in positions if f == 0]
+                
+                if open_positions:
+                    for os_s, os_f in open_positions:
+                        os_prob = cnn_probs.get(str(os_s), cnn_probs.get(os_s, 0))
+                        if os_prob >= OPEN_STRING_PROB_THRESHOLD:
+                            note["string"] = os_s
+                            note["fret"] = os_f
+                            break
+                    else:
+                        open_positions = None
+                
+                if not open_positions:
+                    sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
+                    assigned = False
+                    for s_cand, prob in sorted_strings:
+                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                        if pos_for_string:
+                            note["string"] = pos_for_string[0][0]
+                            note["fret"] = pos_for_string[0][1]
+                            assigned = True
+                            break
+                    if not assigned:
+                        note["string"] = positions[0][0]
+                        note["fret"] = positions[0][1]
             else:
                 note["string"] = positions[0][0]
                 note["fret"] = positions[0][1]
