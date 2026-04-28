@@ -21,7 +21,7 @@ for n in notes[:18]:
     print(f"  t={n['start']:.3f} pitch={n['pitch']}({pc}) str={n['string']} fret={n['fret']}")
 
 # 音楽理論フィルタ適用
-result = apply_music_theory_filter(notes, chords)
+result, rhythm_info = apply_music_theory_filter(notes, chords)
 
 # 補正後の冒頭
 print(f"\n=== AFTER (first 18 notes) ===")

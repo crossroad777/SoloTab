@@ -18,7 +18,8 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                           tuning: list | None = None,
                           chords: list | None = None,
                           time_signature: str = "4/4",
-                          noise_gate: float = 0.0) -> tuple[str, list]:
+                          noise_gate: float = 0.0,
+                          rhythm_info: dict | None = None) -> tuple[str, list]:
     """
     Generate a MusicXML string with TAB staff only.
 
@@ -84,7 +85,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
         filtered_notes = [max(notes, key=lambda x: float(x.get("velocity", 0)))]
 
     # Assign notes to bars and beats
-    note_entries = _assign_to_bars(filtered_notes, beats, beats_per_bar)
+    note_entries = _assign_to_bars(filtered_notes, beats, beats_per_bar, rhythm_info=rhythm_info)
 
     # Calculate total bars
     if note_entries:
@@ -346,7 +347,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
     return header + xml_str, technique_map
 
 
-def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int) -> List[dict]:
+def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, rhythm_info: dict | None = None) -> List[dict]:
     """Assign each note to a bar and beat position (in divisions).
     
     同時発音ノート(50ms以内)は先にグルーピングし、
@@ -383,10 +384,17 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int) -
             frac = max(0.0, min(frac, 0.99))
             
             # --- MUSICAL QUANTIZATION ---
-            # Force raw fractions to snap precisely to 16th (3,6,9) or 8th-triplet (4,8) grids
-            # This prevents 16th/32nd-note tuplet chaos from raw mathematical timing.
+            # Force raw fractions to snap precisely to musical grids.
+            # Triplet mode: snap to 1/3 divisions (0, 4, 8)
+            # Straight mode: snap to 1/4 and 1/3 (0, 3, 4, 6, 8, 9, 12)
             raw_sub = frac * divisions
-            grid = [0, 3, 4, 6, 8, 9, 12]
+            
+            is_triplet = (rhythm_info or {}).get('subdivision') == 'triplet'
+            if is_triplet:
+                # 3連符: 0, 4, 8 のみ (= beat/3 divisions)
+                grid = [0, 4, 8, 12]
+            else:
+                grid = [0, 3, 4, 6, 8, 9, 12]
             sub_divs = min(grid, key=lambda x: abs(x - raw_sub))
             if sub_divs == 12:
                 sub_divs = 0

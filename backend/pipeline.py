@@ -332,9 +332,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # キーはコード進行から自動推定。
     report("theory", "音楽理論フィルタ適用中...")
     t0 = time.time()
+    rhythm_info = {'subdivision': 'eighth', 'confidence': 0.0}
     try:
         from music_theory import apply_music_theory_filter  # type: ignore
-        notes = apply_music_theory_filter(notes, chords, tuning=tuning)
+        notes, rhythm_info = apply_music_theory_filter(notes, chords, tuning=tuning, beats=beats)
         report("theory", f"音楽理論フィルタ完了 ({time.time()-t0:.1f}s)")
     except Exception as e:
         report("theory", f"音楽理論フィルタスキップ: {e}")
@@ -384,6 +385,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         tuning=tuning,
         chords=chords,
         time_signature=time_signature,
+        rhythm_info=rhythm_info,
     )
 
     musicxml_path = session_dir / "tab.musicxml"

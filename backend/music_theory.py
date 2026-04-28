@@ -312,7 +312,8 @@ def correct_note_pitch(note: Dict, chords: List[Dict],
 
 
 def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
-                                tuning: List[int] = None) -> List[Dict]:
+                                tuning: List[int] = None,
+                                beats: List[float] = None) -> tuple:
     """
     音楽理論フィルタをノートリスト全体に適用する。
     
@@ -320,9 +321,10 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
         notes: 検出済みノートリスト [{'start', 'pitch', 'string', 'fret', ...}]
         chords: コード検出結果 [{'chord', 'start', 'end'}, ...]
         tuning: チューニング (デフォルト: standard)
+        beats: ビート時刻リスト (リズム検出用)
     
     Returns:
-        補正済みノートリスト
+        (補正済みノートリスト, rhythm_info dict)
     """
     if tuning is None:
         tuning = STANDARD_TUNING
@@ -628,34 +630,83 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
     # =====================================================================
     # ノート間の時間間隔から3連符パターンを検出し記録。
     
-    triplet_count = 0
-    if len(result) >= 3:
-        for i in range(len(result) - 2):
-            t0 = result[i]['start']
-            t1 = result[i+1]['start']
-            t2 = result[i+2]['start']
-            
-            d1 = t1 - t0
-            d2 = t2 - t1
-            
-            if d1 > 0.05 and d2 > 0.05:  # 極端に短い間隔は除外
-                ratio = d1 / d2 if d2 > 0 else 0
-                # 3連符: 等間隔 (ratio ≈ 1.0)
-                if 0.8 <= ratio <= 1.2:
-                    # 3連の1拍分がビート間隔の1/3か確認
-                    # BPM 90, 3/4: beat=0.667s, triplet=0.222s
-                    if 0.1 <= d1 <= 0.35:
-                        result[i]['_rhythm'] = 'triplet'
-                        result[i+1]['_rhythm'] = 'triplet'
-                        result[i+2]['_rhythm'] = 'triplet'
-                        triplet_count += 1
+    # =====================================================================
+    # Phase 6: 曲全体のリズム基盤検出 (IOIベース)
+    # =====================================================================
+    # ノート間隔(IOI)とビート間隔の比率から、曲の基本subdivision を判定。
+    # triplet (3連符) vs straight (通常) vs sixteenth (16分) 
     
-    print(f"[music_theory] Triplet groups detected: {triplet_count}")
+    rhythm_info = {'subdivision': 'eighth', 'confidence': 0.0}
+    
+    if len(result) >= 10 and beats:
+        import numpy as np
+        onsets = sorted(set(n['start'] for n in result))
+        ioi = np.diff(onsets)
+        # 極端に短い(同時発音)や長い(休符)は除外
+        ioi_filtered = ioi[(ioi > 0.05) & (ioi < 1.0)]
+        
+        if len(ioi_filtered) > 10:
+            beat_times = beats if isinstance(beats, list) else list(beats)
+            if len(beat_times) >= 2:
+                beat_interval = np.median(np.diff(beat_times))
+            else:
+                beat_interval = 60.0 / 90.0  # fallback
+            
+            # IOIの中央値
+            median_ioi = np.median(ioi_filtered)
+            
+            # ビート間隔に対する比率
+            ratio = beat_interval / median_ioi if median_ioi > 0 else 1.0
+            
+            # ratio ≈ 3 → 3連符 (1拍に3音)
+            # ratio ≈ 2 → 8分音符 (1拍に2音)
+            # ratio ≈ 4 → 16分音符 (1拍に4音)
+            # ratio ≈ 6 → 3連16分 or ビートが2拍単位
+            
+            dist_triplet = abs(ratio - 3.0)
+            dist_eighth = abs(ratio - 2.0)
+            dist_16th = abs(ratio - 4.0)
+            dist_triplet_2beat = abs(ratio - 6.0)  # 2拍単位ビート + 3連
+            
+            min_dist = min(dist_triplet, dist_eighth, dist_16th, dist_triplet_2beat)
+            
+            if min_dist == dist_triplet:
+                rhythm_info = {'subdivision': 'triplet', 
+                              'confidence': 1.0 - min(dist_triplet, 1.0),
+                              'notes_per_beat': 3}
+            elif min_dist == dist_triplet_2beat:
+                # ビートが2拍単位で検出されている + 3連符
+                rhythm_info = {'subdivision': 'triplet', 
+                              'confidence': 1.0 - min(dist_triplet_2beat, 1.0),
+                              'notes_per_beat': 3,
+                              'beat_halved': True}
+            elif min_dist == dist_16th:
+                rhythm_info = {'subdivision': 'sixteenth',
+                              'confidence': 1.0 - min(dist_16th, 1.0),
+                              'notes_per_beat': 4}
+            else:
+                rhythm_info = {'subdivision': 'eighth',
+                              'confidence': 1.0 - min(dist_eighth, 1.0),
+                              'notes_per_beat': 2}
+            
+            rhythm_info['median_ioi'] = float(median_ioi)
+            rhythm_info['beat_interval'] = float(beat_interval)
+            rhythm_info['ratio'] = float(ratio)
+            
+            # 全ノートにリズム情報を付与
+            if rhythm_info['subdivision'] == 'triplet':
+                for n in result:
+                    n['_rhythm'] = 'triplet'
+            
+            print(f"[music_theory] Rhythm: {rhythm_info['subdivision']} "
+                  f"(confidence={rhythm_info['confidence']:.2f}, "
+                  f"ratio={ratio:.2f}, median_ioi={median_ioi:.3f}s, "
+                  f"beat_interval={beat_interval:.3f}s)")
     
     total_corrected = corrected_count + pattern_completions + voicing_corrections
     print(f"[music_theory] Total corrections: {total_corrected} / {len(result)} notes")
     
-    return result
+    return result, rhythm_info
 
 
 # =============================================================================
