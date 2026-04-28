@@ -358,17 +358,104 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
         
         result.append(note)
     
-    # --- 統計 ---
+    # --- 統計 (スケール補正) ---
     chord_tones = sum(1 for n in result if n.get('_is_chord_tone'))
     scale_tones = sum(1 for n in result if n.get('_is_scale_tone'))
     non_scale = sum(1 for n in result if n.get('_theory_flag') == 'non_scale')
     
-    print(f"[music_theory] Results: {len(result)} notes")
+    print(f"[music_theory] Scale filter: {len(result)} notes")
     print(f"  Chord tones: {chord_tones} ({100*chord_tones/max(len(result),1):.1f}%)")
     print(f"  Scale tones: {scale_tones} ({100*scale_tones/max(len(result),1):.1f}%)")
     print(f"  Non-scale:   {non_scale} ({100*non_scale/max(len(result),1):.1f}%)")
-    print(f"  Corrected:   {corrected_count}")
-    print(f"  Removed:     {removed_count}")
+    print(f"  Scale corrected: {corrected_count}, Removed: {removed_count}")
+    
+    # =====================================================================
+    # Phase 2: インターバル外れ値検出（双方向コンテキスト）
+    # =====================================================================
+    # 前後のノートの両方と比較し、「前からも後からも離れている」ノートのみ
+    # をオクターブ補正する。片方だけ見ると誤補正の連鎖が起きる。
+    
+    MAX_INTERVAL = 9  # 長6度超 = 疑わしい
+    SIMULTANEOUS_THRESHOLD = 0.02
+    
+    interval_corrections = 0
+    
+    # 時間順ソート
+    result.sort(key=lambda n: (n['start'], -n['pitch']))
+    
+    # 声部分離: メロディ(最高音)のみ抽出
+    melody_indices = []
+    i = 0
+    while i < len(result):
+        group_start = result[i]['start']
+        group = [i]
+        j = i + 1
+        while j < len(result) and abs(result[j]['start'] - group_start) < SIMULTANEOUS_THRESHOLD:
+            group.append(j)
+            j += 1
+        
+        if len(group) >= 2:
+            pitches = [(result[idx]['pitch'], idx) for idx in group]
+            pitches.sort()
+            melody_indices.append(pitches[-1][1])  # 最高音
+        else:
+            melody_indices.append(i)
+        i = j
+    
+    # メロディラインの外れ値検出（前後の両方と比較）
+    for mi in range(1, len(melody_indices) - 1):
+        idx = melody_indices[mi]
+        prev_idx = melody_indices[mi - 1]
+        next_idx = melody_indices[mi + 1]
+        
+        pitch = result[idx]['pitch']
+        prev_pitch = result[prev_idx]['pitch']
+        next_pitch = result[next_idx]['pitch']
+        
+        interval_prev = abs(pitch - prev_pitch)
+        interval_next = abs(pitch - next_pitch)
+        
+        # 前後両方に対して大きなインターバル → 外れ値
+        if interval_prev > MAX_INTERVAL and interval_next > MAX_INTERVAL:
+            # 前後のノートは互いに近いか確認（外れ値でないことの証拠）
+            prev_next_interval = abs(prev_pitch - next_pitch)
+            if prev_next_interval > MAX_INTERVAL:
+                continue  # 前後も離れている → 全体的にジャンプしている → 補正不要
+            
+            # オクターブ補正候補
+            chord_root, _, chord_tone_pcs = find_chord_at_time(chords, result[idx]['start'])
+            midpoint = (prev_pitch + next_pitch) / 2
+            
+            best_alt = None
+            best_dist = float('inf')
+            
+            for octave_shift in [-12, 12]:
+                alt_pitch = pitch + octave_shift
+                if alt_pitch < GUITAR_MIN_PITCH or alt_pitch > GUITAR_MAX_PITCH:
+                    continue
+                alt_pc = alt_pitch % 12
+                if alt_pc not in scale_pcs:
+                    continue
+                
+                dist = abs(alt_pitch - midpoint)
+                if dist < best_dist:
+                    best_alt = alt_pitch
+                    best_dist = dist
+            
+            if best_alt is not None and best_dist < abs(pitch - midpoint):
+                original = result[idx]['pitch']
+                result[idx]['pitch'] = best_alt
+                result[idx]['_theory_flag'] = 'interval_corrected'
+                result[idx]['_original_pitch'] = original
+                result[idx]['_correction_reason'] = (
+                    f"octave_outlier: {original}->{best_alt} "
+                    f"(prev={prev_pitch}, next={next_pitch})"
+                )
+                interval_corrections += 1
+    
+    print(f"[music_theory] Interval corrections: {interval_corrections}")
+    total_corrected = corrected_count + interval_corrections
+    print(f"[music_theory] Total corrections: {total_corrected} / {len(result)} notes")
     
     return result
 
