@@ -470,7 +470,189 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
     result.sort(key=lambda n: (n['start'], -n['pitch']))
     
     print(f"[music_theory] Pattern completions: {pattern_completions}")
-    total_corrected = corrected_count + pattern_completions
+    
+    # =====================================================================
+    # Phase 3: コードボイシングによる弦割り当て修正
+    # =====================================================================
+    # コードの標準ボイシングを使って、同じピッチを出せる複数の弦/フレット
+    # 候補から最も自然な選択肢を選ぶ。
+    # 例: B3(59) → 3弦4フレット vs 2弦0フレット → Em開放では2弦0が正解
+    
+    voicing_corrections = 0
+    
+    # ボイシングDB読み込み
+    chord_forms_db = []
+    try:
+        import os
+        db_path = os.path.join(os.path.dirname(__file__), "chord_forms_db.json")
+        if os.path.exists(db_path):
+            import json as _json
+            with open(db_path, encoding='utf-8') as f:
+                chord_forms_db = _json.load(f)
+    except Exception:
+        pass
+    
+    if chord_forms_db and chords:
+        # コード名→フォームのルックアップ構築
+        forms_lookup = {}
+        for form in chord_forms_db:
+            ch = form['chord']
+            if ch not in forms_lookup:
+                forms_lookup[ch] = []
+            forms_lookup[ch].append(form)
+        
+        for note in result:
+            pitch = note['pitch']
+            s = note.get('string', 0)
+            f = note.get('fret', 0)
+            
+            # このノートの時刻のコード
+            chord_root, chord_quality, chord_tone_pcs = find_chord_at_time(
+                chords, note['start'])
+            if chord_root < 0:
+                continue
+            
+            # ピッチがコード構成音でなければスキップ
+            if pitch % 12 not in chord_tone_pcs:
+                continue
+            
+            # コードのフォームを取得
+            chord_name_candidates = []
+            for c in chords:
+                if c.get('start', 0) <= note['start'] < c.get('end', float('inf')):
+                    chord_name_candidates.append(c.get('chord', ''))
+                    break
+            
+            if not chord_name_candidates:
+                continue
+            
+            chord_name = chord_name_candidates[0]
+            forms = forms_lookup.get(chord_name, [])
+            
+            # 開放ポジション(position=0)のフォームを優先
+            open_forms = [fm for fm in forms if fm.get('position', 0) == 0 
+                         and not fm.get('partial')]
+            if not open_forms:
+                open_forms = [fm for fm in forms if not fm.get('partial')]
+            if not open_forms:
+                continue
+            
+            # 最適なフォームからこのピッチの弦/フレットを探す
+            for form in open_forms:
+                form_notes = form.get('notes', [])
+                form_frets = form.get('frets', [])
+                
+                for si in range(6):
+                    if si < len(form_notes) and form_notes[si] == pitch:
+                        correct_string = 6 - si  # DB: index 0=6弦, SoloTab: string 1=1弦
+                        correct_fret = form_frets[si] if si < len(form_frets) else -1
+                        
+                        if correct_fret >= 0 and (correct_string != s or correct_fret != f):
+                            # 開放弦を優先（左手不要）
+                            if correct_fret == 0 or correct_fret < f:
+                                note['string'] = correct_string
+                                note['fret'] = correct_fret
+                                note['_voicing_corrected'] = True
+                                voicing_corrections += 1
+                        break
+    
+    print(f"[music_theory] Voicing corrections: {voicing_corrections}")
+    
+    # =====================================================================
+    # Phase 4: 声部分離 (メロディ / 内声 / ベース)
+    # =====================================================================
+    # 同時発音ノートをメロディ(最高音)、ベース(最低音)、内声(中間)に分類。
+    # TAB表記やアーティキュレーションの判断基盤。
+    
+    SIMULTANEOUS_THRESHOLD_V = 0.03
+    result.sort(key=lambda n: (n['start'], -n['pitch']))
+    
+    i = 0
+    while i < len(result):
+        group_start = result[i]['start']
+        group = [i]
+        j = i + 1
+        while j < len(result) and abs(result[j]['start'] - group_start) < SIMULTANEOUS_THRESHOLD_V:
+            group.append(j)
+            j += 1
+        
+        if len(group) >= 3:
+            pitches = [(result[idx]['pitch'], idx) for idx in group]
+            pitches.sort()
+            result[pitches[-1][1]]['_voice'] = 'melody'
+            result[pitches[0][1]]['_voice'] = 'bass'
+            for _, idx in pitches[1:-1]:
+                result[idx]['_voice'] = 'inner'
+        elif len(group) == 2:
+            pitches = [(result[idx]['pitch'], idx) for idx in group]
+            pitches.sort()
+            result[pitches[-1][1]]['_voice'] = 'melody'
+            result[pitches[0][1]]['_voice'] = 'bass'
+        else:
+            result[i]['_voice'] = 'melody'
+        
+        i = j
+    
+    voice_counts = {}
+    for n in result:
+        v = n.get('_voice', 'unknown')
+        voice_counts[v] = voice_counts.get(v, 0) + 1
+    print(f"[music_theory] Voices: {voice_counts}")
+    
+    # =====================================================================
+    # Phase 5: ギターポジション推定
+    # =====================================================================
+    # コード区間ごとに使用ポジション（フレット帯域）を推定し記録。
+    # ポジション外のフレットを持つノートは将来的に修正候補。
+    
+    if chords:
+        for chord_info in chords:
+            cs = chord_info.get('start', 0)
+            ce = chord_info.get('end', 0)
+            
+            chord_notes = [n for n in result if cs <= n['start'] < ce]
+            if not chord_notes:
+                continue
+            
+            frets = [n['fret'] for n in chord_notes if n.get('fret', 0) > 0]
+            if frets:
+                pos_min = min(frets)
+                pos_max = max(frets)
+                pos_center = sum(frets) / len(frets)
+                for n in chord_notes:
+                    n['_position'] = round(pos_center, 1)
+                    n['_position_range'] = (pos_min, pos_max)
+    
+    # =====================================================================
+    # Phase 6: リズム構造検出 (3連符)
+    # =====================================================================
+    # ノート間の時間間隔から3連符パターンを検出し記録。
+    
+    triplet_count = 0
+    if len(result) >= 3:
+        for i in range(len(result) - 2):
+            t0 = result[i]['start']
+            t1 = result[i+1]['start']
+            t2 = result[i+2]['start']
+            
+            d1 = t1 - t0
+            d2 = t2 - t1
+            
+            if d1 > 0.05 and d2 > 0.05:  # 極端に短い間隔は除外
+                ratio = d1 / d2 if d2 > 0 else 0
+                # 3連符: 等間隔 (ratio ≈ 1.0)
+                if 0.8 <= ratio <= 1.2:
+                    # 3連の1拍分がビート間隔の1/3か確認
+                    # BPM 90, 3/4: beat=0.667s, triplet=0.222s
+                    if 0.1 <= d1 <= 0.35:
+                        result[i]['_rhythm'] = 'triplet'
+                        result[i+1]['_rhythm'] = 'triplet'
+                        result[i+2]['_rhythm'] = 'triplet'
+                        triplet_count += 1
+    
+    print(f"[music_theory] Triplet groups detected: {triplet_count}")
+    
+    total_corrected = corrected_count + pattern_completions + voicing_corrections
     print(f"[music_theory] Total corrections: {total_corrected} / {len(result)} notes")
     
     return result
