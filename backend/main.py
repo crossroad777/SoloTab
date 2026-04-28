@@ -528,11 +528,24 @@ async def get_pdf(session_id: str):
 
     pdf_path = session_dir / "tab.pdf"
 
-    try:
-        from pdf_renderer import musicxml_to_pdf
-        musicxml_to_pdf(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+    # パイプラインでMuseScore生成済みPDFがあればそのまま返す
+    if not pdf_path.exists():
+        # MuseScoreで生成を試みる
+        try:
+            from musescore_renderer import render_pdf_with_musescore
+            dual_xml = session_dir / "tab_dual.musicxml"
+            src_xml = str(dual_xml) if dual_xml.exists() else str(xml_path)
+            render_pdf_with_musescore(src_xml, str(pdf_path), title=s.get("filename", "Guitar TAB"))
+        except Exception:
+            pass
+
+        # MuseScore失敗時はreportlabフォールバック
+        if not pdf_path.exists():
+            try:
+                from pdf_renderer import musicxml_to_pdf
+                musicxml_to_pdf(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
 
     if not pdf_path.exists():
         raise HTTPException(status_code=500, detail="PDF file was not created")

@@ -583,21 +583,8 @@ export default function SoloTabApp() {
                   <button
                     className="home-btn"
                     title="PDF印刷"
-                    onClick={async () => {
-                      try {
-                        const res = await fetch(`${API_BASE}/result/${session.id}/pdf`);
-                        if (!res.ok) throw new Error("PDF生成失敗");
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        const baseName = (session.fileName || 'tab').replace(/\.[^.]+$/, '');
-                        a.download = `${baseName}.pdf`;
-                        a.style.display = 'none';
-                        document.body.appendChild(a);
-                        a.click();
-                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                      } catch(e) { _showToast("PDF: " + e.message); }
+                    onClick={() => {
+                      window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank');
                     }}
                   >
                     <Printer size={14} style={{ marginRight: 4 }} />PDF

@@ -1398,6 +1398,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     if has_cnn:
         # === CNN-first アーキテクチャ ===
         # Step 1: CNN argmaxで弦を決定（物理的可能性チェック付き）
+        # Step 1b: 開放弦優先ルール — CNN top が押弦で、開放弦候補が存在し
+        #          CNN確率が一定以上なら開放弦を優先する
+        OPEN_STRING_PROB_THRESHOLD = 0.01  # CNN確率1%以上なら開放弦を優先候補にする
+        
         for note in notes:
             cnn_probs = note.get('cnn_string_probs')
             positions = get_possible_positions(note["pitch"], tuning, max_fret)
@@ -1405,19 +1409,36 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                 positions = [_fallback_position(note["pitch"], tuning, max_fret)]
             
             if cnn_probs:
-                # CNN確率の高い順に物理的に可能な弦を選択
-                sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
-                assigned = False
-                for s_cand, prob in sorted_strings:
-                    pos_for_string = [(s, f) for s, f in positions if s == s_cand]
-                    if pos_for_string:
-                        note["string"] = pos_for_string[0][0]
-                        note["fret"] = pos_for_string[0][1]
-                        assigned = True
-                        break
-                if not assigned:
-                    note["string"] = positions[0][0]
-                    note["fret"] = positions[0][1]
+                # 開放弦優先チェック: 開放弦(fret=0)で弾けるポジションがあるか
+                open_positions = [(s, f) for s, f in positions if f == 0]
+                
+                if open_positions:
+                    # 開放弦候補の中でCNN確率が閾値以上のものがあるか
+                    for os_s, os_f in open_positions:
+                        os_prob = cnn_probs.get(str(os_s), cnn_probs.get(os_s, 0))
+                        if os_prob >= OPEN_STRING_PROB_THRESHOLD:
+                            # 開放弦を採用
+                            note["string"] = os_s
+                            note["fret"] = os_f
+                            break
+                    else:
+                        # 閾値未満 → 通常のCNN argmax
+                        open_positions = None
+                
+                if not open_positions:
+                    # CNN確率の高い順に物理的に可能な弦を選択（従来ロジック）
+                    sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
+                    assigned = False
+                    for s_cand, prob in sorted_strings:
+                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                        if pos_for_string:
+                            note["string"] = pos_for_string[0][0]
+                            note["fret"] = pos_for_string[0][1]
+                            assigned = True
+                            break
+                    if not assigned:
+                        note["string"] = positions[0][0]
+                        note["fret"] = positions[0][1]
             else:
                 # CNN確率なし: デフォルト割り当て
                 note["string"] = positions[0][0]
