@@ -91,7 +91,7 @@ def main():
         ds_correct = 0
         ds_total = 0
         
-        for xml_path in xml_files[:50]:  # Limit to 50 per subset for speed
+        for xml_path in xml_files:
             wav_path = xml_path.replace('.xml', '.wav')
             if not os.path.exists(wav_path):
                 # annotation/ -> audio/ pattern
