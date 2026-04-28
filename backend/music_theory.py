@@ -372,23 +372,18 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
     print(f"  Scale corrected: {corrected_count}, Removed: {removed_count}")
     
     # =====================================================================
-    # Phase 2: アルペジオ・パターン補完
+    # Phase 2: アルペジオ・パターン分析 (注: ノート追加は無効化)
     # =====================================================================
-    # 繰り返しアルペジオで検出漏れしたメロディ音を補完する。
-    # 原理: 同じコード内の拍が同じパターンを持つはずなので、
-    #       ある拍で検出されたノートが別の拍で欠落していたら補完。
-    #
-    # 注意: インターバルフィルタは無効化。
-    #       高フレット(7,12等)は正しい場合が多く、オクターブ補正は有害。
+    # パターン補完はノート数を膨張させViterbi DPを破綻させるため、
+    # 現時点ではノート追加を無効化。ビートグループ化とリズム分析のみ実行。
     
-    SIMULTANEOUS_THRESHOLD = 0.03  # 同時発音の閾値 (秒)
+    SIMULTANEOUS_THRESHOLD = 0.03
     pattern_completions = 0
     
-    # 時間順ソート
     result.sort(key=lambda n: (n['start'], -n['pitch']))
     
-    # ビートグループ化: 同時発音ノートをグループにまとめる
-    beat_groups = []  # [(start_time, [notes])]
+    # ビートグループ化
+    beat_groups = []
     i = 0
     while i < len(result):
         group_start = result[i]['start']
@@ -400,78 +395,7 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
         beat_groups.append((group_start, group))
         i = j
     
-    # コード区間ごとにパターン分析
-    if chords:
-        for chord_info in chords:
-            chord_start = chord_info.get('start', 0)
-            chord_end = chord_info.get('end', 0)
-            chord_name = chord_info.get('chord', '')
-            _, _, chord_tone_pcs = parse_chord(chord_name)
-            
-            if not chord_tone_pcs:
-                continue
-            
-            # このコード区間内のビートグループ
-            chord_beats = [(t, g) for t, g in beat_groups 
-                          if chord_start <= t < chord_end]
-            
-            if len(chord_beats) < 3:
-                continue
-            
-            # 各ビートのピッチ集合を収集
-            all_pitches_in_chord = set()
-            for _, group in chord_beats:
-                for n in group:
-                    all_pitches_in_chord.add(n['pitch'])
-            
-            # 最高音（メロディ候補）を特定
-            max_pitch = max(all_pitches_in_chord) if all_pitches_in_chord else 0
-            
-            # メロディ音がコード構成音かチェック
-            if max_pitch % 12 not in chord_tone_pcs:
-                continue
-            
-            # 各ビートでメロディ音が存在するか確認
-            for beat_time, group in chord_beats:
-                group_pitches = [n['pitch'] for n in group]
-                group_max = max(group_pitches) if group_pitches else 0
-                
-                # メロディ音が欠落している場合 (最高音がオクターブ以上低い)
-                if max_pitch - group_max >= 12:
-                    # メロディ音を補完
-                    # 元のノートの弦/フレットを推定
-                    melody_fret = None
-                    melody_string = None
-                    
-                    # 同じコード内でメロディ音が検出されたビートから弦/フレットを借用
-                    for _, ref_group in chord_beats:
-                        for rn in ref_group:
-                            if rn['pitch'] == max_pitch:
-                                melody_string = rn['string']
-                                melody_fret = rn['fret']
-                                break
-                        if melody_string is not None:
-                            break
-                    
-                    if melody_string is not None and melody_fret is not None:
-                        new_note = {
-                            'start': beat_time,
-                            'end': beat_time + 0.2,
-                            'pitch': max_pitch,
-                            'string': melody_string,
-                            'fret': melody_fret,
-                            'velocity': 0.7,
-                            'source': 'pattern_completion',
-                            '_theory_flag': 'pattern_completed',
-                            '_correction_reason': f"melody_fill: {max_pitch} from chord {chord_name}",
-                        }
-                        result.append(new_note)
-                        pattern_completions += 1
-    
-    # 再ソート
-    result.sort(key=lambda n: (n['start'], -n['pitch']))
-    
-    print(f"[music_theory] Pattern completions: {pattern_completions}")
+    print(f"[music_theory] Pattern completions: {pattern_completions} (disabled)")
     
     # =====================================================================
     # Phase 3: コードボイシングによる弦割り当て修正
