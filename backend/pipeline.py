@@ -327,6 +327,18 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("tuning_detect", f"チューニング推定スキップ: {e}")
 
+    # --- Step: 音楽理論フィルタ ---
+    # スケール外のノートを最近傍のスケールトーン/コードトーンに補正する。
+    # キーはコード進行から自動推定。
+    report("theory", "音楽理論フィルタ適用中...")
+    t0 = time.time()
+    try:
+        from music_theory import apply_music_theory_filter  # type: ignore
+        notes = apply_music_theory_filter(notes, chords, tuning=tuning)
+        report("theory", f"音楽理論フィルタ完了 ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        report("theory", f"音楽理論フィルタスキップ: {e}")
+
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
     # Pure MoE のノート検出精度は維持しつつ、運指のみ DP で最適化する。
     # MoE の個別モデルは音響的に最も確からしい弦を出力するが、
