@@ -1,14 +1,14 @@
 {
-  "string_accuracy": 0.5168139493505723,
-  "fret_accuracy": 0.5168139493505723,
+  "string_accuracy": 0.6499171728326891,
+  "fret_accuracy": 0.6499171728326891,
   "weights": {
-    "w_movement": 15.0625,
+    "w_movement": 14.25,
     "w_position_shift": 50.0,
-    "w_string_switch": 1.5,
+    "w_string_switch": 2.5,
     "w_same_string_repeat": 5.5,
-    "w_fret_height": 0.0,
-    "w_high_fret_extra": 4.625,
-    "w_sweet_spot_bonus": -0.875,
+    "w_fret_height": 0.925,
+    "w_high_fret_extra": 5.0,
+    "w_sweet_spot_bonus": -1.0,
     "w_open_string_bonus": -1.0
   }
 }
