@@ -370,91 +370,107 @@ def apply_music_theory_filter(notes: List[Dict], chords: List[Dict],
     print(f"  Scale corrected: {corrected_count}, Removed: {removed_count}")
     
     # =====================================================================
-    # Phase 2: インターバル外れ値検出（双方向コンテキスト）
+    # Phase 2: アルペジオ・パターン補完
     # =====================================================================
-    # 前後のノートの両方と比較し、「前からも後からも離れている」ノートのみ
-    # をオクターブ補正する。片方だけ見ると誤補正の連鎖が起きる。
+    # 繰り返しアルペジオで検出漏れしたメロディ音を補完する。
+    # 原理: 同じコード内の拍が同じパターンを持つはずなので、
+    #       ある拍で検出されたノートが別の拍で欠落していたら補完。
+    #
+    # 注意: インターバルフィルタは無効化。
+    #       高フレット(7,12等)は正しい場合が多く、オクターブ補正は有害。
     
-    MAX_INTERVAL = 9  # 長6度超 = 疑わしい
-    SIMULTANEOUS_THRESHOLD = 0.02
-    
-    interval_corrections = 0
+    SIMULTANEOUS_THRESHOLD = 0.03  # 同時発音の閾値 (秒)
+    pattern_completions = 0
     
     # 時間順ソート
     result.sort(key=lambda n: (n['start'], -n['pitch']))
     
-    # 声部分離: メロディ(最高音)のみ抽出
-    melody_indices = []
+    # ビートグループ化: 同時発音ノートをグループにまとめる
+    beat_groups = []  # [(start_time, [notes])]
     i = 0
     while i < len(result):
         group_start = result[i]['start']
-        group = [i]
+        group = [result[i]]
         j = i + 1
         while j < len(result) and abs(result[j]['start'] - group_start) < SIMULTANEOUS_THRESHOLD:
-            group.append(j)
+            group.append(result[j])
             j += 1
-        
-        if len(group) >= 2:
-            pitches = [(result[idx]['pitch'], idx) for idx in group]
-            pitches.sort()
-            melody_indices.append(pitches[-1][1])  # 最高音
-        else:
-            melody_indices.append(i)
+        beat_groups.append((group_start, group))
         i = j
     
-    # メロディラインの外れ値検出（前後の両方と比較）
-    for mi in range(1, len(melody_indices) - 1):
-        idx = melody_indices[mi]
-        prev_idx = melody_indices[mi - 1]
-        next_idx = melody_indices[mi + 1]
-        
-        pitch = result[idx]['pitch']
-        prev_pitch = result[prev_idx]['pitch']
-        next_pitch = result[next_idx]['pitch']
-        
-        interval_prev = abs(pitch - prev_pitch)
-        interval_next = abs(pitch - next_pitch)
-        
-        # 前後両方に対して大きなインターバル → 外れ値
-        if interval_prev > MAX_INTERVAL and interval_next > MAX_INTERVAL:
-            # 前後のノートは互いに近いか確認（外れ値でないことの証拠）
-            prev_next_interval = abs(prev_pitch - next_pitch)
-            if prev_next_interval > MAX_INTERVAL:
-                continue  # 前後も離れている → 全体的にジャンプしている → 補正不要
+    # コード区間ごとにパターン分析
+    if chords:
+        for chord_info in chords:
+            chord_start = chord_info.get('start', 0)
+            chord_end = chord_info.get('end', 0)
+            chord_name = chord_info.get('chord', '')
+            _, _, chord_tone_pcs = parse_chord(chord_name)
             
-            # オクターブ補正候補
-            chord_root, _, chord_tone_pcs = find_chord_at_time(chords, result[idx]['start'])
-            midpoint = (prev_pitch + next_pitch) / 2
+            if not chord_tone_pcs:
+                continue
             
-            best_alt = None
-            best_dist = float('inf')
+            # このコード区間内のビートグループ
+            chord_beats = [(t, g) for t, g in beat_groups 
+                          if chord_start <= t < chord_end]
             
-            for octave_shift in [-12, 12]:
-                alt_pitch = pitch + octave_shift
-                if alt_pitch < GUITAR_MIN_PITCH or alt_pitch > GUITAR_MAX_PITCH:
-                    continue
-                alt_pc = alt_pitch % 12
-                if alt_pc not in scale_pcs:
-                    continue
+            if len(chord_beats) < 3:
+                continue
+            
+            # 各ビートのピッチ集合を収集
+            all_pitches_in_chord = set()
+            for _, group in chord_beats:
+                for n in group:
+                    all_pitches_in_chord.add(n['pitch'])
+            
+            # 最高音（メロディ候補）を特定
+            max_pitch = max(all_pitches_in_chord) if all_pitches_in_chord else 0
+            
+            # メロディ音がコード構成音かチェック
+            if max_pitch % 12 not in chord_tone_pcs:
+                continue
+            
+            # 各ビートでメロディ音が存在するか確認
+            for beat_time, group in chord_beats:
+                group_pitches = [n['pitch'] for n in group]
+                group_max = max(group_pitches) if group_pitches else 0
                 
-                dist = abs(alt_pitch - midpoint)
-                if dist < best_dist:
-                    best_alt = alt_pitch
-                    best_dist = dist
-            
-            if best_alt is not None and best_dist < abs(pitch - midpoint):
-                original = result[idx]['pitch']
-                result[idx]['pitch'] = best_alt
-                result[idx]['_theory_flag'] = 'interval_corrected'
-                result[idx]['_original_pitch'] = original
-                result[idx]['_correction_reason'] = (
-                    f"octave_outlier: {original}->{best_alt} "
-                    f"(prev={prev_pitch}, next={next_pitch})"
-                )
-                interval_corrections += 1
+                # メロディ音が欠落している場合 (最高音がオクターブ以上低い)
+                if max_pitch - group_max >= 12:
+                    # メロディ音を補完
+                    # 元のノートの弦/フレットを推定
+                    melody_fret = None
+                    melody_string = None
+                    
+                    # 同じコード内でメロディ音が検出されたビートから弦/フレットを借用
+                    for _, ref_group in chord_beats:
+                        for rn in ref_group:
+                            if rn['pitch'] == max_pitch:
+                                melody_string = rn['string']
+                                melody_fret = rn['fret']
+                                break
+                        if melody_string is not None:
+                            break
+                    
+                    if melody_string is not None and melody_fret is not None:
+                        new_note = {
+                            'start': beat_time,
+                            'end': beat_time + 0.2,
+                            'pitch': max_pitch,
+                            'string': melody_string,
+                            'fret': melody_fret,
+                            'velocity': 0.7,
+                            'source': 'pattern_completion',
+                            '_theory_flag': 'pattern_completed',
+                            '_correction_reason': f"melody_fill: {max_pitch} from chord {chord_name}",
+                        }
+                        result.append(new_note)
+                        pattern_completions += 1
     
-    print(f"[music_theory] Interval corrections: {interval_corrections}")
-    total_corrected = corrected_count + interval_corrections
+    # 再ソート
+    result.sort(key=lambda n: (n['start'], -n['pitch']))
+    
+    print(f"[music_theory] Pattern completions: {pattern_completions}")
+    total_corrected = corrected_count + pattern_completions
     print(f"[music_theory] Total corrections: {total_corrected} / {len(result)} notes")
     
     return result
