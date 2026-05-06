@@ -103,6 +103,15 @@ def main():
 
         failed_domains = []
         for i, domain in enumerate(pending):
+            # おかわり: 前回のログ/モデルをリセットして最初からやり直す
+            if round_num > 1:
+                ga_dir = os.path.join(LOG_DIR, f"finetuned_{domain}_multitask_3ds_ga")
+                for fname in ["training_log.txt", "best_model.pth"]:
+                    fpath = os.path.join(ga_dir, fname)
+                    if os.path.exists(fpath):
+                        os.remove(fpath)
+                print(f"  [Reset] {domain}: cleared log/model for retry")
+
             domain, status, elapsed, best_f1, passed = run_domain(
                 domain, round_num, i + 1, len(pending)
             )
