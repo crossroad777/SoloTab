@@ -214,18 +214,51 @@ def build_dataset(max_tracks: int = 360):
 
 
 class StringDataset(Dataset):
-    def __init__(self, features):
+    def __init__(self, features, augment=False):
         self.features = features
+        self.augment = augment
     
     def __len__(self):
         return len(self.features)
     
     def __getitem__(self, idx):
         f = self.features[idx]
-        patch = torch.FloatTensor(f['patch']).unsqueeze(0)  # (1, N_BINS, CONTEXT_FRAMES)
-        pitch = torch.FloatTensor([(f['pitch'] - 40) / 45.0])  # 正規化
+        patch = f['patch'].copy()  # (N_BINS, CONTEXT_FRAMES)
+        pitch = f['pitch']
+        
+        if self.augment:
+            # 1. 周波数軸シフト（±2ビン）- 異なるギターの倍音構成をシミュレート
+            shift = np.random.randint(-2, 3)
+            if shift != 0:
+                patch = np.roll(patch, shift, axis=0)
+                if shift > 0:
+                    patch[:shift, :] = 0
+                else:
+                    patch[shift:, :] = 0
+            
+            # 2. 時間軸ジッター（±1フレーム）
+            t_shift = np.random.randint(-1, 2)
+            if t_shift != 0:
+                patch = np.roll(patch, t_shift, axis=1)
+                if t_shift > 0:
+                    patch[:, :t_shift] = 0
+                else:
+                    patch[:, t_shift:] = 0
+            
+            # 3. ガウスノイズ
+            noise = np.random.randn(*patch.shape).astype(np.float32) * 0.02
+            patch = patch + noise
+            
+            # 4. ゲイン変動（±20%）
+            gain = 1.0 + np.random.uniform(-0.2, 0.2)
+            patch = patch * gain
+            
+            patch = np.clip(patch, 0, 1)
+        
+        patch_tensor = torch.FloatTensor(patch).unsqueeze(0)  # (1, N_BINS, CONTEXT_FRAMES)
+        pitch_tensor = torch.FloatTensor([(pitch - 40) / 45.0])  # 正規化
         label = f['string'] - 1  # 0-5
-        return patch, pitch, label
+        return patch_tensor, pitch_tensor, label
 
 
 def train_classifier(features, epochs=30, batch_size=64, val_split=0.2):
@@ -243,9 +276,9 @@ def train_classifier(features, epochs=30, batch_size=64, val_split=0.2):
     train_features = [features[i] for i in train_idx]
     val_features = [features[i] for i in val_idx]
     
-    train_loader = DataLoader(StringDataset(train_features), 
+    train_loader = DataLoader(StringDataset(train_features, augment=True), 
                               batch_size=batch_size, shuffle=True, num_workers=0)
-    val_loader = DataLoader(StringDataset(val_features),
+    val_loader = DataLoader(StringDataset(val_features, augment=False),
                             batch_size=batch_size, shuffle=False, num_workers=0)
     
     model = StringClassifierCNN().to(device)
@@ -358,6 +391,6 @@ if __name__ == "__main__":
         print("データが少なすぎます。")
     else:
         print(f"\nPhase 2: モデル学習 ({len(features)} samples)...")
-        model, val_acc = train_classifier(features, epochs=25, batch_size=64)
+        model, val_acc = train_classifier(features, epochs=100, batch_size=64)
         print(f"\n=== 完了 ===")
         print(f"弦分類器 Val精度: {val_acc:.4f} ({val_acc*100:.2f}%)")

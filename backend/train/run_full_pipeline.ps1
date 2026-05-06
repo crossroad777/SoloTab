@@ -1,6 +1,6 @@
 # run_full_pipeline.ps1
 # ============================================================
-# SoloTab 統合学習パイプライン — Step 1〜7 完全自動実行
+# SoloTab 統合学習パイプライン — Step 1〜8 完全自動実行
 # ============================================================
 # 統一ルール: 25エポック / patience 7 / 毎Best保存
 #
@@ -67,7 +67,7 @@ Log-Msg "========== PIPELINE START (from Step $StartStep) =========="
 # Step 1: martin_finger GAPS Multi-task 完走
 # ============================================================
 if ($StartStep -le 1) {
-    Log-Msg "===== Step 1/7: martin_finger Multi-task (GAPS) ====="
+    Log-Msg "===== Step 1/8: martin_finger Multi-task (GAPS) ====="
     Run-Python "backend\train\train_gaps_multitask.py --domain martin_finger --epochs $EPOCHS --patience $PATIENCE" "martin_finger Multi-task"
     Log-Msg "Step 1 DONE"
 }
@@ -76,7 +76,7 @@ if ($StartStep -le 1) {
 # Step 2: 全7ドメイン GuitarSet FT 完走
 # ============================================================
 if ($StartStep -le 2) {
-    Log-Msg "===== Step 2/7: All-Domain GuitarSet FT ====="
+    Log-Msg "===== Step 2/8: All-Domain GuitarSet FT ====="
     foreach ($d in $domains) {
         Run-Python "backend\train\train_guitarset_ft_all.py --domain $d --epochs $EPOCHS --patience $PATIENCE" "GuitarSet FT: $d"
     }
@@ -87,7 +87,7 @@ if ($StartStep -le 2) {
 # Step 3: 全7ドメイン GAPS Multi-task
 # ============================================================
 if ($StartStep -le 3) {
-    Log-Msg "===== Step 3/7: All-Domain GAPS Multi-task ====="
+    Log-Msg "===== Step 3/8: All-Domain GAPS Multi-task ====="
     foreach ($d in $domains) {
         Run-Python "backend\train\train_gaps_multitask.py --domain $d --epochs $EPOCHS --patience $PATIENCE" "GAPS Multi-task: $d"
     }
@@ -98,7 +98,7 @@ if ($StartStep -le 3) {
 # Step 4: MoE統合評価（推論テスト）
 # ============================================================
 if ($StartStep -le 4) {
-    Log-Msg "===== Step 4/7: MoE E2E Benchmark ====="
+    Log-Msg "===== Step 4/8: MoE E2E Benchmark ====="
     Run-Python "backend\benchmark_e2e.py --max 10" "MoE E2E Benchmark (10 tracks)"
     Log-Msg "Step 4 DONE"
 }
@@ -107,7 +107,7 @@ if ($StartStep -le 4) {
 # Step 5: AG-PT-set前処理 + 3データセット統合（martin_fingerで検証）
 # ============================================================
 if ($StartStep -le 5) {
-    Log-Msg "===== Step 5/7: 3-Dataset Integration (martin_finger) ====="
+    Log-Msg "===== Step 5/8: 3-Dataset Integration (martin_finger) ====="
 
     # AG-PT-set前処理（既に完了済みならスキップ）
     $agptProcessed = (Get-ChildItem "D:\Music\datasets\AG-PT-set\aGPTset\_processed\*_features.pt" -ErrorAction SilentlyContinue | Measure-Object).Count
@@ -128,7 +128,7 @@ if ($StartStep -le 5) {
 # Step 6: 全7ドメイン 3データセット統合
 # ============================================================
 if ($StartStep -le 6) {
-    Log-Msg "===== Step 6/7: All-Domain 3-Dataset Integration ====="
+    Log-Msg "===== Step 6/8: All-Domain 3-Dataset Integration ====="
     foreach ($d in $domains) {
         Run-Python "backend\train\train_gaps_multitask.py --domain $d --epochs $EPOCHS --patience $PATIENCE --include-agpt" "3-Dataset: $d"
     }
@@ -139,9 +139,18 @@ if ($StartStep -le 6) {
 # Step 7: 弦分類CNN学習
 # ============================================================
 if ($StartStep -le 7) {
-    Log-Msg "===== Step 7/7: String Classifier CNN ====="
+    Log-Msg "===== Step 7/8: String Classifier CNN ====="
     Run-Python "backend\string_classifier.py" "String Classifier CNN"
     Log-Msg "Step 7 DONE"
+}
+
+# ============================================================
+# Step 8: 運指LSTM学習（CNN弦確率統合版）
+# ============================================================
+if ($StartStep -le 8) {
+    Log-Msg "===== Step 8/8: Fingering LSTM (with CNN probs) ====="
+    Run-Python "backend\train_fingering_with_cnn.py" "Fingering LSTM"
+    Log-Msg "Step 8 DONE"
 }
 
 # ============================================================
@@ -195,6 +204,17 @@ if (Test-Path $scPath) {
 } else {
     Write-Host "String Classifier: NOT YET"
     Log-Msg "RESULT: String Classifier: NOT YET"
+}
+
+# 運指LSTM
+$flPath = "d:\Music\nextchord-solotab\backend\fingering_lstm.pth"
+if (Test-Path $flPath) {
+    $flSize = [math]::Round((Get-Item $flPath).Length / 1KB, 1)
+    Write-Host "Fingering LSTM: TRAINED (${flSize}KB)"
+    Log-Msg "RESULT: Fingering LSTM: TRAINED (${flSize}KB)"
+} else {
+    Write-Host "Fingering LSTM: NOT YET"
+    Log-Msg "RESULT: Fingering LSTM: NOT YET"
 }
 
 Write-Host ""
