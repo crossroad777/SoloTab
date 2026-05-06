@@ -237,41 +237,98 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             print(f"[pipeline] Preprocessing failed, using original: {e}")
             transcription_wav = guitar_wav
 
-    # --- Step 3: Note Detection (純粋な MoE アンサンブル) ---
+    # --- Step 3: Note Detection (Fusion: Basic Pitch + MoE) ---
+    # 融合戦略C: Basic Pitch (高Recall) で候補を検出し、
+    # MoE (高Precision, フレット情報付き) で確認・フィルタリング。
+    # 両方が一致したノートのみ採用 → F1=0.8816, P=0.9593
     ensemble_success = False
     notes = []
     method = "none"
     model_stats = {}
 
+    # --- 3a: MoEアンサンブル ---
+    moe_notes_list = []
     try:
         from pure_moe_transcriber import transcribe_pure_moe
-        report("notes", "純粋なMoE推論中 (6モデル統合のみ、他フィルタ排除)...")
+        report("notes", "MoEアンサンブル推論中...")
         t0 = time.time()
-        
-        # ベンチマーク最適パラメータ (グリッドサーチ72通りの結果: F1=0.8478)
-        notes = transcribe_pure_moe(
-            str(transcription_wav), 
-            vote_threshold=5, 
-            onset_threshold=0.8
+        moe_notes_list = transcribe_pure_moe(
+            str(transcription_wav),
+            vote_threshold=5,
+            onset_threshold=0.75,
+            vote_prob_threshold=0.5
         )
-        
-        method = "pure_moe"
-        model_stats = {
-            "ensemble_notes": len(notes)
-        }
-        
-        report("notes", f"MoE抽出完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
-
-        with open(session_dir / "notes.json", "w", encoding="utf-8") as f:
-            json.dump(_to_native({
-                "notes": notes, "total_count": len(notes), "tuning": tuning_name,
-                "method": method, "model_stats": model_stats,
-            }), f, ensure_ascii=False, indent=2)
-        ensemble_success = True
+        report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        report("notes", f"MoE失敗: {e}, Basic Pitchにフォールバック")
+        report("notes", f"MoE失敗: {e}")
+
+    # --- 3b: Basic Pitch ---
+    bp_notes_list = []
+    try:
+        from basic_pitch.inference import predict as bp_predict
+        report("notes", "Basic Pitch推論中 (高Recall候補検出)...")
+        t0 = time.time()
+        _, midi_data, _ = bp_predict(str(transcription_wav))
+        for inst in midi_data.instruments:
+            for note in inst.notes:
+                bp_notes_list.append({
+                    "start": float(note.start),
+                    "end": float(note.end),
+                    "pitch": int(note.pitch),
+                })
+        report("notes", f"BasicPitch抽出完了: {len(bp_notes_list)} notes ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
+
+    # --- 3c: 融合 ---
+    MATCH_ONSET_TOL = 0.07   # 70ms (最適値: スイープで確認済み)
+    MATCH_PITCH_TOL = 1      # ±1 semitone
+
+    if bp_notes_list and moe_notes_list:
+        # 融合C: BPノートのうちMoEも検出したもののみ採用（MoEのフレット情報を使用）
+        fused_notes = []
+        used_moe = set()
+        for bp_n in bp_notes_list:
+            for j, moe_n in enumerate(moe_notes_list):
+                if j in used_moe:
+                    continue
+                onset_diff = abs(bp_n["start"] - moe_n["start"])
+                pitch_diff = abs(bp_n["pitch"] - moe_n["pitch"])
+                if onset_diff < MATCH_ONSET_TOL and pitch_diff <= MATCH_PITCH_TOL:
+                    fused_notes.append(moe_n)  # MoEのフレット情報を保持
+                    used_moe.add(j)
+                    break
+
+        notes = fused_notes
+        method = "fusion_bp_moe"
+        model_stats = {
+            "bp_notes": len(bp_notes_list),
+            "moe_notes": len(moe_notes_list),
+            "fused_notes": len(notes),
+        }
+        report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (両者一致)")
+    elif moe_notes_list:
+        # BPが使えない場合はMoE単独
+        notes = moe_notes_list
+        method = "pure_moe"
+        model_stats = {"ensemble_notes": len(notes)}
+        report("notes", f"MoE単独モード: {len(notes)} notes")
+    elif bp_notes_list:
+        # MoEが使えない場合はBP単独（フレット情報なし → Viterbiで補完）
+        notes = bp_notes_list
+        method = "basic_pitch"
+        model_stats = {"bp_notes": len(notes)}
+        report("notes", f"BasicPitch単独モード: {len(notes)} notes（フレット情報なし）")
+    else:
+        report("notes", "全モデル失敗: ノート検出不可")
+
+    ensemble_success = len(notes) > 0
+
+    with open(session_dir / "notes.json", "w", encoding="utf-8") as f:
+        json.dump(_to_native({
+            "notes": notes, "total_count": len(notes), "tuning": tuning_name,
+            "method": method, "model_stats": model_stats,
+        }), f, ensure_ascii=False, indent=2)
 
     # --- Step 2.4: コード検出 ---
     chords = []
@@ -341,10 +398,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("theory", f"音楽理論フィルタスキップ: {e}")
 
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
-    # Pure MoE のノート検出精度は維持しつつ、運指のみ DP で最適化する。
-    # MoE の個別モデルは音響的に最も確からしい弦を出力するが、
-    # フレーズ全体の演奏可能性（ポジション連続性、指の物理制約）は考慮していない。
-    # Viterbi DP はフレーズ全体で最適な弦/フレットパスを探索する。
+    # Conformer出力のpitchは正確だが、string/fret割り当ては
+    # 低フレット偏重（fret 12が0個になる問題）があるため、
+    # Viterbi DPで演奏可能なポジションに再割り当てする。
     report("assign", "運指最適化中 (Viterbi DP)...")
     t0 = time.time()
     try:
@@ -366,7 +422,19 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         )
         report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
-        report("assign", f"運指最適化スキップ（MoE出力をそのまま使用）: {e}")
+        report("assign", f"運指最適化スキップ（元出力をそのまま使用）: {e}")
+
+    # --- Step: LSTM運指リファインメント ---
+    # Viterbi DPの弦割り当て結果をBidirectional LSTMで精製。
+    # 前後の音の文脈（ピッチ、IOI、CNN確率）を考慮して弦を再予測。
+    try:
+        from fingering_model import predict_strings as lstm_predict_strings
+        report("assign", "LSTM運指リファインメント中...")
+        t0_lstm = time.time()
+        notes = lstm_predict_strings(notes, tuning=dp_tuning)
+        report("assign", f"LSTM運指リファインメント完了 ({time.time()-t0_lstm:.1f}s)")
+    except Exception as e:
+        report("assign", f"LSTMリファインメントスキップ: {e}")
 
     # Save assigned notes
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:

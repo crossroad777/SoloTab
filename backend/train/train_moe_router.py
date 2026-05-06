@@ -219,7 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--resume", action="store_true", help="Resume training (autodetect if possible)")
     parser.add_argument("--start_epoch", type=int, default=1, help="Force start from epoch")
     parser.add_argument("--start_step", type=int, default=0, help="Force start from step")
-    parser.add_argument("--epochs", type=int, default=10, help="Total number of epochs")
+    parser.add_argument("--epochs", type=int, default=25, help="Total number of epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     args = parser.parse_args()
     

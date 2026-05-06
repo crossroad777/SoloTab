@@ -243,8 +243,9 @@ def _frames_to_notes(
             fret_val = int(fret_indices[onset_frame, string_idx])
 
             # オンセット時に SILENCE が出ている場合は近傍フレームで補完
+            # 診断結果: onset-fret位置が2-3フレームずれるケースが頻発するため±4に拡大
             if fret_val == FRET_SILENCE_CLASS or not (0 <= fret_val <= MAX_FRETS):
-                for offset in (-1, 1, -2, 2):
+                for offset in (-1, 1, -2, 2, -3, 3, -4, 4):
                     f = onset_frame + offset
                     if 0 <= f < num_frames:
                         candidate = int(fret_indices[f, string_idx])

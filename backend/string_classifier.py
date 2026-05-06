@@ -358,6 +358,6 @@ if __name__ == "__main__":
         print("データが少なすぎます。")
     else:
         print(f"\nPhase 2: モデル学習 ({len(features)} samples)...")
-        model, val_acc = train_classifier(features, epochs=50, batch_size=64)
+        model, val_acc = train_classifier(features, epochs=25, batch_size=64)
         print(f"\n=== 完了 ===")
         print(f"弦分類器 Val精度: {val_acc:.4f} ({val_acc*100:.2f}%)")

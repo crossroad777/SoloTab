@@ -240,4 +240,4 @@ def train(sequences, n_epochs=100, lr=0.001, hidden_dim=128, n_layers=2, batch_s
 
 if __name__ == "__main__":
     sequences = load_guitarset_with_cnn()
-    train(sequences, n_epochs=100, lr=0.001, hidden_dim=128, n_layers=2)
+    train(sequences, n_epochs=25, lr=0.001, hidden_dim=128, n_layers=2)

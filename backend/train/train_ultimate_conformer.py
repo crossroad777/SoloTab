@@ -41,8 +41,8 @@ LOG_PATH = os.path.join(OUTPUT_RUN_DIR, "training_log.txt")
 
 # Hyperparameters
 LR_START = 6e-5  # Safe transfer learning LR
-EPOCHS = 500
-PATIENCE_EARLY_STOP = 100
+EPOCHS = 9999
+PATIENCE_EARLY_STOP = 10
 
 # Crash Resilience Stateful Variables
 START_EPOCH = 1

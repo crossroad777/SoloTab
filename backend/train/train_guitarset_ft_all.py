@@ -34,14 +34,15 @@ import config
 DOMAINS = [
     "martin_finger", "taylor_finger", "luthier_finger",
     "martin_pick", "taylor_pick", "luthier_pick",
+    "gibson_thumb",
 ]
 
 OUTPUT_BASE_DIR = os.path.join(mt_python_dir, "_processed_guitarset_data")
 TRAINING_OUTPUT_DIR = os.path.join(OUTPUT_BASE_DIR, "training_output")
 
-FT_LR = 1e-5
-FT_EPOCHS = 50
-FT_PATIENCE = 15
+FT_LR = 5e-6
+FT_EPOCHS_DEFAULT = 9999
+FT_PATIENCE_DEFAULT = 10
 FT_BATCH_SIZE = 2
 
 
@@ -75,8 +76,9 @@ def parse_log(log_path):
     """ログから最終Epoch番号とBest F1を取得"""
     start_epoch = 1
     best_f1 = 0.0
+    already_early_stopped = False
     if not os.path.exists(log_path):
-        return start_epoch, best_f1
+        return start_epoch, best_f1, already_early_stopped
     try:
         with open(log_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -90,17 +92,25 @@ def parse_log(log_path):
                 ep = int(s.split("|")[0].strip().split()[1])
                 start_epoch = ep + 1
                 found_epoch = True
+        # Check for early stop (forward scan)
+        for line in lines:
+            if "Early stop at epoch" in line:
+                already_early_stopped = True
+                break
     except Exception:
         pass
-    return start_epoch, best_f1
+    return start_epoch, best_f1, already_early_stopped
 
 
-def finetune_one(domain, device):
+def finetune_one(domain, device, ft_epochs=FT_EPOCHS_DEFAULT, ft_patience=FT_PATIENCE_DEFAULT):
     print(f"\n{'='*60}")
     print(f"  GuitarSet FT: {domain}")
     print(f"{'='*60}")
 
-    src_path = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_model", "best_model.pth")
+    # pre-emajorモデル(GuitarSet FT済み)をベースに追加FT
+    pre_emajor = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_guitarset_ft", "best_model_pre_emajor.pth")
+    domain_src = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_model", "best_model.pth")
+    src_path = pre_emajor if os.path.exists(pre_emajor) else domain_src
     out_dir = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_guitarset_ft")
     cfg_path = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_model", "run_configuration.json")
     if not os.path.exists(cfg_path):
@@ -114,9 +124,12 @@ def finetune_one(domain, device):
     best_path = os.path.join(out_dir, "best_model.pth")
     log_path = os.path.join(out_dir, "training_log.txt")
 
-    start_epoch, best_f1 = parse_log(log_path)
-    if start_epoch > FT_EPOCHS:
-        print(f"[SKIP] Already completed for {domain}")
+    start_epoch, best_f1, already_early_stopped = parse_log(log_path)
+    if already_early_stopped:
+        print(f"[SKIP] Already early-stopped for {domain} (Best F1={best_f1:.4f})")
+        return
+    if start_epoch > ft_epochs:
+        print(f"[SKIP] Already completed for {domain} (epoch {start_epoch-1}/{ft_epochs})")
         return
 
     load_path = best_path if (start_epoch > 1 and os.path.exists(best_path)) else src_path
@@ -125,14 +138,61 @@ def finetune_one(domain, device):
     with open(cfg_path, "r", encoding="utf-8") as f:
         hp = json.load(f)["hyperparameters_tuned"]
 
-    # Data loaders
+    # Data loaders (aug=Off: 前処理済みCQT特徴量を使用)
     common = config.DATASET_COMMON_PARAMS
     train_ds = dataset.GuitarSetTabDataset(
         processed_data_base_dir=OUTPUT_BASE_DIR, data_split_name="train",
         guitarset_data_home=config.DATA_HOME_DEFAULT,
         label_transform_function=create_frame_level_labels,
-        **common, **config.DATASET_TRAIN_AUGMENTATION_PARAMS,
+        **common, **config.DATASET_EVAL_AUGMENTATION_PARAMS,
     )
+    
+    # E major合成データを追加（前処理済みCQTを直接読み込み）
+    emajor_ids_path = os.path.join(OUTPUT_BASE_DIR, "emajor_train_ids.txt")
+    if os.path.exists(emajor_ids_path):
+        from torch.utils.data import ConcatDataset, Dataset as TorchDataset
+        
+        class SynthDataset(TorchDataset):
+            """前処理済み合成データの簡易Dataset"""
+            def __init__(self, base_dir, ids_file, hop_length, sr, max_fret):
+                self.items = []
+                self.hop_length = hop_length
+                self.sr = sr
+                self.max_fret = max_fret
+                with open(ids_file, 'r') as f:
+                    for line in f:
+                        tid = line.strip()
+                        if not tid:
+                            continue
+                        feat_path = os.path.join(base_dir, f"{tid}_features.pt")
+                        label_path = os.path.join(base_dir, f"{tid}_labels.pt")
+                        if os.path.exists(feat_path) and os.path.exists(label_path):
+                            self.items.append((feat_path, label_path, tid))
+            
+            def __len__(self):
+                return len(self.items)
+            
+            def __getitem__(self, idx):
+                feat_path, label_path, tid = self.items[idx]
+                features = torch.load(feat_path, weights_only=False)
+                raw_labels = torch.load(label_path, weights_only=False)
+                labels_tuple = create_frame_level_labels(
+                    raw_labels, features, self.hop_length, self.sr, self.max_fret
+                )
+                return features, labels_tuple, raw_labels, tid
+        
+        train_data_dir = os.path.join(OUTPUT_BASE_DIR, "train")
+        emajor_ds = SynthDataset(
+            train_data_dir, emajor_ids_path,
+            hop_length=config.HOP_LENGTH,
+            sr=config.SAMPLE_RATE,
+            max_fret=common.get('max_fret_value', 19),
+        )
+        if len(emajor_ds) > 0:
+            combined_ds = ConcatDataset([train_ds, emajor_ds])
+            print(f"  GuitarSet: {len(train_ds)}, E major synth: {len(emajor_ds)}")
+            train_ds = combined_ds
+    
     val_ds = dataset.GuitarSetTabDataset(
         processed_data_base_dir=OUTPUT_BASE_DIR, data_split_name="validation",
         label_transform_function=create_frame_level_labels,
@@ -178,8 +238,8 @@ def finetune_one(domain, device):
         if mode == "w":
             log_f.write(f"--- GuitarSet FT for {domain} | {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
-        for epoch in range(start_epoch, FT_EPOCHS + 1):
-            desc = f"Epoch {epoch}/{FT_EPOCHS}"
+        for epoch in range(start_epoch, ft_epochs + 1):
+            desc = f"Epoch {epoch}/{ft_epochs}"
 
             train_pbar = tqdm(train_loader, desc=f"{desc} [Train]", unit="b", leave=False, dynamic_ncols=True)
             train_m = epoch_processing.train_one_epoch(model, train_pbar, optimizer, criterion, device)
@@ -205,7 +265,7 @@ def finetune_one(domain, device):
                 log_f.write(msg + "\n")
             else:
                 bad_epochs += 1
-                if bad_epochs >= FT_PATIENCE:
+                if bad_epochs >= ft_patience:
                     print(f"  Early stop at epoch {epoch}")
                     log_f.write(f"  Early stop at epoch {epoch}\n")
                     break
@@ -220,6 +280,8 @@ def finetune_one(domain, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--domain", type=str, default=None, help="Single domain to fine-tune")
+    parser.add_argument("--epochs", type=int, default=FT_EPOCHS_DEFAULT, help=f"Max epochs (default: {FT_EPOCHS_DEFAULT})")
+    parser.add_argument("--patience", type=int, default=FT_PATIENCE_DEFAULT, help=f"Early stopping patience (default: {FT_PATIENCE_DEFAULT})")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -229,7 +291,7 @@ def main():
 
     domains = [args.domain] if args.domain else DOMAINS
     for d in domains:
-        finetune_one(d, device)
+        finetune_one(d, device, ft_epochs=args.epochs, ft_patience=args.patience)
 
     print("\n" + "=" * 60)
     print("All GuitarSet fine-tuning complete!")

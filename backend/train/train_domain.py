@@ -76,7 +76,7 @@ else:
 MODEL_SAVE_PATH = os.path.join(RUN_DIR, "best_model.pth")
 CONFIG_PATH = os.path.join(RUN_DIR, "run_configuration.json")
 
-TOTAL_EPOCHS = 300
+TOTAL_EPOCHS = 9999
 RESUME_LR = 6e-5
 START_EPOCH = 1
 BEST_METRIC_VAL = 0.0
@@ -296,7 +296,7 @@ def resume_training():
     print(f"\n[3] Starting Fine-tuning for {DATASET_NAME}...")
     best_metric_val = BEST_METRIC_VAL
     epochs_without_improvement = 0
-    early_stop_patience = config.EARLY_STOPPING_PATIENCE_DEFAULT
+    early_stop_patience = 10
 
     training_history = {
         "train_total_loss": [], "val_total_loss": [], "lr": [], "val_tdr_f1_at_0.5": [], "val_tdr_precision_at_0.5": [], "val_tdr_recall_at_0.5": [], "val_onset_f1_event_at_0.5": [], "val_mpe_f1": []

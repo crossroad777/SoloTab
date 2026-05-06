@@ -44,8 +44,8 @@ TRAINING_OUTPUT_DIR = os.path.join(OUTPUT_BASE_DIR, "training_output")
 RUN_DIR = os.path.join(TRAINING_OUTPUT_DIR, "distilled_unified_model")
 
 DISTILL_LR = 3e-5
-DISTILL_EPOCHS = 80
-DISTILL_PATIENCE = 20
+DISTILL_EPOCHS = 9999
+DISTILL_PATIENCE = 10
 DISTILL_BATCH_SIZE = 2
 TEMPERATURE = 3.0
 ALPHA = 0.7  # 蒸留Loss の重み (1-ALPHA = GT Loss の重み)

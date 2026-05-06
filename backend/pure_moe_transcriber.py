@@ -14,15 +14,14 @@ import config
 from model import architecture
 from guitar_transcriber import _frames_to_notes
 
-def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold: float = 0.8, vote_prob_threshold: float = 0.5) -> list:
+def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold: float = 0.75, vote_prob_threshold: float = 0.5) -> list:
     """
-    指定された6つの特化モデルのみを使って純粋に音符を検出するトランスクライバ。
+    指定された7つの特化モデルのみを使って純粋に音符を検出するトランスクライバ。
     他のフィルタリングや後処理（DP等）は一切行わず、モデルの出力を忠実に返す。
 
-    最適パラメータ (GuitarSet FT後):
-      vote_threshold=5, onset_threshold=0.8, vote_prob_threshold=0.5
-      → Test分割(36曲) F1=0.8310 (P=0.8417, R=0.8257)
-      → 全360曲(参考値) F1=0.8478 (P=0.8499, R=0.8480)
+    最適パラメータ (3DS + ドメイン別Best F1選択, 2026-05-05):
+      vote_threshold=5, onset_threshold=0.75, vote_prob_threshold=0.5
+      → E2E 10曲: F1=0.8323 (P=0.8543, R=0.8114)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Extracting CQT features for {os.path.basename(wav_path)} ...")
@@ -35,15 +34,43 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
     log_cqt = librosa.amplitude_to_db(np.abs(cqt_spec), ref=np.max)
     features = torch.tensor(log_cqt, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
     
-    models_to_test = [
-        "finetuned_martin_finger_guitarset_ft",
-        "finetuned_taylor_finger_guitarset_ft",
-        "finetuned_luthier_finger_guitarset_ft",
-        "finetuned_martin_pick_guitarset_ft",
-        "finetuned_taylor_pick_guitarset_ft",
-        "finetuned_luthier_pick_guitarset_ft",
-        "finetuned_gibson_thumb_guitarset_ft",
+    # 各ドメインの最良モデルを動的に選択（最新ステージ優先）
+    domain_names = [
+        "martin_finger", "taylor_finger", "luthier_finger",
+        "martin_pick", "taylor_pick", "luthier_pick",
+        "gibson_thumb",
     ]
+    # ドメイン別Best F1モデル選択: 各ステージのVal F1を比較し最良を使用
+    stage_suffixes = ["multitask_3ds", "multitask", "guitarset_ft"]
+    
+    models_to_test = []
+    for dname in domain_names:
+        best_f1 = -1.0
+        best_candidate = None
+        for suffix in stage_suffixes:
+            candidate = f"finetuned_{dname}_{suffix}"
+            candidate_dir = os.path.join(mt_python_dir, "_processed_guitarset_data", "training_output", candidate)
+            candidate_path = os.path.join(candidate_dir, "best_model.pth")
+            if not os.path.exists(candidate_path):
+                continue
+            # training_logからBest F1を読み取り
+            log_path = os.path.join(candidate_dir, "training_log.txt")
+            f1 = 0.0
+            if os.path.exists(log_path):
+                with open(log_path, 'r', encoding='utf-8', errors='ignore') as lf:
+                    for line in lf:
+                        if "Best F1:" in line:
+                            try:
+                                f1 = float(line.split("Best F1:")[1].strip().split()[0])
+                            except:
+                                pass
+            if f1 > best_f1:
+                best_f1 = f1
+                best_candidate = candidate
+            elif best_candidate is None:
+                best_candidate = candidate
+        if best_candidate:
+            models_to_test.append(best_candidate)
     
     all_onset_probs = []
     all_fret_preds = []
@@ -107,12 +134,61 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
     
     for n in notes:
         n["source"] = "pure_moe"
-        # jsonに保存しやすいようにfloatに変換
         n["start"] = float(n["start"])
         n["end"] = float(n["end"])
+    
+    # --- 物理制約フィルタ: 一時無効化（ベースライン比較用） ---
+    # before_count = len(notes)
+    # notes = _apply_physical_constraints(notes)
+    # removed = before_count - len(notes)
+    # if removed > 0:
+    #     print(f"Physical filter: removed {removed} notes ({before_count} -> {len(notes)})")
         
     print(f"Completed! Detected {len(notes)} notes.")
     return notes
+
+
+def _apply_physical_constraints(notes: list) -> list:
+    """
+    物理的に不可能なノートを除去する最小限のフィルタ。
+    
+    除去ルール:
+    1. 同一弦で30ms以内に連続する重複ノート（後のものを除去）
+    2. 極端に短いノート（< 25ms）
+    3. フレット範囲外（> 19フレット）
+    """
+    if not notes:
+        return notes
+    
+    filtered = []
+    MIN_INTERVAL = 0.030   # 同一弦の最小間隔 30ms
+    MIN_DURATION = 0.025   # 最小ノート長 25ms
+    MAX_FRET = 19
+    
+    for note in notes:
+        # Rule 3: フレット範囲チェック
+        if note.get('fret', 0) > MAX_FRET:
+            continue
+        
+        # Rule 2: 最小ノート長チェック
+        duration = note.get('end', 0) - note.get('start', 0)
+        if duration < MIN_DURATION:
+            continue
+        
+        # Rule 1: 同一弦の重複チェック（直前のノートとの比較）
+        duplicate = False
+        for prev in reversed(filtered):
+            time_gap = note['start'] - prev['start']
+            if time_gap > MIN_INTERVAL:
+                break
+            if prev.get('string') == note.get('string') and prev.get('pitch') == note.get('pitch'):
+                duplicate = True
+                break
+        
+        if not duplicate:
+            filtered.append(note)
+    
+    return filtered
 
 if __name__ == "__main__":
     import argparse

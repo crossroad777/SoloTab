@@ -1,0 +1,86 @@
+{
+  "title": "Romance de Amor (Jeux interdits)",
+  "key": "Em",
+  "time_signature": "3/4",
+  "bpm": 80,
+  "subdivision": "triplet",
+  "tuning": [40, 45, 50, 55, 59, 64],
+  "notes_per_beat": 3,
+  "notes_per_measure": 9,
+  "structure": "3-voice arpeggio: bass(5-6str) + melody(1str) + inner(2-3str)",
+  "measures": [
+    {
+      "measure": 1,
+      "chord": "Em",
+      "notes": [
+        {"beat": 1, "role": "bass",   "string": 6, "fret": 0, "pitch": 40, "note": "E2"},
+        {"beat": 1, "role": "melody", "string": 1, "fret": 7, "pitch": 71, "note": "B4"},
+        {"beat": 1, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 1, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 2, "role": "melody", "string": 1, "fret": 7, "pitch": 71, "note": "B4"},
+        {"beat": 2, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 2, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 3, "role": "melody", "string": 1, "fret": 7, "pitch": 71, "note": "B4"},
+        {"beat": 3, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"}
+      ]
+    },
+    {
+      "measure": 2,
+      "chord": "Em",
+      "notes": [
+        {"beat": 1, "role": "bass",   "string": 6, "fret": 0, "pitch": 40, "note": "E2"},
+        {"beat": 1, "role": "melody", "string": 1, "fret": 7, "pitch": 71, "note": "B4"},
+        {"beat": 1, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 1, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 2, "role": "melody", "string": 1, "fret": 5, "pitch": 69, "note": "A4"},
+        {"beat": 2, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 2, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 3, "role": "melody", "string": 1, "fret": 3, "pitch": 67, "note": "G4"},
+        {"beat": 3, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"}
+      ]
+    },
+    {
+      "measure": 3,
+      "chord": "Am",
+      "notes": [
+        {"beat": 1, "role": "bass",   "string": 5, "fret": 0, "pitch": 45, "note": "A2"},
+        {"beat": 1, "role": "melody", "string": 1, "fret": 3, "pitch": 67, "note": "G4"},
+        {"beat": 1, "role": "inner",  "string": 2, "fret": 1, "pitch": 60, "note": "C4"},
+        {"beat": 1, "role": "inner",  "string": 3, "fret": 2, "pitch": 57, "note": "A3"},
+        {"beat": 2, "role": "melody", "string": 1, "fret": 2, "pitch": 66, "note": "F#4"},
+        {"beat": 2, "role": "inner",  "string": 2, "fret": 1, "pitch": 60, "note": "C4"},
+        {"beat": 2, "role": "inner",  "string": 3, "fret": 2, "pitch": 57, "note": "A3"},
+        {"beat": 3, "role": "melody", "string": 1, "fret": 0, "pitch": 64, "note": "E4"},
+        {"beat": 3, "role": "inner",  "string": 2, "fret": 1, "pitch": 60, "note": "C4"}
+      ]
+    },
+    {
+      "measure": 4,
+      "chord": "Em",
+      "notes": [
+        {"beat": 1, "role": "bass",   "string": 6, "fret": 0, "pitch": 40, "note": "E2"},
+        {"beat": 1, "role": "melody", "string": 1, "fret": 0, "pitch": 64, "note": "E4"},
+        {"beat": 1, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 1, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 2, "role": "melody", "string": 1, "fret": 3, "pitch": 67, "note": "G4"},
+        {"beat": 2, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"},
+        {"beat": 2, "role": "inner",  "string": 3, "fret": 0, "pitch": 55, "note": "G3"},
+        {"beat": 3, "role": "melody", "string": 1, "fret": 7, "pitch": 71, "note": "B4"},
+        {"beat": 3, "role": "inner",  "string": 2, "fret": 0, "pitch": 59, "note": "B3"}
+      ]
+    }
+  ],
+  "patterns": {
+    "arpeggio_per_beat": {
+      "description": "Each beat has 3 notes in triplet: [melody, inner(2str), inner(3str)] for beats 1-2, [melody, inner(2str)] for beat 3. Bass only on beat 1.",
+      "beat_1": ["bass+melody", "inner_2str", "inner_3str"],
+      "beat_2": ["melody", "inner_2str", "inner_3str"],
+      "beat_3": ["melody", "inner_2str", "inner_3str (or omitted)"]
+    },
+    "voice_rules": {
+      "melody": "Always on string 1. Changes pitch each beat.",
+      "inner": "Strings 2-3. Constant within same chord, changes at chord boundary.",
+      "bass": "Strings 5-6. Only on beat 1 of measure. Holds as dotted half note."
+    }
+  }
+}
