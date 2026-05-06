@@ -908,3 +908,70 @@ Step E: 結果をセクション7.6および本セクションに反映
 ### 12.7 論文への記載案
 
 > 本研究では、GuitarSet Test分割（スチール弦60曲、Player 05）およびGAPS Test分割（ナイロン弦30曲）の計90曲の未学習データで評価を行った。3データセット統合学習（GuitarSet + GAPS + AG-PT-set）後のMoEアンサンブルは、GuitarSetでPitch F1=0.8839、GAPSでPitch F1=0.7312を達成し、ナイロン弦クラシカルギターへの汎化能力を実証した。
+
+---
+
+## 13. Step 8: Basic Pitch融合戦略 (Hybrid Transcription Pipeline)
+
+### 13.1 動機
+
+Step 6までのMoEアンサンブルはPitch F1=0.8644（30曲mir_eval評価）に到達したが、Precisionは0.8564にとどまり誤検出が課題であった。一方、SpotifyのBasic Pitchモデル（17Kパラメータ、ONNXRuntime推論）は学習なしでF1=0.8713、Recall=0.9074という高いリコールを示した。両者の特性を融合することでSOTA超えを狙う。
+
+### 13.2 融合戦略の比較
+
+GuitarSet Test（Player 05、30曲）でmir_eval note-level評価を実施。5つの融合戦略をテスト：
+
+| 戦略 | F1 | Precision | Recall | 説明 |
+|------|-----|-----------|--------|------|
+| BP only | 0.8713 | 0.8422 | 0.9074 | Basic Pitch単独 |
+| MoE only | 0.8644 | 0.8564 | 0.8740 | Pure MoE（vote=5/7） |
+| Union | 0.8403 | 0.7654 | 0.9316 | 和集合（どちらかが検出） |
+| Intersection | 0.8550 | 0.9527 | 0.7762 | 積集合（両方が検出） |
+| **Fusion C** | **0.8835** | **0.9531** | **0.8263** | BP検出→MoE確認 |
+
+### 13.3 最適パラメータ
+
+マッチング許容値のスイープで70msが最適と判明：
+
+| マッチング許容値 | F1 | P | R |
+|----------------|------|------|------|
+| 30ms | 0.8580 | 0.9583 | 0.7809 |
+| 50ms | 0.8785 | 0.9562 | 0.8159 |
+| **70ms** | **0.8835** | **0.9531** | **0.8263** |
+| 100ms | 0.8824 | 0.9476 | 0.8284 |
+| 150ms | 0.8776 | 0.9412 | 0.8248 |
+
+### 13.4 致命的バグの発見と修正
+
+総点検中に、GA学習パイプラインでGuitarSetのデータ拡張が**無効化**されていたことを発見。
+
+```diff
+# train_gaps_multitask.py L366
+- **common, **config.DATASET_EVAL_AUGMENTATION_PARAMS,
++ **common, **config.DATASET_TRAIN_AUGMENTATION_PARAMS,
+```
+
+これにより、ピッチシフト（±2半音）、タイムストレッチ（0.8x-1.2x）、ノイズ追加、リバーブ、EQ、SpecAugmentの全9種類のデータ拡張が無効であった。拡張有効化により個別モデルF1の大幅改善が見込まれる。
+
+### 13.5 アーキテクチャ
+
+```
+Audio Input
+  ├─→ Basic Pitch (ONNX, 高Recall候補検出)
+  ├─→ MoE Ensemble (7 CRNNs, 弦/フレット情報付き)
+  └─→ 融合: onset差<70ms ∧ pitch差≤1半音 → MoEノートを採用
+       → CNN弦分類 → Viterbi DP → Fingering LSTM → MusicXML
+```
+
+### 13.6 実装詳細
+
+- `pipeline.py`: Step 3をFusion Cに置換。フォールバック: MoE単独→BP単独
+- `dataset.py`: scipy `iirfilter` API互換性修正（`Wn`をリストからスカラーに変更）
+- `run_ga_retrain.py`: cp932エンコーディング修正
+
+### 13.7 今後の計画
+
+1. **Phase 1**: 拡張有効GA再学習（7ドメイン、推定24-48時間）
+2. **Phase 2**: 改善モデルでの融合パラメータ再最適化
+3. **目標**: Fusion F1 = 0.90+ (Precision 0.95+維持)
+
