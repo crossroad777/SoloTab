@@ -1,0 +1,19 @@
+{
+  "executionEnvironments": [
+    {
+      "root": "backend/train",
+      "extraPaths": ["../../music-transcription/python"]
+    },
+    {
+      "root": "backend/synth",
+      "extraPaths": ["../../music-transcription/python"]
+    },
+    {
+      "root": "backend",
+      "extraPaths": ["../music-transcription/python"]
+    }
+  ],
+  "extraPaths": [
+    "music-transcription/python"
+  ]
+}

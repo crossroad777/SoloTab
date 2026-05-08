@@ -58,14 +58,19 @@ TRAINING_OUTPUT_DIR = os.path.join(OUTPUT_BASE_DIR, "training_output")
 
 # AG-PT-set paths
 AGPT_PROCESSED_DIR = os.path.join(r"D:\Music\datasets\AG-PT-set\aGPTset", "_processed")
-AGPT_RATIO = 0.3   # AG-PT-set混合比率
+AGPT_RATIO = 0.2   # AG-PT-set混合比率 (0.2: ~72件サンプリング)
+
+# Synth V2 paths
+SYNTH_V2_DIR = r"D:\Music\datasets\synth_v2"
+SYNTH_V2_IDS = os.path.join(SYNTH_V2_DIR, "train_ids.txt")
+SYNTH_RATIO = 0.5  # Synth V2混合比率 (0.5: 5000→~286件/エポック = GuitarSetと同数)
 
 # Training Hyperparameters
 FT_LR = 3e-6       # 低めのLR: 2ドメイン混合で安定学習
 FT_EPOCHS = 9999
 FT_PATIENCE = 10
 FT_BATCH_SIZE = 1
-GAPS_RATIO = 0.3   # GAPS混合比率 (GuitarSet : GAPS ≈ 7:3)
+GAPS_RATIO = 0.6   # GAPS混合比率 (0.6: 全371件使用)
 ACCUMULATION_STEPS = 4  # Gradient Accumulation: 実効バッチサイズ = 1 * 4 = 4
 
 
@@ -270,10 +275,32 @@ class GAPSTabDataset(TorchDataset):
     def __len__(self):
         return len(self.items)
     
-    def __getitem__(self, idx):
-        feat_path, label_path, tid = self.items[idx]
+    # GAPSの長大サンプルをGuitarSet相当の長さに制限（速度改善）
+    MAX_FRAMES = 3000  # GuitarSet最大≒約30秒相当
+
+    def __getitem__(self, index):
+        feat_path, label_path, tid = self.items[index]
         features = torch.load(feat_path, weights_only=False)
         raw_labels = torch.load(label_path, weights_only=False)
+
+        # フレーム数キャップ: 長いサンプルはランダム位置で切り出し
+        n_frames = features.shape[-1]
+        if n_frames > self.MAX_FRAMES:
+            import random
+            start = random.randint(0, n_frames - self.MAX_FRAMES)
+            features = features[..., start:start + self.MAX_FRAMES]
+            # ラベルも対応する時間範囲にフィルタリング
+            # raw_labels: Tensor [N, 5] = [onset_sec, offset_sec, string, fret, pitch]
+            start_sec = start * self.hop_length / self.sr
+            end_sec = (start + self.MAX_FRAMES) * self.hop_length / self.sr
+            if isinstance(raw_labels, torch.Tensor) and raw_labels.ndim == 2 and raw_labels.shape[0] > 0:
+                mask = (raw_labels[:, 0] >= start_sec) & (raw_labels[:, 0] < end_sec)
+                raw_labels = raw_labels[mask].clone()
+                raw_labels[:, 0] -= start_sec  # onset調整
+                raw_labels[:, 1] = torch.clamp(raw_labels[:, 1], max=end_sec) - start_sec  # offset調整
+            elif isinstance(raw_labels, torch.Tensor):
+                pass  # 空テンソルはそのまま
+
         labels_tuple = create_frame_level_labels(
             raw_labels, features, self.hop_length, self.sr, self.max_fret
         )
@@ -283,8 +310,11 @@ class GAPSTabDataset(TorchDataset):
 # ============================================================
 # Multi-task Training
 # ============================================================
-def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIENCE, include_agpt=False, ga_retrain=False):
-    ds_label = "GuitarSet + GAPS + AG-PT" if include_agpt else "GuitarSet + GAPS"
+def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIENCE, include_agpt=False, ga_retrain=False, include_synth=False):
+    ds_parts = ["GuitarSet", "GAPS"]
+    if include_agpt: ds_parts.append("AG-PT")
+    if include_synth: ds_parts.append("Synth")
+    ds_label = " + ".join(ds_parts)
     print(f"\n{'='*60}")
     print(f"  Multi-task FT ({ds_label}): {domain}")
     print(f"{'='*60}")
@@ -396,39 +426,73 @@ def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIE
     else:
         print("  [WARN] No GAPS data found. Run with --preprocess first.")
     
-    if os.path.exists(emajor_ids_path):
-        # Inline SynthDataset
-        class _SynthDS(TorchDataset):
-            def __init__(self, base_dir, ids_file, hop_length, sr, max_fret):
-                self.items = []
-                self.hop_length = hop_length
-                self.sr = sr
-                self.max_fret = max_fret
-                with open(ids_file, 'r') as f:
-                    for line in f:
-                        tid = line.strip()
-                        if not tid: continue
-                        fp = os.path.join(base_dir, f"{tid}_features.pt")
-                        lp = os.path.join(base_dir, f"{tid}_labels.pt")
-                        if os.path.exists(fp) and os.path.exists(lp):
-                            self.items.append((fp, lp, tid))
-            def __len__(self): return len(self.items)
-            def __getitem__(self, idx):
-                fp, lp, tid = self.items[idx]
-                features = torch.load(fp, weights_only=False)
-                raw_labels = torch.load(lp, weights_only=False)
-                labels_tuple = create_frame_level_labels(
-                    raw_labels, features, self.hop_length, self.sr, self.max_fret)
-                return features, labels_tuple, raw_labels, tid
-        
-        emajor_ds = _SynthDS(
-            os.path.join(OUTPUT_BASE_DIR, "train"), emajor_ids_path,
+    # Inline SynthDataset (emajor / synth_v2 共用)
+    class _SynthDS(TorchDataset):
+        def __init__(self, base_dir, ids_file, hop_length, sr, max_fret):
+            self.items = []
+            self.hop_length = hop_length
+            self.sr = sr
+            self.max_fret = max_fret
+            with open(ids_file, 'r') as f:
+                for line in f:
+                    tid = line.strip()
+                    if not tid: continue
+                    fp = os.path.join(base_dir, f"{tid}_features.pt")
+                    lp = os.path.join(base_dir, f"{tid}_labels.pt")
+                    if os.path.exists(fp) and os.path.exists(lp):
+                        self.items.append((fp, lp, tid))
+        def __len__(self): return len(self.items)
+        def __getitem__(self, index):
+            fp, lp, tid = self.items[index]
+            features = torch.load(fp, weights_only=False)
+            raw_labels = torch.load(lp, weights_only=False)
+            labels_tuple = create_frame_level_labels(
+                raw_labels, features, self.hop_length, self.sr, self.max_fret)
+            return features, labels_tuple, raw_labels, tid
+    
+    # E major synth — 合成音+調性バイアスのリスクがあるため無効化
+    # if os.path.exists(emajor_ids_path):
+    #     emajor_ds = _SynthDS(
+    #         os.path.join(OUTPUT_BASE_DIR, "train"), emajor_ids_path,
+    #         config.HOP_LENGTH, config.SAMPLE_RATE,
+    #         common.get('max_fret_value', config.MAX_FRETS),
+    #     )
+    #     if len(emajor_ds) > 0:
+    #         extra_datasets.append(emajor_ds)
+    #         print(f"  E major synth: {len(emajor_ds)}")
+    
+    # Synth V2 (optional)
+    if include_synth and os.path.exists(SYNTH_V2_IDS):
+        synth_v2_ds = _SynthDS(
+            SYNTH_V2_DIR, SYNTH_V2_IDS,
             config.HOP_LENGTH, config.SAMPLE_RATE,
             common.get('max_fret_value', config.MAX_FRETS),
         )
-        if len(emajor_ds) > 0:
-            extra_datasets.append(emajor_ds)
-            print(f"  E major synth: {len(emajor_ds)}")
+        if len(synth_v2_ds) > 0:
+            target_synth_size = int(len(gs_train) * SYNTH_RATIO / (1 - SYNTH_RATIO))
+            if target_synth_size < len(synth_v2_ds):
+                synth_indices = torch.randperm(len(synth_v2_ds))[:target_synth_size].tolist()
+                synth_subset = torch.utils.data.Subset(synth_v2_ds, synth_indices)
+                extra_datasets.append(synth_subset)
+                print(f"  Synth V2: {len(synth_v2_ds)} total, {target_synth_size} sampled (ratio={SYNTH_RATIO})")
+            else:
+                extra_datasets.append(synth_v2_ds)
+                print(f"  Synth V2: {len(synth_v2_ds)} (all)")
+    elif include_synth:
+        print("  [WARN] Synth V2 not found. Run generate_dataset.py first.")
+    
+    # IDMT-SMT-V2 — テスト2: 除外
+    # idmt_dir = r"D:\Music\datasets\idmt_processed"
+    # idmt_ids = os.path.join(idmt_dir, "train_ids.txt")
+    # if os.path.exists(idmt_ids):
+    #     idmt_ds = _SynthDS(
+    #         idmt_dir, idmt_ids,
+    #         config.HOP_LENGTH, config.SAMPLE_RATE,
+    #         common.get('max_fret_value', config.MAX_FRETS),
+    #     )
+    #     if len(idmt_ds) > 0:
+    #         extra_datasets.append(idmt_ds)
+    #         print(f"  IDMT-SMT: {len(idmt_ds)}")
     
     # AG-PT-set (optional)
     if include_agpt:
@@ -566,6 +630,8 @@ def main():
                         help="Max GAPS tracks to preprocess (for testing)")
     parser.add_argument("--include-agpt", action="store_true",
                         help="Include AG-PT-set as 3rd dataset (3-dataset integration)")
+    parser.add_argument("--include-synth", action="store_true",
+                        help="Include Synth V2 as 4th dataset (100%% accurate labels)")
     parser.add_argument("--ga-retrain", action="store_true",
                         help="Gradient Accumulation retrain from 3DS models (accum_steps=4)")
     args = parser.parse_args()
@@ -590,7 +656,7 @@ def main():
     # Step 3: Multi-task学習
     finetune_multitask(args.domain, device, ft_epochs=args.epochs,
                        ft_patience=args.patience, include_agpt=args.include_agpt,
-                       ga_retrain=args.ga_retrain)
+                       ga_retrain=args.ga_retrain, include_synth=args.include_synth)
     
     print("\n" + "=" * 60)
     print("Multi-task training complete!")

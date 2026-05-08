@@ -40,8 +40,8 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
         "martin_pick", "taylor_pick", "luthier_pick",
         "gibson_thumb",
     ]
-    # ドメイン別Best F1モデル選択: 各ステージのVal F1を比較し最良を使用
-    stage_suffixes = ["multitask_3ds_ga", "multitask_3ds", "multitask", "guitarset_ft"]
+    # Synth V2混合モデルのみ使用 — MoE F1=0.8877達成 (2026-05-09)
+    stage_suffixes = ["multitask_3ds_ga"]
     
     models_to_test = []
     for dname in domain_names:
