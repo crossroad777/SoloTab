@@ -247,7 +247,37 @@ Fine grid search (w_ts=0.1-0.8, w_tf=0-0.03) over 60 solo files:
 2. Player-specific position choices that differ from training distribution
 3. Limited training data diversity (GuitarSet = 6 players, 1 guitar)
 
+### 5.9 CNN Error Pattern Analysis: The Position Playing Problem
 
+Detailed analysis of 1,003 CNN errors reveals a clear human-centric pattern:
+
+**Top error patterns:**
+
+| Pattern | Count | % | Interpretation |
+|---------|-------|---|----------------|
+| S2→S1 | 300 | 29.9% | Human plays B string high fret, CNN picks E string low fret |
+| S3→S4 | 220 | 21.9% | Human plays G string, CNN picks D string |
+| S3→S2 | 138 | 13.8% | Human plays G string, CNN picks B string |
+| S2→S3 | 125 | 12.5% | Human plays B string low fret, CNN picks G string |
+| S5→S4 | 85 | 8.5% | Human plays A string high fret, CNN picks D string |
+
+**Root cause: Position playing vs. open-position bias**
+
+The #1 error (S2→S1, 300 cases) reveals a fundamental pattern:
+- A4 (MIDI 69): Human plays **B string fret 10**, CNN picks **E string fret 5**
+- B4 (MIDI 71): Human plays **B string fret 12**, CNN picks **E string fret 7**
+- Average GT fret: **9.1**, Average predicted fret: **6.8**
+
+**Human guitarists maintain "position" playing** — keeping the hand in a 4-fret zone on a thicker string rather than jumping to a thinner string at a lower fret. The CNN, trained on CQT spectral features alone, cannot distinguish the subtle harmonic differences between these equivalent pitch positions.
+
+**Error direction:** CNN picks **thinner** string 60.7% of the time, **thicker** string 39.3%. This confirms the systematic low-fret/thin-string bias.
+
+**Implication for improvement:** The remaining ~6% error cannot be solved by audio features alone. It requires either:
+1. **Position-aware post-processing** (Viterbi with strong same-position preference)
+2. **Multi-note context** (the surrounding notes reveal which position the player is in)
+3. **More diverse training data** (more players, more guitars, more positions)
+
+## 6. Data Scaling Strategy
 
 ### 6.1 Current Pipeline
 
