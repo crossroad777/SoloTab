@@ -30,7 +30,7 @@ solotab_image = (
     .apt_install("ffmpeg", "libsndfile1", "fonts-noto-cjk")
     .pip_install(
         "torch==2.5.1",
-        extra_index_url="https://download.pytorch.org/whl/cpu",
+        extra_index_url="https://download.pytorch.org/whl/cu121",
     )
     .pip_install(
         "numpy<2.0",
@@ -84,7 +84,7 @@ session_vol = modal.Volume.from_name("solotab-sessions", create_if_missing=True)
 @app.function(
     timeout=600,
     memory=4096,
-    cpu=2.0,
+    gpu="T4",
     min_containers=0,
     volumes={"/data": session_vol},
 )
