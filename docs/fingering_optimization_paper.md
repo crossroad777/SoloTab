@@ -277,7 +277,46 @@ The #1 error (S2→S1, 300 cases) reveals a fundamental pattern:
 2. **Multi-note context** (the surrounding notes reveal which position the player is in)
 3. **More diverse training data** (more players, more guitars, more positions)
 
-## 6. Data Scaling Strategy
+### 5.10 Position-Aware CNN-Viterbi
+
+Added position shift penalty (fret jumps > 4) and thick-string bonus to the CNN-Viterbi hybrid:
+
+| Config | Overall | S2 | S6 |
+|--------|---------|-----|-----|
+| CNN only | 93.3% | 87.5 | 89.4 |
+| CNN-Viterbi baseline | 93.6% | 88.1 | 91.2 |
+| + pos_shift=0.3 | **93.7%** | 88.3 | 90.4 |
+| + pos=0.1, thick=1.0 | 93.6% | **88.4** | **92.0** |
+
+Trade-off: position shift helps S3/S5, thick bonus helps S2/S6, but gains in one area offset losses elsewhere.
+
+### 5.11 Confidence-Gated Position Correction
+
+When CNN confidence is low (top - 2nd prob < threshold), apply position + thick-string correction:
+
+| Threshold | Overall | Gated Notes | Gate Accuracy |
+|-----------|---------|-------------|---------------|
+| 0.10 | 93.3% | 88 | 62.5% |
+| 0.40 | **93.6%** | 390 | 63.6% |
+| 0.99 | 93.6% | 4,724 | 90.9% |
+
+**Finding:** As more notes are gated (threshold raised), the position correction accuracy within gated notes improves (62.5% → 90.9%), but overall accuracy plateaus at 93.6%. This indicates the correction helps approximately as many notes as it harms.
+
+### 5.12 Current Status Summary
+
+| Method | Accuracy | Data Source |
+|--------|----------|-------------|
+| Viterbi DP (pitch only) | 52.8% | Pitch sequence |
+| Viterbi + human preference | 59.5% | Pitch + GProTab data |
+| **CNN String Classifier** | **93.3%** | Audio CQT features |
+| CNN-Viterbi hybrid | **93.7%** | Audio + sequence |
+| Target | 95-98% | — |
+
+**The CNN at 93.3-93.7% appears to be near the ceiling achievable with the current GuitarSet training data** (6 players, 1 guitar). The remaining errors are dominated by the "position playing" problem (S2→S1: human prefers high-fret thick-string, CNN picks low-fret thin-string) which reflects guitarist hand shape and scale position knowledge that cannot be inferred from single-note audio alone.
+
+**Path to 95%+:** Requires scale-position awareness (CAGED system, pentatonic positions) or significantly more diverse training data. The GProTab scraping pipeline is actively collecting human fingering data that can inform scale position statistics.
+
+
 
 ### 6.1 Current Pipeline
 
