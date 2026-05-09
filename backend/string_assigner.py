@@ -667,6 +667,9 @@ def _human_preference_cost(pitch: int, s: int, f: int) -> float:
     人間運指選好コスト: IDMTの人間が選んだポジションにボーナスを付与。
     人間が高頻度で選ぶポジション → 低コスト（ボーナス）
     人間が選ばないポジション → コスト0（ペナルティなし）
+
+    注意: sはget_possible_positions形式 (1=1弦E4, 6=6弦E2)
+    マップはIDMT形式 (1=6弦E2, 6=1弦E4) → 変換: map_s = 7 - s
     """
     pref = _load_human_preference()
     if not pref:
@@ -677,7 +680,9 @@ def _human_preference_cost(pitch: int, s: int, f: int) -> float:
         return 0.0
 
     prob = pitch_data.get('prob', {})
-    key = f"{s}_{f}"
+    # 弦番号変換: Viterbi形式(1=1弦) → IDMT形式(1=6弦)
+    map_s = 7 - s
+    key = f"{map_s}_{f}"
     p = prob.get(key, 0.0)
 
     if p > 0:
@@ -1128,7 +1133,8 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     
     # 初期化: 最初のノートのステップコストは位置コストのみ
     for s, f in candidates_list[0]:
-        step_cost = _position_cost(s, f) + _timbre_cost(s, f, tuning)
+        note_pitch = notes[0].get('pitch') if notes else None
+        step_cost = _position_cost(s, f, pitch=note_pitch) + _timbre_cost(s, f, tuning)
         mm_trellis[0][(s, f)] = (step_cost, None)
     
     # Forward pass (minimax semiring)
@@ -1143,7 +1149,8 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
             best_max_cost = float('inf')
             best_prev = None
             
-            emission = _position_cost(s, f) + _timbre_cost(s, f, tuning)
+            note_pitch_i = notes[i].get('pitch') if i < len(notes) else None
+            emission = _position_cost(s, f, pitch=note_pitch_i) + _timbre_cost(s, f, tuning)
             
             for (prev_s, prev_f), (prev_max, _) in mm_trellis[i - 1].items():
                 trans = _transition_cost(s, f, prev_s, prev_f)
@@ -1186,7 +1193,7 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     for i in range(1, n):
         s, f = notes[i].get("string", 1), notes[i].get("fret", 0)
         ps, pf = notes[i-1].get("string", 1), notes[i-1].get("fret", 0)
-        step = _transition_cost(s, f, ps, pf) + _position_cost(s, f)
+        step = _transition_cost(s, f, ps, pf) + _position_cost(s, f, pitch=notes[i].get('pitch'))
         sum_max_step = max(sum_max_step, step)
     
     # minimax-optimalの最大ステップコスト
