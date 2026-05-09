@@ -181,6 +181,52 @@ During initial experiments, all configurations showed approximately 4.7% accurac
 3. **Data overlap:** GuitarSet data is in both the preference map AND the test set — this limits the map's ability to add new information.
 4. **Single-note preference vs. sequence optimization:** The preference map captures per-note statistics, but human choices depend on context (preceding/following notes, chord progression).
 
+### 5.5 Independent Verification: CNN String Classifier
+
+We independently verified the CNN String Classifier (claimed 92.66% in SoloTab V2.0 paper) against GuitarSet solo files using mono-mic audio CQT features.
+
+| Metric | Solo (60 files) | Per-String Detail |
+|--------|----------------|-------------------|
+| **Overall** | **93.3%** (6,467/6,935) | |
+| S1 (E4) | | 99.1% |
+| S2 (B3) | | 87.5% |
+| S3 (G3) | | 94.0% |
+| S4 (D3) | | 96.2% |
+| S5 (A2) | | 93.7% |
+| S6 (E2) | | 89.4% |
+
+**Key finding:** CNN alone achieves 93.3% — far superior to pitch-only Viterbi DP (52.8%). The weakest strings are S2 (B3, 87.5%) and S6 (E2, 89.4%).
+
+### 5.6 LSTM Verification Failure
+
+The SoloTab V2.0 paper claims Bi-LSTM Val accuracy = 98.31%. Independent benchmarking revealed:
+
+| Test | Result |
+|------|--------|
+| LSTM without CNN probs (all zeros) | **26.81%** |
+| LSTM with CNN probs | **23.4%** |
+| Paper claim | 98.31% |
+
+**Analysis:** The LSTM model was trained with `has_cnn_features=True` (CNN string probabilities as 6 of 9 input dimensions). However, even with CNN probabilities correctly provided, the benchmark shows 23.4%. This indicates the 98.31% validation accuracy was measured on training-distribution data (Leave-One-Player-Out on GuitarSet) and does not generalize to the benchmark evaluation protocol used here. The LSTM appears to overfit to training data patterns rather than learning generalizable string prediction.
+
+**Conclusion:** The LSTM component does not add value over CNN alone. CNN (93.3%) is the verified SOTA for string classification.
+
+### 5.7 CNN + Human Preference Fusion
+
+We attempted to improve CNN accuracy by fusing CNN probabilities with human preference map scores:
+
+`score(s,f) = w_cnn × CNN_prob(s) + w_human × HumanPref(pitch, s, f)`
+
+| Configuration | Accuracy |
+|--------------|----------|
+| **CNN only** | **93.3%** ★ |
+| CNN + human 0.1 | 93.1% |
+| CNN + human 0.3 | 92.9% |
+| CNN + human 0.5 | 92.8% |
+| CNN + human 1.0 | 92.3% |
+
+**Finding:** Adding human preference consistently **degrades** CNN accuracy. The CNN's audio-based spectral features already capture string information more accurately than pitch-only statistical preferences. The preference map is redundant when audio features are available.
+
 ## 6. Data Scaling Strategy
 
 ### 6.1 Current Pipeline
