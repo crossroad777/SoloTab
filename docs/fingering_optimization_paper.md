@@ -316,6 +316,63 @@ When CNN confidence is low (top - 2nd prob < threshold), apply position + thick-
 
 **Path to 95%+:** Requires scale-position awareness (CAGED system, pentatonic positions) or significantly more diverse training data. The GProTab scraping pipeline is actively collecting human fingering data that can inform scale position statistics.
 
+### 5.13 Biomechanical Constraints: The Orthopedic Model
+
+The remaining CNN errors fundamentally stem from ignoring **human hand anatomy**. The following orthopedic constraints must be modeled:
+
+**Joint constraints (joints bend in ONE direction only):**
+- **DIP (Distal Interphalangeal):** Fingertip joint — flexion only (~0-80°)
+- **PIP (Proximal Interphalangeal):** Middle joint — flexion only (~0-110°)
+- **MCP (Metacarpophalangeal):** Knuckle — flexion + limited abduction/adduction
+
+**Finger ordering constraint (absolute, cannot be violated):**
+```
+fret(finger 1/index) ≤ fret(finger 2/middle) ≤ fret(finger 3/ring) ≤ fret(finger 4/pinky)
+```
+Fingers CANNOT cross each other. This is a physical impossibility.
+
+**Span limitations (typical adult hand):**
+| Finger pair | Max span (frets) |
+|------------|------------------|
+| 1-2 (index-middle) | 3-4 frets |
+| 1-3 (index-ring) | 4-5 frets |
+| 1-4 (index-pinky) | 4-6 frets |
+| 2-3 (middle-ring) | 2-3 frets |
+| 3-4 (ring-pinky) | 2-3 frets |
+
+**Wrist constraints:**
+- Wrist does NOT rotate 360° — limited range of motion (~70° flexion, ~80° extension, ~20° radial/ulnar deviation)
+- Extreme wrist angles reduce finger span and increase injury risk
+- Position changes require elbow/forearm movement, not just wrist rotation
+
+**Tendon coupling ("enslaving"):**
+- Ring finger (3) movement involuntarily affects middle (2) and pinky (4) — tendon interconnection
+- True independent finger control is physiologically impossible
+- This explains why certain fingering combinations are universally avoided by humans
+
+**Key references:**
+- Radicioni & Lombardo (2005): CSP-based hand gesture model with span constraints
+- Hori & Sagayama (2016): HMM with finger difficulty weights (index=0.35, middle=0.30, ring=0.25, pinky=0.10)
+- Heijink & Meulenbroek (2000): Motion capture of professional guitarists' finger kinematics
+
+**Impact on string assignment:** These constraints explain WHY the S2→S1 error pattern exists. When a player is in 7th position (index on fret 7), they play A4 on B string fret 10 (pinky) — moving to E string fret 5 would require repositioning the entire hand. The CNN sees equivalent pitches but cannot see the hand.
+
+### 5.14 CNN LOPO Cross-Validation (In Progress)
+
+To verify whether the CNN's 93.3% is inflated by training data leakage (random 80/20 split includes same players in train and test), we are running Leave-One-Player-Out cross-validation:
+
+- 6 GuitarSet players, 61,885 total samples
+- Each fold: train on 5 players, evaluate on held-out player
+- Fold 1 (Player 00): **74.5%** — significantly lower than 93.3%
+
+*Remaining folds in progress. If LOPO accuracy is ~75%, the true CNN generalization ceiling is much lower than reported.*
+
+### 5.15 GP Preference Map Expansion
+
+Extracted 403,977 notes from 168 GuitarPro files (52 artists) collected by the GProTab scraper:
+- Preference map expanded: 116,292 → **520,269 notes** (4.5× increase)
+- CNN + expanded preference fusion: **No improvement** over CNN alone (93.3%)
+- This confirms that pitch-only preference statistics cannot supplement audio spectral features
 
 
 ### 6.1 Current Pipeline
