@@ -108,7 +108,9 @@ def evaluate_viterbi(phrases, w_human):
 
             if best_match and best_dist < 0.1:  # 100ms以内
                 total_notes += 1
-                if pred_string == best_match["string"]:
+                # GT string: IDMT形式(1=6弦) → 標準形式(6=6弦)に変換
+                gt_string_std = 7 - best_match["string"]
+                if pred_string == gt_string_std:
                     total_correct += 1
 
     return total_correct, total_notes

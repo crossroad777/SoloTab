@@ -2,7 +2,7 @@
 
 ## Abstract
 
-Guitar tablature transcription systems traditionally assign string/fret positions using theoretical cost functions that minimize fret numbers or hand movement. This paper presents a data-driven approach that learns human fingering preferences from multiple real-world datasets and integrates them into a Viterbi dynamic programming framework. Our experiments reveal a critical finding: **conventional position cost functions achieve only 4.7% string assignment accuracy** against human ground truth, while integrating learned human preference maps improves accuracy to **10.7%** — a 2.3× improvement. We identify key factors including a string numbering convention mismatch that completely nullified initial preference integration, and demonstrate that transition cost dominance requires careful rebalancing to allow position preferences to influence the optimization.
+Guitar tablature transcription systems traditionally assign string/fret positions using theoretical cost functions that minimize fret numbers or hand movement. This paper presents a data-driven approach that learns human fingering preferences from multiple real-world datasets and integrates them into a Viterbi dynamic programming framework. We evaluate against GuitarSet hexaphonic ground truth and find that the existing Viterbi DP already achieves **75.9% string assignment accuracy**. Integrating a learned human preference map (116K+ notes from 4 datasets) improves this to **76.6%** (+0.7%). Critically, we discover and document **two string numbering convention mismatches** — one in the preference map lookup and one in the benchmark itself — that initially produced completely misleading results (apparent 4.7% accuracy). This work establishes the first quantitative benchmark for human-like guitar string assignment and identifies clear paths for further improvement.
 
 ## 1. Introduction
 
@@ -144,44 +144,42 @@ def _human_preference_cost(pitch, s, f):
 - **Evaluation:** 30 files, 5,619 notes with onset-matched comparison
 - **Metric:** String assignment accuracy (predicted string == ground truth string)
 
-### 5.2 Results
+### 5.2 Bug Discovery: String Numbering Alignment
 
-#### Experiment 1: Human Preference Weight Sweep (fixed transition cost)
+During initial experiments, all configurations showed approximately 4.7% accuracy — clearly wrong. Investigation revealed **two independent string numbering convention bugs**:
 
-| Configuration | w_human_pref | w_movement | w_position_shift | Accuracy |
-|--------------|-------------|-----------|-----------------|----------|
-| Baseline (no human pref) | 0 | 15 | 50 | 4.7% |
-| Human pref -15 | -15 | 15 | 50 | 4.6% |
-| Human pref -30 | -30 | 15 | 50 | 4.9% |
-| Human pref -50 | -50 | 15 | 50 | 5.2% |
-| Human pref -100 | -100 | 15 | 50 | 6.1% |
+| Bug | Location | Effect |
+|-----|----------|--------|
+| Bug 1 | `_human_preference_cost()` | Map key used Viterbi format (1=1st string) but map stored IDMT format (1=6th string). Fix: `map_s = 7 - s` |
+| Bug 2 | Benchmark comparison | Ground truth used IDMT format, prediction used standard format. Fix: `gt_string_std = 7 - gt_string_idmt` |
 
-**Finding:** With original transition cost weights, human preference has minimal effect — transition cost dominates.
+**Lesson:** String numbering conventions are the most dangerous source of silent errors in guitar transcription systems. All interfaces should explicitly document their convention.
 
-#### Experiment 2: Joint Weight Optimization
+### 5.3 Results (After Alignment Fix)
 
-| Configuration | w_human_pref | w_movement | w_position_shift | Accuracy |
-|--------------|-------------|-----------|-----------------|----------|
-| Baseline | 0 | 15 | 50 | 4.7% |
-| human-200 | -200 | 15 | 50 | 7.0% |
-| human-500 | -500 | 15 | 50 | 8.5% |
-| human-200, move=5 | -200 | 5 | 20 | 9.1% |
-| human-500, move=5 | -500 | 5 | 20 | 10.6% |
-| **human-500, move=1** | **-500** | **1** | **5** | **10.7%** |
+| Configuration | w_human_pref | Correct | Total | Accuracy |
+|--------------|-------------|---------|-------|----------|
+| **Baseline (no human pref)** | 0 | 4,265 | 5,619 | **75.9%** |
+| **Human pref -15 (optimal)** | -15 | 4,303 | 5,619 | **76.6%** |
+| Human pref -30 | -30 | 4,305 | 5,619 | 76.6% |
+| Human pref -50 | -50 | 4,286 | 5,619 | 76.3% |
+| Human pref -100 | -100 | 4,189 | 5,619 | 74.6% |
 
-**Best configuration achieves 10.7% accuracy — a 2.3× improvement over baseline.**
+### 5.4 Analysis
 
-### 5.3 Analysis
+#### Key Findings
 
-#### Why is 10.7% still low?
+1. **Existing Viterbi DP is already strong at 75.9%** — the multi-attribute cost function (position + transition + timbre + ergonomic) already captures much of human behavior.
+2. **Moderate human preference (-15 to -30) provides marginal improvement (+0.7%)** — the preference map adds value at the margin.
+3. **Excessive human preference (-100) degrades accuracy to 74.6%** — overriding transition costs breaks sequence coherence.
+4. **Optimal balance exists around w_human_pref = -15 to -30** — human data should supplement, not replace, the physics-based cost function.
 
-1. **Multi-voice data:** GuitarSet contains polyphonic comping (chords + melody). The benchmark feeds all notes as a single sequence to the Viterbi DP, which is designed for monophonic melodies.
-2. **No chord context:** Without chord detection, the DP lacks information about simultaneous notes that constrain string choices.
-3. **Transition cost trade-off:** Reducing transition cost improves position selection but may degrade melodic line continuity.
+#### Why only +0.7%?
 
-#### What improved?
-
-The string numbering fix and weight rebalancing show the human preference map **does contain correct information**. The improvement trend is monotonic with preference weight strength.
+1. **Baseline is already high:** 75.9% means the Viterbi DP's physics-based costs already align well with human choices.
+2. **Multi-voice complexity:** GuitarSet includes chords — Viterbi treats all notes as sequential, losing chord context.
+3. **Data overlap:** GuitarSet data is in both the preference map AND the test set — this limits the map's ability to add new information.
+4. **Single-note preference vs. sequence optimization:** The preference map captures per-note statistics, but human choices depend on context (preceding/following notes, chord progression).
 
 ## 6. Data Scaling Strategy
 
@@ -227,12 +225,13 @@ GProTab.net → scrape_gprotab_stealth.py → GP files → extraction
 
 This work establishes the first quantitative benchmark for human-like guitar string assignment. Key contributions:
 
-1. **Multi-source preference map** (116K+ notes) combining physical measurements (GuitarSet hexaphonic) with annotated data (IDMT) and community tablature (GuitarPro).
-2. **Discovery of string numbering convention mismatch** that completely nullified initial integration attempts.
-3. **Demonstration of 2.3× accuracy improvement** (4.7% → 10.7%) through human preference integration with weight rebalancing.
-4. **Automated data collection pipeline** with stealth web scraping for continuous improvement.
+1. **Baseline measurement:** Existing Viterbi DP achieves 75.9% string assignment accuracy against hexaphonic ground truth — a strong starting point.
+2. **Multi-source preference map** (116K+ notes) combining physical measurements (GuitarSet hexaphonic) with annotated data (IDMT) and community tablature (GuitarPro).
+3. **Discovery of two string numbering convention bugs** that produced completely misleading initial results (apparent 4.7%). This highlights a critical pitfall in guitar MIR systems.
+4. **Marginal improvement to 76.6%** through human preference integration at optimal weight (-15).
+5. **Automated data collection pipeline** with stealth web scraping for continuous improvement.
 
-The 10.7% accuracy, while modest, represents the first measured baseline for this specific task and provides a clear path for improvement through data scaling and evaluation methodology refinement.
+The 75.9% baseline and 76.6% with human preferences establish concrete benchmarks for future work. The remaining 23.4% error is likely dominated by chord context (multi-voice data) and sequence-level dependencies not captured by per-note preference statistics.
 
 ---
 
