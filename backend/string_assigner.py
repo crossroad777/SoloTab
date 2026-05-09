@@ -16,6 +16,7 @@ MIDIノート番号を (弦, フレット) に変換する。
 - 2弦-3弦間は4半音 (他は5半音)
 - sweet spot: 0-7フレット
 - 同一ピッチの複数ポジション → Viterbi DPで全体最適を選択
+- 人間運指選好マップ: IDMTの人間演奏データから学習したポジション選好を統合
 """
 
 from typing import List, Tuple, Optional, Dict
@@ -636,7 +637,53 @@ WEIGHTS = {
     "w_bass_low_string":   -20.0,    # ベース音(最低ピッチ)が低弦(4-6弦)ボーナス
     "w_melody_high_string":-15.0,    # メロディ音(最高ピッチ)が高弦(1-3弦)ボーナス
     "w_bass_wrong_string":  25.0,    # ベース音が高弦(1-3弦)にいるペナルティ
+    # 人間運指選好 (IDMT human fingering)
+    "w_human_pref_bonus":   -15.0,   # 人間が好むポジションへのボーナス
 }
+
+# =============================================================================
+# 人間運指選好マップ (IDMT-SMT-V2 由来)
+# =============================================================================
+_HUMAN_PREF_MAP = None
+
+def _load_human_preference():
+    """人間運指選好マップをロード (初回のみ)"""
+    global _HUMAN_PREF_MAP
+    if _HUMAN_PREF_MAP is not None:
+        return _HUMAN_PREF_MAP
+
+    pref_path = os.path.join(os.path.dirname(__file__), 'human_position_preference.json')
+    if os.path.exists(pref_path):
+        with open(pref_path, 'r', encoding='utf-8') as f:
+            _HUMAN_PREF_MAP = json.load(f)
+        print(f"[string_assigner] 人間運指選好マップ: {len(_HUMAN_PREF_MAP)} pitches loaded")
+    else:
+        _HUMAN_PREF_MAP = {}
+    return _HUMAN_PREF_MAP
+
+
+def _human_preference_cost(pitch: int, s: int, f: int) -> float:
+    """
+    人間運指選好コスト: IDMTの人間が選んだポジションにボーナスを付与。
+    人間が高頻度で選ぶポジション → 低コスト（ボーナス）
+    人間が選ばないポジション → コスト0（ペナルティなし）
+    """
+    pref = _load_human_preference()
+    if not pref:
+        return 0.0
+
+    pitch_data = pref.get(str(pitch))
+    if not pitch_data:
+        return 0.0
+
+    prob = pitch_data.get('prob', {})
+    key = f"{s}_{f}"
+    p = prob.get(key, 0.0)
+
+    if p > 0:
+        # 人間がこのポジションを選んだ確率に応じたボーナス
+        return WEIGHTS["w_human_pref_bonus"] * p
+    return 0.0
 
 # --- ポジション定義 ---
 # ギタリストは「ポジション」単位で指板を認識する
@@ -665,10 +712,11 @@ def _get_position_center(fret: int) -> int:
     return max(1, fret - 1)  # 人差指がfret-1にある想定
 
 
-def _position_cost(s: int, f: int) -> float:
+def _position_cost(s: int, f: int, pitch: int = None) -> float:
     """
     位置コスト: フレットの位置自体の弾きやすさ。
     高フレットほどコストが高い。sweet spot (0-7f) は良いスコア。
+    人間運指選好マップが利用可能な場合、人間が好むポジションにボーナスを付与。
     """
     cost = 0.0
 
@@ -686,6 +734,10 @@ def _position_cost(s: int, f: int) -> float:
     # Sweet spot ボーナス (負のコスト) — 0-9fまで拡大
     if 0 <= f <= 9:
         cost += WEIGHTS["w_sweet_spot_bonus"]
+
+    # 人間運指選好ボーナス (IDMT human fingering data)
+    if pitch is not None:
+        cost += _human_preference_cost(pitch, s, f)
 
     return cost
 
@@ -900,7 +952,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         first_candidates = [(1, 0)]
 
     for s, f in first_candidates:
-        pos_cost = _position_cost(s, f)
+        first_pitch = groups[0][0].get('pitch') if len(groups[0]) == 1 else None
+        pos_cost = _position_cost(s, f, pitch=first_pitch)
         tmb_cost = _timbre_cost(s, f, tuning)
         # CNN弦推定ヒントを取り込む
         cnn_bonus = 0.0
@@ -931,7 +984,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         if not prev_trellis:
             # 前のtrellisが空の場合、初期化と同様に処理
             for s, f in candidates:
-                pos_cost = _position_cost(s, f)
+                note_pitch = groups[gi][0].get('pitch') if len(groups[gi]) == 1 else None
+                pos_cost = _position_cost(s, f, pitch=note_pitch)
                 tmb_cost = _timbre_cost(s, f, tuning)
                 trellis[gi][(s, f)] = (pos_cost + tmb_cost, None)
             continue
@@ -941,7 +995,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             best_prev = None
 
             # Emission cost (このポジション自体のコスト)
-            pos_cost = _position_cost(s, f)
+            note_pitch = groups[gi][0].get('pitch') if is_single else None
+            pos_cost = _position_cost(s, f, pitch=note_pitch)
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
 
