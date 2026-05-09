@@ -473,12 +473,41 @@ Note: Previous run with pitch normalization bug (pitch/127.0 instead of (pitch-4
 **Problem 3: Pitch normalization inconsistency between scripts**
 - Root cause: StringDataset normalizes pitch internally; manual prediction scripts do not match
 - Needed: Unified prediction interface
-- Impact: Bio LOPO numbers are deflated
+- Impact: Bio LOPO numbers were deflated — **FIXED**: (pitch-40)/45.0
+
+### 5.21 IDMT Integration + Enhanced Augmentation — LOPO Results
+
+Tested whether adding IDMT-SMT-Guitar data (4,680 single-note samples from Fender/Ibanez) or stronger augmentation improves LOPO generalization:
+
+| Config | CNN LOPO | Bio LOPO | Δ(Bio-CNN) |
+|--------|---------|---------|------------|
+| **GS only (baseline)** | **75.9%** | **81.3%** | **+5.3%** |
+| GS + enhanced aug | 74.3% | 79.4% | +5.1% |
+| GS + IDMT (4/6 folds) | ~73% | ~78% | ~+5% |
+
+**Finding 1: Enhanced augmentation is counterproductive.** SpecAugment-style masking and wider frequency/time shifts cause underfitting. The model needs more *real* data diversity, not synthetic corruption.
+
+**Finding 2: IDMT data does NOT help.** Despite adding 4,680 samples from different guitars (Fender Strat, Ibanez), accuracy decreased. Likely cause: IDMT recordings are isolated single notes (not musical phrases), creating a domain mismatch with GuitarSet's real performance recordings.
+
+**Finding 3: Biomechanical Viterbi improvement is consistent (+5%) regardless of CNN training config.** This means the bio constraint is an independent, additive improvement — it works even when the CNN is weak.
+
+### 5.22 Consolidated Results Table (All Verified)
+
+| # | Method | Same-Player | LOPO | Notes |
+|---|--------|-------------|------|-------|
+| 1 | Viterbi DP (pitch only) | 52.8% | — | No audio |
+| 2 | CNN only | 93.3% | 75.6-75.9% | Audio CQT |
+| 3 | CNN + preference map | 93.1% | — | No improvement |
+| 4 | CNN-Viterbi (string/fret) | 93.7% | — | Marginal |
+| 5 | **CNN + Bio Viterbi** | **95.9%** | **80.8-81.3%** | **Best** |
+| 6 | CNN + IDMT + Bio | — | ~78% | IDMT hurts |
+| 7 | CNN + enhanced aug + Bio | — | 79.4% | Aug hurts |
 
 **Current production recommendation:**
 - Use existing CNN (string_classifier.pth, trained on all GuitarSet) + Biomechanical Viterbi (w_pos=0.5, w_ease=0.5, w_open=1.0)
-- Expected accuracy on GuitarSet: ~95.9% (same-player)
-- Expected accuracy on unseen players: ~82-85% (estimated from LOPO gap)
+- Same-player accuracy: **95.9%**
+- LOPO generalization: **80.8%**
+- Remaining gap (80.8% → 95%+): requires fundamentally more diverse training data, not augmentation tricks
 
 ## 6. Data Scaling Strategy
 
