@@ -177,11 +177,69 @@ Combining all 35 models (7 domains x 5 training stages) with vote threshold swee
 
 ## 7. Future Work
 
-1. **IDMT-SMT-V2 Integration:** Electric guitar data with human-annotated fingerings -- unique source of real-world position choices (currently in progress)
-2. **GAPS Recall Improvement:** Domain-adaptive vote thresholds for nylon-string audio
-3. **String Classifier Multi-Domain Training:** Retraining with GAPS audio to improve 70.59% to 80%+
-4. **Architectural Evolution:** Self-Attention layers for long-range dependency modeling
-5. **Human Fingering Analysis:** Comparing IDMT human position choices vs. algorithmic assignments to improve tablature naturalness
+1. **GAPS Recall Improvement:** Domain-adaptive vote thresholds for nylon-string audio
+2. **String Classifier Multi-Domain Training:** Retraining with GAPS audio to improve 70.59% to 80%+
+3. **Architectural Evolution:** Self-Attention layers for long-range dependency modeling
+4. **Human Fingering Analysis:** Comparing IDMT human position choices vs. algorithmic assignments to improve tablature naturalness
+5. **Extended IDMT Training:** Longer fine-tuning (10+ epochs) for pick-domain models showing improvement trends
+
+---
+
+## 7.1 IDMT-SMT-V2 Integration Experiment (Step 11)
+
+> **Experiment Date: 2026-05-09**
+
+### Motivation
+
+IDMT-SMT-V2 contains 252 tracks of real electric guitar recordings with **human-annotated string and fret positions** in XML format. Unlike synthetic data or algorithmic fingering assignments, these labels reflect actual guitarist performance decisions, offering a unique source of diversity for ensemble learning.
+
+### Setup
+
+- **Training Data:** GuitarSet(286) + GAPS(371) + Synth V2(286/5000) + IDMT(252) = ~1195 batches/epoch
+- **Initial Weights:** multitask_3ds_ga (Step 9 models)
+- **Epochs:** 3, Patience: 3
+- **Output Suffix:** `multitask_4ds` (no overwriting of existing models)
+
+### Individual Model Results
+
+| Domain | 4DS Best F1 | Synth V2 F1 | Delta |
+| :--- | :---: | :---: | :---: |
+| martin_finger | 0.7704 | 0.7734 | -0.0030 |
+| taylor_finger | 0.7460 | 0.7522 | -0.0062 |
+| luthier_finger | 0.7613 | 0.7629 | -0.0016 |
+| **martin_pick** | **0.7811** | 0.7775 | **+0.0036** |
+| **taylor_pick** | **0.7745** | 0.7735 | **+0.0010** |
+| **luthier_pick** | **0.7791** | 0.7735 | **+0.0056** |
+| gibson_thumb | 0.7641 | 0.7735 | -0.0094 |
+
+All three pick-domain models improved, while finger-domain and thumb models slightly degraded.
+
+### 42-Model MoE Benchmark
+
+35 existing models + 7 new multitask_4ds models = 42 models. Vote threshold sweep 12-30.
+
+| Vote | F1 | Precision | Recall | Notes |
+| :---: | :---: | :---: | :---: | :--- |
+| 21 | 0.8882 | 0.8692 | 0.9081 | Equivalent to 35-model optimal |
+| **23** | **0.8913** | **0.8789** | **0.9040** | **42-model optimal (reproduced 2x)** |
+| 26 | 0.8897 | 0.8897 | 0.8897 | P=R equilibrium |
+
+### Comparison
+
+| Configuration | Best F1 | Optimal Vote | Ratio |
+| :--- | :---: | :---: | :---: |
+| 7 models (Synth V2) | 0.8877 | 5/7 | 71% |
+| **35 models** | **0.8916** | **21/35** | **60%** |
+| 42 models (+IDMT) | 0.8913 | 23/42 | 55% |
+
+### Analysis
+
+1. **42-model F1=0.8913 is marginally below 35-model F1=0.8916** (-0.0003), statistically equivalent.
+2. **Factors:** Large domain gap between electric and acoustic guitar; 3 epochs may be insufficient (pick domains were still improving).
+3. **Pick-domain improvement is noteworthy:** IDMT's pick-style data selectively enhanced pick-domain model diversity, suggesting domain-selective data integration has value.
+4. **Human fingering data:** IDMT's human-annotated string/fret positions remain valuable for future tablature naturalness improvements.
+
+> **Conclusion:** IDMT-SMT-V2 integration did not surpass the 35-model record. **F1=0.8916 remains the confirmed SOTA.**
 
 ---
 
