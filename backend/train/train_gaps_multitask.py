@@ -310,17 +310,24 @@ class GAPSTabDataset(TorchDataset):
 # ============================================================
 # Multi-task Training
 # ============================================================
-def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIENCE, include_agpt=False, ga_retrain=False, include_synth=False):
+def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIENCE, include_agpt=False, ga_retrain=False, include_synth=False, include_idmt=False):
     ds_parts = ["GuitarSet", "GAPS"]
     if include_agpt: ds_parts.append("AG-PT")
     if include_synth: ds_parts.append("Synth")
+    if include_idmt: ds_parts.append("IDMT")
     ds_label = " + ".join(ds_parts)
     print(f"\n{'='*60}")
     print(f"  Multi-task FT ({ds_label}): {domain}")
     print(f"{'='*60}")
     
     # ソースモデル選択
-    if ga_retrain:
+    if include_idmt:
+        # IDMT混合: 3DS_GAモデルを初期重みとして使用、新suffix
+        suffix = "multitask_4ds"
+        src_ga = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_multitask_3ds_ga", "best_model.pth")
+        src_3ds = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_multitask_3ds", "best_model.pth")
+        src_path = src_ga if os.path.exists(src_ga) else (src_3ds if os.path.exists(src_3ds) else None)
+    elif ga_retrain:
         # GA再学習: 3DSモデルを初期重みとして使用
         suffix = "multitask_3ds_ga"
         src_3ds = os.path.join(TRAINING_OUTPUT_DIR, f"finetuned_{domain}_multitask_3ds", "best_model.pth")
@@ -481,18 +488,21 @@ def finetune_multitask(domain, device, ft_epochs=FT_EPOCHS, ft_patience=FT_PATIE
     elif include_synth:
         print("  [WARN] Synth V2 not found. Run generate_dataset.py first.")
     
-    # IDMT-SMT-V2 — テスト2: 除外
-    # idmt_dir = r"D:\Music\datasets\idmt_processed"
-    # idmt_ids = os.path.join(idmt_dir, "train_ids.txt")
-    # if os.path.exists(idmt_ids):
-    #     idmt_ds = _SynthDS(
-    #         idmt_dir, idmt_ids,
-    #         config.HOP_LENGTH, config.SAMPLE_RATE,
-    #         common.get('max_fret_value', config.MAX_FRETS),
-    #     )
-    #     if len(idmt_ds) > 0:
-    #         extra_datasets.append(idmt_ds)
-    #         print(f"  IDMT-SMT: {len(idmt_ds)}")
+    # IDMT-SMT-V2 (optional)
+    if include_idmt:
+        idmt_dir = r"D:\Music\datasets\idmt_processed"
+        idmt_ids = os.path.join(idmt_dir, "train_ids.txt")
+        if os.path.exists(idmt_ids):
+            idmt_ds = _SynthDS(
+                idmt_dir, idmt_ids,
+                config.HOP_LENGTH, config.SAMPLE_RATE,
+                common.get('max_fret_value', config.MAX_FRETS),
+            )
+            if len(idmt_ds) > 0:
+                extra_datasets.append(idmt_ds)
+                print(f"  IDMT-SMT: {len(idmt_ds)}")
+        else:
+            print("  [WARN] IDMT-SMT not found. Run preprocess_idmt.py first.")
     
     # AG-PT-set (optional)
     if include_agpt:
@@ -634,6 +644,8 @@ def main():
                         help="Include Synth V2 as 4th dataset (100%% accurate labels)")
     parser.add_argument("--ga-retrain", action="store_true",
                         help="Gradient Accumulation retrain from 3DS models (accum_steps=4)")
+    parser.add_argument("--include-idmt", action="store_true",
+                        help="Include IDMT-SMT-V2 dataset (electric guitar, 252 tracks)")
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -656,7 +668,8 @@ def main():
     # Step 3: Multi-task学習
     finetune_multitask(args.domain, device, ft_epochs=args.epochs,
                        ft_patience=args.patience, include_agpt=args.include_agpt,
-                       ga_retrain=args.ga_retrain, include_synth=args.include_synth)
+                       ga_retrain=args.ga_retrain, include_synth=args.include_synth,
+                       include_idmt=args.include_idmt)
     
     print("\n" + "=" * 60)
     print("Multi-task training complete!")
