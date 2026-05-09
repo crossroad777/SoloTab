@@ -16,12 +16,13 @@ import os
 
 _MODEL_BASE = r"D:\Music\nextchord-solotab\music-transcription\python\_processed_guitarset_data\training_output"
 _EXPERTS = [
-    "finetuned_martin_finger_guitarset_ft",
-    "finetuned_taylor_finger_guitarset_ft",
-    "finetuned_luthier_finger_guitarset_ft",
-    "finetuned_martin_pick_guitarset_ft",
-    "finetuned_taylor_pick_guitarset_ft",
-    "finetuned_luthier_pick_guitarset_ft",
+    "finetuned_martin_finger_multitask_3ds_ga",
+    "finetuned_taylor_finger_multitask_3ds_ga",
+    "finetuned_luthier_finger_multitask_3ds_ga",
+    "finetuned_martin_pick_multitask_3ds_ga",
+    "finetuned_taylor_pick_multitask_3ds_ga",
+    "finetuned_luthier_pick_multitask_3ds_ga",
+    "finetuned_gibson_thumb_multitask_3ds_ga",
 ]
 
 solotab_image = (
