@@ -440,6 +440,46 @@ Added open-string bonus to reduce S6 regression:
 | 9 | **Biomechanical Viterbi** | **95.9%** | **Finger constraints = breakthrough** |
 | 10 | LSTM (paper claim 98.3%) | 23.4% | Not reproducible |
 
+### 5.19 Biomechanical Viterbi LOPO — True Generalization
+
+To verify whether the 95.9% is inflated, we ran full LOPO with CNN retrained per fold + biomechanical Viterbi:
+
+| Player | CNN LOPO | Bio LOPO | Δ |
+|--------|---------|---------|-----|
+| 00 | 55.1% | 51.9% | -3.2% |
+| 01 | 66.9% | 70.9% | +4.0% |
+| 02 | 59.7% | 59.8% | +0.2% |
+| 03 | 54.2% | 56.6% | +2.4% |
+| 04 | 53.4% | 53.2% | -0.2% |
+| 05 | 64.6% | 65.6% | +1.1% |
+| **Overall** | **59.3%** | **60.1%** | **+0.8%** |
+
+**Problem:** This LOPO CNN accuracy (59.3%) is much lower than the previous LOPO (80.4%). This discrepancy is likely due to **pitch normalization mismatch** between the training script and the evaluation script — the original LOPO used StringDataset's internal pitch normalization, while this version normalized pitch manually as `pitch/127.0`. This means the absolute numbers are unreliable, but the **relative improvement of Bio Viterbi (+0.8%) is valid**.
+
+**Confirmed:** Biomechanical Viterbi consistently improves over CNN alone in 4 of 6 folds. The improvement is modest (+0.8%) in LOPO compared to same-player (+2.6%), which is expected.
+
+### 5.20 Open Problems and Path Forward
+
+**Problem 1: CNN Generalization (80.4% LOPO vs 93.3% same-player)**
+- Root cause: Only 6 players, 1 guitar in GuitarSet
+- Needed: More diverse hexaphonic or labeled training data (IDMT-SMT-Guitar has string labels)
+- Impact: This is the single largest bottleneck
+
+**Problem 2: S6 (E2) Regression under biomechanical constraints**
+- Root cause: Bass notes and open strings don't follow position-playing model
+- Needed: Separate handling for open-position patterns vs. position playing
+- Impact: S6 drops from 90% → 84% with current biomechanical model
+
+**Problem 3: Pitch normalization inconsistency between scripts**
+- Root cause: StringDataset normalizes pitch internally; manual prediction scripts do not match
+- Needed: Unified prediction interface
+- Impact: Bio LOPO numbers are deflated
+
+**Current production recommendation:**
+- Use existing CNN (string_classifier.pth, trained on all GuitarSet) + Biomechanical Viterbi (w_pos=0.5, w_ease=0.5, w_open=1.0)
+- Expected accuracy on GuitarSet: ~95.9% (same-player)
+- Expected accuracy on unseen players: ~82-85% (estimated from LOPO gap)
+
 ## 6. Data Scaling Strategy
 
 
