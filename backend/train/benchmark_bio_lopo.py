@@ -134,8 +134,8 @@ def predict_probs_with_model(model, device, patch, pitch):
     """学習済みモデルでCNN確率を取得"""
     with torch.no_grad():
         p_tensor = torch.FloatTensor(patch).unsqueeze(0).unsqueeze(0).to(device)
-        # pitch must be (batch, 1) normalized
-        pitch_norm = torch.FloatTensor([[pitch / 127.0]]).to(device)
+        # Match StringDataset normalization: (pitch - 40) / 45.0
+        pitch_norm = torch.FloatTensor([[(pitch - 40) / 45.0]]).to(device)
         out = model(p_tensor, pitch_norm)
         probs_raw = torch.softmax(out, dim=1).cpu().numpy()[0]
     return {s + 1: float(probs_raw[s]) for s in range(6)}

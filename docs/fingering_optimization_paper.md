@@ -442,21 +442,21 @@ Added open-string bonus to reduce S6 regression:
 
 ### 5.19 Biomechanical Viterbi LOPO — True Generalization
 
-To verify whether the 95.9% is inflated, we ran full LOPO with CNN retrained per fold + biomechanical Viterbi:
+Full LOPO with CNN retrained per fold + biomechanical Viterbi (pitch normalization fixed):
 
 | Player | CNN LOPO | Bio LOPO | Δ |
 |--------|---------|---------|-----|
-| 00 | 55.1% | 51.9% | -3.2% |
-| 01 | 66.9% | 70.9% | +4.0% |
-| 02 | 59.7% | 59.8% | +0.2% |
-| 03 | 54.2% | 56.6% | +2.4% |
-| 04 | 53.4% | 53.2% | -0.2% |
-| 05 | 64.6% | 65.6% | +1.1% |
-| **Overall** | **59.3%** | **60.1%** | **+0.8%** |
+| 00 | 74.1% | 77.5% | +3.3% |
+| 01 | 75.3% | 85.1% | +9.8% |
+| 02 | 75.0% | 76.6% | +1.6% |
+| 03 | 65.7% | 70.2% | +4.5% |
+| 04 | 80.4% | 85.6% | +5.2% |
+| 05 | 85.4% | 90.0% | +4.7% |
+| **Overall** | **75.6%** | **80.8%** | **+5.2%** |
 
-**Problem:** This LOPO CNN accuracy (59.3%) is much lower than the previous LOPO (80.4%). This discrepancy is likely due to **pitch normalization mismatch** between the training script and the evaluation script — the original LOPO used StringDataset's internal pitch normalization, while this version normalized pitch manually as `pitch/127.0`. This means the absolute numbers are unreliable, but the **relative improvement of Bio Viterbi (+0.8%) is valid**.
+**Confirmed:** Biomechanical Viterbi improves CNN in **all 6 folds**. Average improvement: **+5.2%**. Player 05 reaches 90.0%. The improvement is larger in LOPO (+5.2%) than same-player (+2.6%), meaning biomechanical constraints are MORE valuable when the CNN is less confident (unseen player).
 
-**Confirmed:** Biomechanical Viterbi consistently improves over CNN alone in 4 of 6 folds. The improvement is modest (+0.8%) in LOPO compared to same-player (+2.6%), which is expected.
+Note: Previous run with pitch normalization bug (pitch/127.0 instead of (pitch-40)/45.0) showed 59.3%/60.1% — those numbers were invalid.
 
 ### 5.20 Open Problems and Path Forward
 
