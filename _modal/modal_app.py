@@ -121,11 +121,15 @@ def solotab_api():
 
     sessions = {}
 
-    def save(sid):
+    def save(sid, commit=True):
         if sid in sessions:
             sd = Path(sessions[sid]["session_dir"])
             (sd/"session.json").write_text(json.dumps(sessions[sid], ensure_ascii=False, indent=2), encoding="utf-8")
-            session_vol.commit()
+            if commit:
+                try:
+                    session_vol.commit()
+                except Exception as e:
+                    print(f"[save] Volume commit warning: {e}")
 
     def load_session(sid):
         """Volume からセッションを復元"""
@@ -182,9 +186,9 @@ def solotab_api():
         sd = Path(s["session_dir"])
         wav = Path(s["wav_path"])
         try:
-            s["status"] = SS.PROCESSING; save(sid)
+            s["status"] = SS.PROCESSING; save(sid, commit=False)
 
-            s["progress"] = "ビート検出中..."; s["steps_done"] = 0; save(sid)
+            s["progress"] = "ビート検出中..."; s["steps_done"] = 0; save(sid, commit=False)
             from beat_detector import detect_beats
             beat_result = detect_beats(str(wav))
             beats_list = beat_result["beats"]
@@ -192,7 +196,7 @@ def solotab_api():
             time_sig = beat_result.get("time_signature", "4/4")
             (sd/"beats.json").write_text(json.dumps(beat_result, ensure_ascii=False), encoding="utf-8")
 
-            s["progress"] = "MoE推論中..."; s["steps_done"] = 1; save(sid)
+            s["progress"] = "MoE推論中..."; s["steps_done"] = 1; save(sid, commit=False)
             from pure_moe_transcriber import transcribe_pure_moe
             notes = transcribe_pure_moe(str(wav), vote_threshold=5, onset_threshold=0.8)
 
@@ -222,11 +226,11 @@ def solotab_api():
 
             s.update({"status":SS.COMPLETED,"total_notes":len(notes),"bpm":bpm,
                       "time_signature":time_sig,"progress":"解析完了","steps_done":4})
-            save(sid)
+            save(sid)  # 完了時のみVolume commit
         except Exception as e:
             import traceback; traceback.print_exc()
             s.update({"status":SS.FAILED,"error":str(e),"progress":"エラー"})
-            save(sid)
+            save(sid)  # エラー時もVolume commit
 
     @fa.post("/upload", response_model=UR)
     async def upload(file: UploadFile=File(...), tuning:str=Form("standard"), background_tasks:BackgroundTasks=None):
@@ -266,12 +270,35 @@ def solotab_api():
     async def status(sid:str):
         s = load_session(sid)
         if s is None: raise HTTPException(404,"Not found")
+        # ファイル存在チェックでステータスを自動補正
+        sd = Path(s["session_dir"])
+        if s.get("status") == SS.PROCESSING:
+            if (sd/"tab.musicxml").exists():
+                notes_file = sd/"notes_assigned.json"
+                n_notes = len(json.loads(notes_file.read_text(encoding="utf-8"))) if notes_file.exists() else 0
+                s.update({"status":SS.COMPLETED, "progress":"解析完了", "steps_done":4, "total_notes":n_notes})
+                sessions[sid] = s
+            elif (sd/"notes_assigned.json").exists():
+                s["progress"] = "TAB譜生成中..."; s["steps_done"] = 3
+            elif (sd/"beats.json").exists():
+                s["progress"] = "MoE推論中..."; s["steps_done"] = 1
         return SR(session_id=sid,status=s["status"],progress=s.get("progress"),error=s.get("error"),filename=s.get("filename"))
 
     @fa.get("/result/{sid}",response_model=RR)
     async def result(sid:str):
         s = load_session(sid)
         if s is None: raise HTTPException(404,"Not found")
+        # ファイル存在チェックで自動補正
+        sd = Path(s["session_dir"])
+        if s["status"]!=SS.COMPLETED and (sd/"tab.musicxml").exists():
+            notes_file = sd/"notes_assigned.json"
+            n_notes = len(json.loads(notes_file.read_text(encoding="utf-8"))) if notes_file.exists() else 0
+            beats_file = sd/"beats.json"
+            bpm = 120
+            if beats_file.exists():
+                bd = json.loads(beats_file.read_text(encoding="utf-8")); bpm = bd.get("bpm", 120)
+            s.update({"status":SS.COMPLETED, "total_notes":n_notes, "bpm":bpm})
+            sessions[sid] = s
         if s["status"]!=SS.COMPLETED: raise HTTPException(202,"Not complete")
         return RR(session_id=sid,status=s["status"],bpm=s.get("bpm"),filename=s.get("filename"),total_notes=s.get("total_notes"),tuning=s.get("tuning"),key=s.get("key"),capo=s.get("capo"),suggested_tuning=s.get("suggested_tuning"))
 
