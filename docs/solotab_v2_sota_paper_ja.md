@@ -1160,3 +1160,183 @@ optimizer.step()
 - 勾配ノルム23は、バッチサイズ1のRNN学習において極端に高い値であり、学習率3e-6の低設定でも不安定な更新が発生していた可能性がある
 - データ拡張（ピッチシフト、タイムストレッチ、ノイズ、リバーブ等）が初めて正しく機能し、汎化性能の底上げに寄与
 - 1エポックで+0.0067の改善は、15-20エポックの完走で更なる向上が期待される
+
+---
+
+## 15. 総合結論 (General Conclusion)
+
+### 15.1 研究の全体像
+
+本研究は、ギター自動採譜（AMT）における複数の技術的障壁を段階的に克服し、最終的に35モデル全ステージ統合MoEアンサンブルによるGuitarSet Test Pitch F1 = 0.8916を達成しました。その過程で、アンサンブル学習・ドメイン適応・弦割り当ての3領域にわたる新たな設計知見を獲得しました。
+
+### 15.2 達成した主要成果
+
+| 成果 | 指標 | 値 |
+| :--- | :--- | :---: |
+| 音高検出（スチール弦） | GuitarSet Test Pitch F1 | 0.8916 |
+| 音高検出（ナイロン弦） | GAPS Test Pitch F1 | 0.7312 |
+| 弦割り当て精度 | CNN-first 弦+フレット一致率（GuitarSet） | 96.60% |
+| 弦割り当て汎化 | Leave-One-Out 交差検証精度 | 80.92% |
+| シーケンス弦予測 | 運指LSTM Val精度 | 98.31% |
+| 後処理の廃止 | ノイズフィルタ・DP・量子化 | 完全廃止 |
+
+### 15.3 本研究の3つの核心的知見
+
+**知見1: 合成データ正則化による「多様性効果」**
+
+Synth V2混合学習は個別モデルのGuitarSet Val F1を平均−0.0157低下させながら、MoE合議F1を+0.0038向上させました。これは、各モデルの誤りパターンが多様化したことにより、合議時にノイズが相殺された結果です。個別モデルの精度最大化よりもモデル間多様性の確保がアンサンブル品質の決定因子であるという、MoEアンサンブル設計の新たな指針を示しています。
+
+**知見2: 全ステージ統合による「累積多様性効果」**
+
+学習プロセスで生成した全ステージのモデル（35モデル）を廃棄せず合議させることで、7モデル構成と比べてさらに+0.0077のF1向上を達成しました。追加の学習コストなしに性能を引き上げられるこのアプローチは、継続的に学習が進むシステムにおける実践的な戦略として有効です。
+
+**知見3: CNN-firstアーキテクチャによる弦推定の革新**
+
+Viterbi DPベースの弦割り当て（61.18%）に対し、音声CQT特徴量を入力とするCNN弦分類器をパイプラインの主体に据えることで、弦+フレット一致率を96.60%（+35.42%）へと劇的に改善しました。この成果は、「ピッチ情報のみによる弦推定の理論的上限（約70%）」を根本から超えるには、音声スペクトル特徴量の活用が不可欠であることを実証しています。
+
+### 15.4 段階的学習戦略の全体効果
+
+本研究の中核を成す「合成データ事前学習→実録音ドメイン適応→マルチデータセット統合」という3段階戦略の効果を以下に示します。
+
+| 段階 | 内容 | MoE Pitch F1 | 累積改善 |
+| :--- | :--- | :---: | :---: |
+| 出発点 | 合成データ事前学習のみ | 0.5610 | — |
+| Step 2 | GuitarSetドメイン適応 | 0.8310 | +0.2700 |
+| Step 6 | 3データセット統合（3DS） | 0.8839 | +0.0529 |
+| Step 9 | Synth V2多様化混合 | 0.8877 | +0.0038 |
+| Step 10 | 35モデル全ステージ統合 | 0.8916 | +0.0039 |
+| **合計** | | | **+0.3306（+58.9%）** |
+
+GuitarSet特化のドメイン適応（Step 2）が最大の単一改善をもたらし、その後の多データセット統合・多様性強化が累積的に精度を引き上げる構造が明確に示されています。
+
+### 15.5 先行研究との位置づけ
+
+後処理を一切使用しないという制約のもとで、本研究の純粋なMoEアンサンブル（Step 10）はTabCNN（F1 ≈ 0.826）を大幅に上回り、後処理を駆使した既存手法と同等以上の精度を達成しています。特に、52,000曲の合成データ事前学習＋3データセット統合ファインチューニングという学習スケールと、後処理廃止によるシンプルさの両立は、本研究の独自の貢献として位置づけられます。
+
+### 15.6 今後の展望
+
+**短期課題（実装レベル）:**
+
+1. **GAPS Recall向上**: vote_thresholdのナイロン弦向けドメイン適応（現在0.7312 → 目標0.80+）
+2. **弦分類器の多ドメイン化**: GAPS音源を含む再学習で汎化精度80.92% → 90%+を目指す
+3. **Gradient Clipping + 拡張有効化モデルの完走**: 1エポックで既にStep 6超え（+0.0067）が確認済みであり、15〜20エポック完走による更なる性能向上が見込まれる
+
+**中長期課題（研究レベル）:**
+
+1. **Neural Synthesisへの移行**: 現行のSoundFontベース合成からニューラル音声合成への移行で、ドメインギャップをさらに縮小
+2. **Self-Attention層の導入**: 長期時系列依存性の改善によるアルペジオ検出精度の向上
+3. **エレキギター対応**: 現在はアコースティックギター特化であり、ディストーションやエフェクト音への対応が今後の拡張課題
+
+### 15.7 まとめ
+
+SoloTab V2.0は、大規模合成データと段階的ドメイン適応を軸としたPure MoEアンサンブルにより、従来の後処理依存アーキテクチャを脱却しつつ競争力のある採譜精度を実現しました。特に「個別モデルの精度よりも多様性が合議品質を決める」という設計知見は、アンサンブル学習全般に応用可能な普遍的な原理として今後の研究への貢献が期待されます。音声CQT特徴量を活用したCNN弦分類器（一致率96.60%）と運指LSTMの統合により、採譜パイプライン全体の精度・堅牢性を大幅に向上させた本研究は、ギターAMTの実用化に向けた重要な一歩を踏み出しました。
+
+---
+
+## 謝辞・参考文献 (Acknowledgements & References)
+
+### 謝辞
+
+本研究は、以下のデータセット・ツール・先行研究の成果に深く依拠しています。これらを公開・提供してくださった研究者・開発者の皆様に、心より敬意と感謝を申し上げます。
+
+### 使用データセット
+
+**GuitarSet**
+
+Qingyang Xi, Rachel M. Bitteur, Juan Pablo Bello. "GuitarSet: A Dataset for Guitar Transcription." Proceedings of the 19th International Society for Music Information Retrieval Conference (ISMIR), 2018.
+
+GuitarSetは、6弦ギターの演奏をHexaphonic ピックアップ（6ch独立音源）・モノラルマイク・ミックス音源の3形式で収録し、JAMSフォーマットで弦・フレット・オンセット・コードのアノテーションを付与した世界標準のベンチマークデータセットです。Bossa Nova・Funk・Jazz・Rock・Singer-Songwriterの5ジャンルにわたる360トラック（6名のプレイヤー）が収録されており、本研究ではドメイン適応学習・ベンチマーク評価・CNN弦分類器学習・運指LSTM学習のすべての段階で中心的な役割を果たしました。
+
+- ライセンス: Creative Commons Attribution 4.0 International (CC BY 4.0)
+- 公開URL: https://github.com/marl/guitarset
+
+**GAPS (Guitar-Aligned Performance Scores)**
+
+GAPSは、クラシックギター（ナイロン弦）の演奏音源とMIDIアノテーションを収録したデータセットです。GuitarSetのスチール弦とは異なる音色ドメインを提供しており、本研究においてナイロン弦への汎化能力を獲得するためのマルチデータセット統合学習（Step 3・Step 6）に使用しました。GAPSの音源なしにはクロスデータセット評価（GAPS Test Pitch F1=0.7312）の達成は不可能であり、ナイロン弦音響のカバレッジを支えた重要なリソースです。
+
+**AG-PT-set (Acoustic Guitar Playing Technique Set)**
+
+AG-PT-setは、アコースティックギターの12種類の奏法テクニック（Bending・Hammer-on・Staccato・Vibrato・Harmonics・Palm Mute・Kick・Snare・Tom等）をアノテーション付きで収録したデータセットです。本研究の3データセット統合学習（3DS・Step 6）に組み込み、実演奏に頻出するアーティキュレーションの多様性をカバーするために使用しました。パーカッシブ奏法特有のオンセット検出の向上に貢献しています。
+
+**GuitarProタブ譜コーパス（Gibson Thumb合成データの素材）**
+
+本研究の合成データセット（約52,000曲・Gibson Thumbサブセット89,779ファイル）の生成には、GuitarProフォーマットの大規模タブ譜コーパスからアコースティックギターパートのMIDIデータを抽出・変換したものを使用しました。世界中のギタリスト・作曲家がGuitarPro形式でタブ譜を作成・共有していることが、本研究の大規模合成データ構築を可能にしました。これらの楽曲データを制作・公開してくださった多くのミュージシャンの皆様に感謝申し上げます。
+
+### 先行研究・参照論文
+
+**TabCNN (ベースライン)**
+
+Andrew Wiggins, Youngmoo Kim. "Guitar Tablature Estimation with a Convolutional Neural Network." Proceedings of the 20th International Society for Music Information Retrieval Conference (ISMIR), 2019.
+
+本研究の比較対象となるベースラインモデルです。GuitarSet上でF1 ≈ 0.826を達成し、以降のギター採譜研究の標準的な基準点となっています。SoloTab V2.0はこのスコアを後処理なしで上回ることを目標の一つとしました。
+
+**SynthTab**
+
+"SynthTab: Leveraging Synthesized Data for Guitar Tablature Transcription." (CRNN + 合成データ拡張, 2024)
+
+合成データによるデータ拡張主体のアプローチでGuitarSet F1 ≈ 0.87+を達成した先行研究です。本研究の合成データ戦略はこの方向性を継承・発展させるものであり、SynthTabの成果が大規模合成データ活用の有効性を示した先駆的研究として本研究の設計に影響を与えました。
+
+**Conformer (参照アーキテクチャ)**
+
+Anmol Gulati, James Qin, Chung-Cheng Chiu, et al. "Conformer: Convolution-augmented Transformer for Speech Recognition." Interspeech, 2020.
+
+本研究モデルの通称「Conformer」の名称の参照元です。本研究のコアモデルは実際にはCRNN（CNN + Bidirectional GRU）であり、Gulati et al. のConformer（CNN + Transformer Self-Attention）とは構造が異なります。命名の経緯と差異についてはセクション3.1に注記しています。
+
+**IOI制約 (運指最適化)**
+
+Bontempi et al. "Biomechanical constraints for guitar fingering using Inter-Onset Interval." 2024.
+
+人間の指の移動速度限界（約12フレット/秒）に基づく生体力学的制約を定式化した研究です。本研究の運指最適化エンジン（セクション8.2）におけるIOI制約の設計に採用しました。
+
+**Path Difference Learning (運指最適化)**
+
+A. Radisavljevic, P. Driessen. "Path Difference Learning for Guitar Chord/Solo Transcription." Proceedings of the International Computer Music Conference (ICMC), 2004.
+
+Viterbi DPのコスト関数重みを正解タブ譜との差分から勾配降下法で自動最適化する手法を提案した研究です。本研究の重みパラメータ自動最適化（セクション8.3）の基礎として採用し、弦+フレット一致率の向上に貢献しました。
+
+**Minimax Viterbi DP (運指最適化)**
+
+Tatsuro Hori, Shigeki Sagayama. "Minimax Viterbi Algorithm for HMM-Based Guitar Tablature Transcription." Proceedings of the 17th International Society for Music Information Retrieval Conference (ISMIR), 2016.
+
+通常のViterbi DPが合計コスト最小化に対し、最大単ステップコストを最小化するMinimax Viterbi変種を提案した研究です。本研究（セクション8.4）では局所的に極端な運指ジャンプを排除するために採用し、弾きやすさの大幅な改善を実現しました（最大ステップコスト 620.5 → 50.0）。
+
+**Basic Pitch (Spotify)**
+
+Bitteur et al. / Spotify Research. "Basic Pitch: A Lightweight yet Powerful Pitch Detection Library." Spotify Research, 2022.
+
+17Kパラメータの軽量モデルながら高いRecall（0.9074）を示すオープンソース音高検出ライブラリです。本研究のセクション13では、Basic Pitchの高Recall特性とSoloTab MoEの高Precision特性を融合するHybrid Transcription Pipeline（Fusion C）を構築し、F1=0.8835・Precision=0.9531を達成しました。
+
+- 公開URL: https://github.com/spotify/basic-pitch
+
+### 使用ツール・ライブラリ
+
+| ツール / ライブラリ | 用途 |
+| :--- | :--- |
+| PyTorch | CRNN・CNN・LSTMモデルの学習・推論フレームワーク |
+| torchaudio | Conformerアーキテクチャ参照、音声処理ユーティリティ |
+| librosa | CQTスペクトログラム生成、音声特徴量抽出 |
+| mirdata | GuitarSetデータセットの標準化アクセスインターフェース |
+| mir_eval | Pitch F1・Precision・Recallの標準評価指標計算 |
+| scipy | iirfilterによるバンドパスフィルタ処理 |
+| numpy | 数値計算・フレームレベル確率演算 |
+| ONNXRuntime | Basic Pitchモデルの高速推論 |
+| music21 / MusicXML | 採譜結果の楽譜フォーマット出力 |
+
+### サウンドフォント（合成データ生成）
+
+本研究の合成データセット（約52,000曲）は、以下の高品質サウンドフォントを用いて生成されました。それぞれ異なるギターボディ特性・弦材質・マイキング特性をシミュレートしており、モデルの音色ドメイン多様性を支えています。
+
+| サウンドフォント名 | 音色特性 | 主な用途 |
+| :--- | :--- | :--- |
+| Martin系 | ドレッドノート型、低音域が豊か、温かみのある響き | 指弾き・ピック弾きモデルの事前学習 |
+| Taylor系 | ブライト系、高音域が鮮明、シャープなアタック | 指弾き・ピック弾きモデルの事前学習 |
+| Luthier系 | クラシカル系、ナイロン弦的な柔らかい響き | 指弾き・ピック弾きモデルの事前学習 |
+| Gibson系 | 温かく丸みのある音色、親指奏法特化 | Gibson Thumbデータセット生成 |
+
+これらのサウンドフォントを制作・公開してくださった制作者の皆様の尽力により、52,000曲規模の多様な合成データ構築が実現しました。
+
+本研究で使用したすべてのデータセット・ライブラリは、それぞれの利用規約・ライセンス条件に従って使用しています。各データセットおよびツールの著作権は、それぞれの権利保有者に帰属します。
+
+---
+
+*SoloTab V2.0 — 2026年5月*

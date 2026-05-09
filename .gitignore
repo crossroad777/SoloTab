@@ -65,3 +65,8 @@ tools/
 
 # Logs directory
 backend/logs/
+
+# Temporary and Office files
+*.docx
+_temp*
+
