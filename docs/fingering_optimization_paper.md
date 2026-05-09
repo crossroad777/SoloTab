@@ -357,15 +357,23 @@ Fingers CANNOT cross each other. This is a physical impossibility.
 
 **Impact on string assignment:** These constraints explain WHY the S2→S1 error pattern exists. When a player is in 7th position (index on fret 7), they play A4 on B string fret 10 (pinky) — moving to E string fret 5 would require repositioning the entire hand. The CNN sees equivalent pitches but cannot see the hand.
 
-### 5.14 CNN LOPO Cross-Validation (In Progress)
+### 5.14 CNN LOPO Cross-Validation — COMPLETED
 
-To verify whether the CNN's 93.3% is inflated by training data leakage (random 80/20 split includes same players in train and test), we are running Leave-One-Player-Out cross-validation:
+The CNN's reported 93.3% was evaluated using a random 80/20 split that includes the SAME players in both train and test. To measure true generalization, we ran Leave-One-Player-Out cross-validation:
 
-- 6 GuitarSet players, 61,885 total samples
-- Each fold: train on 5 players, evaluate on held-out player
-- Fold 1 (Player 00): **74.5%** — significantly lower than 93.3%
+| Fold | Held-out Player | Accuracy |
+|------|----------------|----------|
+| 1 | Player 00 | 74.5% |
+| 2 | Player 01 | 80.0% |
+| 3 | Player 02 | 82.1% |
+| 4 | Player 03 | 81.0% |
+| 5 | Player 04 | 82.3% |
+| 6 | Player 05 | 84.9% |
+| **Overall LOPO** | | **80.4%** |
 
-*Remaining folds in progress. If LOPO accuracy is ~75%, the true CNN generalization ceiling is much lower than reported.*
+**Critical finding:** The true CNN generalization accuracy is **80.4%**, not 93.3%. The 12.9% gap confirms massive overfitting to player-specific characteristics (guitar timbre, playing style, mic placement). Player 00 is the hardest to generalize to (74.5%), while Player 05 is the easiest (84.9%).
+
+**Implication:** The 93.3% figure is artificially inflated. The CNN learns each player's guitar/recording characteristics rather than universal string-discriminating spectral features. To reach 95%, the CNN needs to be trained on far more diverse data sources (different guitars, players, recording conditions).
 
 ### 5.15 GP Preference Map Expansion
 
