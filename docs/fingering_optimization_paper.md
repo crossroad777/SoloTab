@@ -227,7 +227,27 @@ We attempted to improve CNN accuracy by fusing CNN probabilities with human pref
 
 **Finding:** Adding human preference consistently **degrades** CNN accuracy. The CNN's audio-based spectral features already capture string information more accurately than pitch-only statistical preferences. The preference map is redundant when audio features are available.
 
-## 6. Data Scaling Strategy
+### 5.8 CNN-Viterbi Hybrid
+
+We integrated CNN probabilities as emission costs in a Viterbi DP, adding string-switch and fret-distance transition costs to enforce sequential coherence:
+
+`total_cost = -log(CNN_prob) + w_ts × |Δstring| + w_tf × |Δfret|`
+
+Fine grid search (w_ts=0.1-0.8, w_tf=0-0.03) over 60 solo files:
+
+| Configuration | Overall | S1 | S2 | S3 | S4 | S5 | S6 |
+|--------------|---------|-----|-----|-----|-----|-----|-----|
+| CNN only | 93.3% | 99.1 | 87.5 | 94.0 | 96.2 | 93.7 | 89.4 |
+| **w_ts=0.3, w_tf=0.03** | **93.6%** | 98.7 | 88.1 | 94.8 | 95.6 | 93.7 | 91.2 |
+
+**Finding:** Viterbi sequence optimization provides marginal improvement (+0.3%). The largest gains are on S6 (+1.8%) and S3 (+0.8%). The bottleneck remains S2 (B3, 88.1%) and S6 (E2, 91.2%).
+
+**Interpretation:** CNN's per-note classification is already strong. The remaining ~6% error likely stems from:
+1. Acoustic ambiguity between adjacent strings (B3 string vs G3 string harmonics overlap)
+2. Player-specific position choices that differ from training distribution
+3. Limited training data diversity (GuitarSet = 6 players, 1 guitar)
+
+
 
 ### 6.1 Current Pipeline
 
