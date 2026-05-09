@@ -382,8 +382,36 @@ Extracted 403,977 notes from 168 GuitarPro files (52 artists) collected by the G
 - CNN + expanded preference fusion: **No improvement** over CNN alone (93.3%)
 - This confirms that pitch-only preference statistics cannot supplement audio spectral features
 
+### 5.16 Biomechanical Viterbi — 95.8% Achieved 🎯
 
-### 6.1 Current Pipeline
+By incorporating finger assignment (finger 1-4) into the Viterbi state space and adding biomechanical transition costs, we achieved a major breakthrough:
+
+**State:** `(string, fret, finger)` — each note is assigned not just a string/fret but which finger presses it.
+
+**Transition costs:**
+- Position shift penalty: hand must move as a unit (index finger position change)
+- Same-finger-different-fret penalty: physically impossible in fast passages
+- Finger ordering violation: huge penalty (joints cannot bend backwards)
+- Stretch penalty: exceeding max finger span (e.g., index-pinky > 6 frets)
+
+| Config | Overall | S1 | S2 | S3 | S4 | S5 | S6 |
+|--------|---------|-----|-----|-----|-----|-----|-----|
+| CNN only | 92.9% | 98.6 | 87.2 | 93.8 | 95.4 | 93.7 | 90.0 |
+| bio w_pos=0.1 | 94.7% | 99.2 | 90.5 | 95.7 | 96.4 | 94.9 | 89.2 |
+| bio w_pos=0.3 | 95.4% | 99.2 | 92.5 | 96.6 | 97.2 | 94.3 | 84.8 |
+| **bio w_pos=0.5 ease=0.5** | **95.8%** | 99.0 | 93.8 | 96.5 | 97.9 | 94.9 | 84.0 |
+| bio w_pos=1.0 ease=0.5 | 95.5% | 97.9 | 93.6 | 96.2 | 97.3 | 95.4 | 83.6 |
+
+**Key improvements over CNN-only:**
+- S2 (B3): 87.2% → **93.8%** (+6.6%) — the #1 error pattern (S2→S1) is now largely corrected
+- S4 (D3): 95.4% → **97.9%** (+2.5%)
+- S3 (G3): 93.8% → **96.5%** (+2.7%)
+
+**Remaining weakness:** S6 (E2) dropped from 90.0% to **84.0%** — the position constraint over-penalizes low-string open position playing. S6 often involves open strings and bass notes that don't follow the "hand position" model.
+
+**Note:** This benchmark uses same-player data (not LOPO). The true generalization accuracy would be lower, estimated ~82-85% based on the 12.9% LOPO gap observed for CNN alone.
+
+
 
 ```
 GuitarPro files → extract_gp_fingering.py → preference map merge
