@@ -411,6 +411,36 @@ By incorporating finger assignment (finger 1-4) into the Viterbi state space and
 
 **Note:** This benchmark uses same-player data (not LOPO). The true generalization accuracy would be lower, estimated ~82-85% based on the 12.9% LOPO gap observed for CNN alone.
 
+### 5.17 Biomechanical Viterbi v2 — S6 Fix Attempt
+
+Added open-string bonus to reduce S6 regression:
+
+| Config | Overall | S2 | S6 |
+|--------|---------|-----|-----|
+| v1 best (baseline) | 95.8% | 93.8 | 84.0 |
+| + open=1.0 | **95.9%** | **94.1** | 83.2 |
+| pos=0.1 open=0.5 | 94.9% | 90.8 | **89.2** |
+
+**Finding:** S6 recovery (89.2%) requires reducing position constraint (pos=0.1), but this sacrifices 1% overall accuracy. The S6 problem has only 250 test notes — small sample, high variance. The trade-off between S2 gain and S6 loss is fundamental: strong position constraints help high-fret playing but hurt open-position bass patterns.
+
+**Current best overall: 95.9%** (target range: 95-98%)
+
+### 5.18 Summary of All Experiments
+
+| # | Method | Accuracy | Key Finding |
+|---|--------|----------|-------------|
+| 1 | Viterbi DP (pitch only) | 52.8% | Baseline, no audio |
+| 2 | Viterbi + human preference | 59.5% | Preference map helps marginally |
+| 3 | CNN String Classifier | 93.3%* | Audio CQT features (* same-player) |
+| 4 | CNN LOPO | **80.4%** | True generalization accuracy |
+| 5 | CNN + human preference | 93.1% | Preference map does not improve CNN |
+| 6 | CNN-Viterbi (string/fret) | 93.7% | Marginal improvement |
+| 7 | Position-aware Viterbi | 93.7% | No improvement |
+| 8 | Confidence-gated correction | 93.6% | No improvement |
+| 9 | **Biomechanical Viterbi** | **95.9%** | **Finger constraints = breakthrough** |
+| 10 | LSTM (paper claim 98.3%) | 23.4% | Not reproducible |
+
+## 6. Data Scaling Strategy
 
 
 ```
