@@ -185,17 +185,34 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             setError(null);
 
             try {
-                // Cache-bust + retry (Volume commit遅延対策)
+                // GP5バイナリを取得（AlphaTabネイティブ形式）
+                // MusicXML経由のfret override hackは不要
                 let res;
+                let useGp5 = true;
                 for (let attempt = 0; attempt < 3; attempt++) {
-                    res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`);
+                    res = await fetch(`${apiBase}/result/${sessionId}/gp5?t=${Date.now()}`);
                     if (res.ok) break;
-                    console.warn(`[TabView] musicxml attempt ${attempt + 1} failed, retrying...`);
+                    console.warn(`[TabView] GP5 attempt ${attempt + 1} failed, retrying...`);
                     await new Promise(r => setTimeout(r, 1500));
                 }
-                if (!res.ok) throw new Error("MusicXML not available");
-                let xmlText = await res.text();
+                // GP5が無い場合はMusicXMLにフォールバック
+                if (!res || !res.ok) {
+                    console.warn("[TabView] GP5 not available, falling back to MusicXML");
+                    useGp5 = false;
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`);
+                        if (res.ok) break;
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
+                    if (!res.ok) throw new Error("Score not available");
+                }
+
+                const scoreData = useGp5
+                    ? new Uint8Array(await res.arrayBuffer())
+                    : new TextEncoder().encode(await res.text());
                 if (destroyed) return;
+
+                console.log(`[TabView] Loading ${useGp5 ? 'GP5' : 'MusicXML'}: ${scoreData.length} bytes`);
 
                 // beats.jsonを取得（カーソル同期用）
                 try {
@@ -207,30 +224,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     }
                 } catch { /* ignore */ }
                 if (!window.alphaTab) throw new Error("AlphaTab not loaded");
-
-                // Transpose: modify MusicXML pitch directly
-                if (transpose !== 0) {
-                    const NOTES = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"];
-                    const ALTERS = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
-                    const N2M = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-                    xmlText = xmlText.replace(
-                        /<pitch>\s*<step>([A-G])<\/step>\s*(?:<alter>([-.\\d]+)<\/alter>\s*)?<octave>(\d+)<\/octave>\s*<\/pitch>/g,
-                        (_, step, alter, octave) => {
-                            const midi = N2M[step] + (alter ? parseInt(alter) : 0) + (parseInt(octave) + 1) * 12 + transpose;
-                            const pc = ((midi % 12) + 12) % 12;
-                            let r = `<pitch><step>${NOTES[pc]}</step>`;
-                            if (ALTERS[pc]) r += `<alter>${ALTERS[pc]}</alter>`;
-                            return r + `<octave>${Math.floor(midi / 12) - 1}</octave></pitch>`;
-                        }
-                    );
-                    xmlText = xmlText.replace(
-                        /<fret>(\d+)<\/fret>/g,
-                        (_, f) => `<fret>${Math.max(0, parseInt(f) + transpose)}</fret>`
-                    );
-                }
-
-                // Capo: バックエンド側でカポ対応tuningを使用して弦割り当て済み
-                // フロントでのfret-capo処理は不要（二重補正回避）
 
                 const settings = new window.alphaTab.Settings();
                 settings.core.tex = false;
@@ -302,14 +295,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     setTimeout(() => editInputRef.current?.focus(), 50);
                 });
 
-
-
                 api.renderStarted.on(() => setLoading(true));
                 api.renderFinished.on(() => {
                     if (destroyed) return;
                     setLoading(false);
-
-
 
                     // Build BeatMap with retries
                     const tryBuild = (attempt) => {
@@ -329,66 +318,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (!destroyed) { setError("TAB表示エラー"); setLoading(false); }
                 });
 
-                // --- fret/string抽出（2スタッフ構造: staff 1のノートにfret/string付き） ---
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-                const xmlNoteEls = xmlDoc.getElementsByTagName("note");
-                const tabFrets = [];
-                for (let i = 0; i < xmlNoteEls.length; i++) {
-                    const el = xmlNoteEls[i];
-                    if (el.getElementsByTagName("rest").length > 0) continue;
-                    const f = el.getElementsByTagName("fret");
-                    const s = el.getElementsByTagName("string");
-                    if (f.length > 0 && s.length > 0) {
-                        tabFrets.push({
-                            fret: parseInt(f[0].textContent.trim()),
-                            string: parseInt(s[0].textContent.trim()),
-                        });
-                    }
-                }
-                console.log(`[TabView] XML fret/string: ${tabFrets.length} notes`);
-
-                // --- fret override: 全staveを走査して順序一致で適用 ---
-                let fretOverrideApplied = false;
-                api.scoreLoaded.on((score) => {
-                    if (fretOverrideApplied || destroyed) return;
-                    fretOverrideApplied = true;
-                    try {
-                        const track = score.tracks[0];
-                        if (!track) return;
-                        let noteIdx = 0;
-                        let changed = 0;
-                        // 全staveを走査（2スタッフ構造: stave 0 = treble, stave 1 = TAB）
-                        for (const stave of track.staves) {
-                            for (const bar of stave.bars) {
-                                for (const voice of bar.voices) {
-                                    for (const beat of voice.beats) {
-                                        if (beat.isRest) continue;
-                                        for (const note of beat.notes) {
-                                            if (noteIdx < tabFrets.length) {
-                                                const t = tabFrets[noteIdx];
-                                                if (note.fret !== t.fret || note.string !== t.string) {
-                                                    note.fret = t.fret;
-                                                    note.string = t.string;
-                                                    changed++;
-                                                }
-                                                noteIdx++;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        console.log(`[TabView] Fret override: ${changed}/${noteIdx} corrected (${track.staves.length} staves)`);
-                        if (changed > 0) api.render();
-                    } catch (e) {
-                        console.warn("[TabView] Fret override error:", e);
-                    }
-                });
-
-                const encoder = new TextEncoder();
-                const data = encoder.encode(xmlText);
-                api.load(data instanceof Uint8Array ? data : new Uint8Array(data));
+                // GP5ネイティブ読み込み: fret overrideは不要
+                // GP5にはfret/string情報が直接埋め込まれている
+                api.load(scoreData);
             } catch (err) {
                 console.error("[TabView init]", err);
                 if (!destroyed) { setError(err.message); setLoading(false); }

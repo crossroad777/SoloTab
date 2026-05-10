@@ -19,6 +19,7 @@ from typing import Callable, Optional
 from beat_detector import detect_beats
 from solotab_utils import _to_native, STANDARD_TUNING, TUNINGS
 from tab_renderer import notes_to_tab_musicxml
+from gp_renderer import notes_to_gp5
 
 
 
@@ -500,11 +501,34 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
         json.dump(_to_native(notes), f, ensure_ascii=False, indent=2)
 
-    # --- Step 3: TAB MusicXML Generation ---
+    # --- Step 3: TAB譜生成 (GP5 + MusicXML) ---
     report("musicxml", "TAB譜生成中...")
     t0 = time.time()
 
     title = title or session_dir.name
+
+    # GP5生成 (AlphaTab ネイティブ形式 — メイン出力)
+    try:
+        gp5_bytes = notes_to_gp5(
+            notes,
+            beats=beats,
+            bpm=bpm,
+            title=title,
+            tuning=tuning,
+            time_signature=time_signature,
+            rhythm_info=rhythm_info,
+            key_signature=detected_key_sig,
+            noise_gate=0.15,
+        )
+        gp5_path = session_dir / "tab.gp5"
+        with open(gp5_path, "wb") as f:
+            f.write(gp5_bytes)
+        report("musicxml", f"GP5生成完了: {len(gp5_bytes)} bytes")
+    except Exception as e:
+        report("musicxml", f"GP5生成失敗: {e}")
+        import traceback; traceback.print_exc()
+
+    # MusicXML生成 (フォールバック + PDF用)
     xml_content, tech_map = notes_to_tab_musicxml(
         notes,
         beats=beats,
@@ -515,7 +539,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         time_signature=time_signature,
         rhythm_info=rhythm_info,
         key_signature=detected_key_sig,
-        noise_gate=0.15,  # 低確信ノートを初回からフィルタ
+        noise_gate=0.15,
     )
 
     musicxml_path = session_dir / "tab.musicxml"

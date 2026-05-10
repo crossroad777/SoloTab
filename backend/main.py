@@ -495,7 +495,6 @@ async def get_musicxml(session_id: str):
     filename = s.get("filename", session_id)
     if "." in filename:
         filename = filename.rsplit(".", 1)[0]
-    # ASCII文字のみの場合はそのまま、非ASCII文字がある場合はURLエンコード
     from urllib.parse import quote
     safe_filename = f"{filename}.musicxml"
     try:
@@ -506,6 +505,34 @@ async def get_musicxml(session_id: str):
     return Response(
         content=content,
         media_type="application/xml",
+        headers={"Content-Disposition": cd},
+    )
+
+
+@app.get("/result/{session_id}/gp5")
+async def get_gp5(session_id: str):
+    """GP5ファイルを返す（AlphaTab表示用 + TuxGuitarダウンロード用）"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    gp5_path = session_dir / "tab.gp5"
+    if not gp5_path.exists():
+        raise HTTPException(status_code=404, detail="GP5 not generated")
+
+    filename = s.get("filename", session_id)
+    if "." in filename:
+        filename = filename.rsplit(".", 1)[0]
+    from urllib.parse import quote
+    safe_filename = f"{filename}.gp5"
+    try:
+        safe_filename.encode("latin-1")
+        cd = f'attachment; filename="{safe_filename}"'
+    except UnicodeEncodeError:
+        cd = f"attachment; filename*=UTF-8''{quote(safe_filename)}"
+    return FileResponse(
+        str(gp5_path),
+        media_type="application/octet-stream",
         headers={"Content-Disposition": cd},
     )
 
@@ -564,7 +591,7 @@ async def get_pdf(session_id: str):
 
 def _regenerate_musicxml(session_id: str, notes: list,
                          tuning: list = None, noise_gate: float = None):
-    """notes → tab.musicxml 再生成の共通関数"""
+    """notes → tab.gp5 + tab.musicxml 再生成の共通関数"""
     s = sessions[session_id]
     session_dir = Path(s["session_dir"])
 
@@ -577,6 +604,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
 
     beats, bpm = [], s.get("bpm", 120)
     time_sig = s.get("time_signature", "4/4")
+    rhythm_info = None
     beats_path = session_dir / "beats.json"
     if beats_path.exists():
         with open(beats_path, "r") as f:
@@ -585,10 +613,27 @@ def _regenerate_musicxml(session_id: str, notes: list,
         bpm = bd.get("bpm", bpm)
         time_sig = bd.get("time_signature", time_sig)
 
+    title = s.get("filename", session_id)
+    gate = noise_gate if noise_gate is not None else 0.15
+
+    # --- GP5再生成 ---
+    try:
+        from gp_renderer import notes_to_gp5
+        gp5_bytes = notes_to_gp5(
+            notes, beats=beats, bpm=bpm, title=title,
+            tuning=tuning, time_signature=time_sig,
+            rhythm_info=rhythm_info, noise_gate=gate,
+        )
+        with open(session_dir / "tab.gp5", "wb") as f:
+            f.write(gp5_bytes)
+    except Exception as e:
+        print(f"[_regenerate] GP5 generation failed: {e}")
+
+    # --- MusicXML再生成 ---
     from tab_renderer import notes_to_tab_musicxml
     kwargs = dict(
         beats=beats, bpm=bpm,
-        title=s.get("filename", session_id),
+        title=title,
         tuning=tuning,
         time_signature=time_sig,
     )
