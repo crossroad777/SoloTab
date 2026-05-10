@@ -13,7 +13,7 @@ export default function SoloTabApp() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
-  const [noiseGate, setNoiseGate] = useState(0.0);
+  const [noiseGate, setNoiseGate] = useState(0.15);
   const [loopA, setLoopA] = useState(null);
   const [loopB, setLoopB] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
