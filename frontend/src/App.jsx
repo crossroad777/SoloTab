@@ -111,6 +111,7 @@ export default function SoloTabApp() {
         audioUrl: `${API_BASE}/files/${sid}/converted.wav`,
       });
       if (result.capo > 0) setCapo(result.capo);
+      if (result.noise_gate !== null && result.noise_gate !== undefined) setNoiseGate(result.noise_gate);
       setStatus(STATUS.COMPLETED);
     } catch {
       setStatus(STATUS.IDLE);
@@ -433,7 +434,7 @@ export default function SoloTabApp() {
             <h1 className="hero-title">SoloTab</h1>
             <p className="hero-subtitle">
               ソロギターをAIが瞬時にTAB譜へ。<br />
-              <span className="sub-line">ノート検出・弦推定・MusicXML出力</span>
+              <span className="sub-line">ノート検出・弦推定・TAB譜生成</span>
             </p>
 
             {/* Upload Card */}
@@ -581,6 +582,25 @@ export default function SoloTabApp() {
                   onClick={() => window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank')}
                   style={{ fontSize: 11, padding: '4px 8px' }}>
                   <Printer size={12} style={{ marginRight: 2 }} />PDF
+                </button>
+                <button className="home-btn" title="Guitar Pro 5"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
+                      if (!res.ok) throw new Error("取得失敗");
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp5`;
+                      a.style.display = 'none';
+                      document.body.appendChild(a);
+                      a.click();
+                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                    } catch(e) { _showToast("GP5: " + e.message); }
+                  }}
+                  style={{ fontSize: 11, padding: '4px 8px' }}>
+                  <Download size={12} style={{ marginRight: 2 }} />GP5
                 </button>
                 <button className="home-btn" title="MusicXML"
                   onClick={async () => {

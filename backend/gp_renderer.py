@@ -94,7 +94,10 @@ def notes_to_gp5(notes: List[dict], *,
     ]  # GP format: string 1 = highest (E4), string 6 = lowest (E2)
 
     # Key signature
-    key_fifths = _key_to_fifths(key_signature)
+    # ギターTABではフレット番号が情報の主体であり、
+    # キー検出の不正確さ（例：Am楽曲がE majorと判定される）による
+    # 誤った調号表示を防ぐため、Cメジャー（調号なし）に固定する。
+    key_fifths = 0  # C major = 調号なし
 
     # --- Measure Headers ---
     # First measure header already exists, configure it

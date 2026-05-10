@@ -187,6 +187,7 @@ def _parse_measures(root: ET.Element) -> list:
     if div_el is not None and div_el.text:
         divisions = int(div_el.text)
     
+    beats_per_bar = 4  # デフォルト
     for measure_el in part.findall("measure"):
         measure_num = measure_el.get("number", "?")
         notes = []
@@ -196,6 +197,11 @@ def _parse_measures(root: ET.Element) -> list:
         local_div = measure_el.find("attributes/divisions")
         if local_div is not None and local_div.text:
             divisions = int(local_div.text)
+        
+        # 拍子の更新（小節内で変わる場合）
+        local_beats = measure_el.find("attributes/time/beats")
+        if local_beats is not None and local_beats.text:
+            beats_per_bar = int(local_beats.text)
         
         # コード(Harmony)
         harmony = measure_el.find("harmony")
@@ -265,6 +271,7 @@ def _parse_measures(root: ET.Element) -> list:
             "number": measure_num,
             "notes": notes,
             "chord_name": chord_name,
+            "beats_per_bar": beats_per_bar,
         })
     
     return measures
@@ -322,7 +329,8 @@ def _draw_system(c: canvas.Canvas, x: float, y: float, width: float,
             c.setFillColorRGB(0, 0, 0)
         
         # ノートの描画
-        _draw_notes_in_bar(c, bar_x, y, bar_width, measure["notes"])
+        _draw_notes_in_bar(c, bar_x, y, bar_width, measure["notes"],
+                           beats_per_bar=measure.get("beats_per_bar", 4))
     
     # 最終小節線（右端）
     c.setLineWidth(0.8)
@@ -331,7 +339,7 @@ def _draw_system(c: canvas.Canvas, x: float, y: float, width: float,
 
 
 def _draw_notes_in_bar(c: canvas.Canvas, bar_x: float, y: float,
-                       bar_width: float, notes: list):
+                       bar_width: float, notes: list, **kwargs):
     """1小節内のノートを描画（フレット番号 + リズムステム）
     
     音楽理論に基づく配置ルール:
@@ -359,7 +367,7 @@ def _draw_notes_in_bar(c: canvas.Canvas, bar_x: float, y: float,
     # --- Duration比例配置 ---
     # 各グループのtick位置を計算し、小節幅に比例配置する
     divisions = notes[0].get("divisions", 12) if notes else 12
-    beats_per_bar = 4  # TODO: 拍子情報をmeasureから渡す
+    beats_per_bar = kwargs.get("beats_per_bar", 4)
     bar_total_ticks = divisions * beats_per_bar
     
     # 各グループの開始tick位置を累積計算

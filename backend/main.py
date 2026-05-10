@@ -163,6 +163,7 @@ class ResultResponse(BaseModel):
     key: Optional[str] = None
     capo: Optional[int] = None
     suggested_tuning: Optional[str] = None
+    noise_gate: Optional[float] = None
 
 
 # --- Endpoints ---
@@ -477,6 +478,7 @@ async def get_result(session_id: str):
         key=s.get("key"),
         capo=s.get("capo"),
         suggested_tuning=s.get("suggested_tuning"),
+        noise_gate=s.get("noise_gate"),
     )
 
 
@@ -517,6 +519,18 @@ async def get_gp5(session_id: str):
     s = sessions[session_id]
     session_dir = Path(s["session_dir"])
     gp5_path = session_dir / "tab.gp5"
+    if not gp5_path.exists():
+        # 古いセッション: notes_assigned.jsonからGP5を自動生成
+        assigned_path = session_dir / "notes_assigned.json"
+        if assigned_path.exists():
+            try:
+                with open(assigned_path, "r", encoding="utf-8") as f:
+                    notes = json.load(f)
+                if isinstance(notes, dict):
+                    notes = notes.get("notes", notes)
+                _regenerate_musicxml(session_id, notes)
+            except Exception as e:
+                print(f"[get_gp5] Auto-generation failed: {e}")
     if not gp5_path.exists():
         raise HTTPException(status_code=404, detail="GP5 not generated")
 
@@ -718,6 +732,8 @@ async def retune(session_id: str, request: RetuneRequest):
     s["tuning"] = tuning_name
     s["capo"] = capo
     s["total_notes"] = len(notes)
+    if request.noise_gate is not None:
+        s["noise_gate"] = request.noise_gate
     save_session(session_id)
 
     return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": len(notes)}
@@ -897,3 +913,18 @@ async def get_sessions():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "app": "NextChord SoloTab", "version": "0.1.0"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import socket
+
+    # SO_REUSEADDR: TIME_WAITによるポート競合を防止
+    # Windows環境でサーバー再起動時に「Address already in use」を回避
+    _orig_bind = socket.socket.bind
+    def _reuse_bind(self, address):
+        self.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return _orig_bind(self, address)
+    socket.socket.bind = _reuse_bind
+
+    uvicorn.run(app, host="0.0.0.0", port=8001)
