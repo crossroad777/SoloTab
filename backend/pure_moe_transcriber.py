@@ -14,14 +14,14 @@ import config
 from model import architecture
 from guitar_transcriber import _frames_to_notes
 
-def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold: float = 0.75, vote_prob_threshold: float = 0.5) -> list:
+def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold: float = 0.75, vote_prob_threshold: float = 0.5) -> list:
     """
-    指定された7つの特化モデルのみを使って純粋に音符を検出するトランスクライバ。
-    他のフィルタリングや後処理（DP等）は一切行わず、モデルの出力を忠実に返す。
+    全ステージ統合MoEトランスクライバ（35モデル合議）。
+    7ドメイン × 5ステージの全モデルを同時に合議させ、多様性によりF1を最大化。
 
-    最適パラメータ (3DS + ドメイン別Best F1選択, 2026-05-05):
-      vote_threshold=5, onset_threshold=0.75, vote_prob_threshold=0.5
-      → E2E 10曲: F1=0.8323 (P=0.8543, R=0.8114)
+    最適パラメータ (全ステージ統合, 論文 Section 10.15):
+      vote_threshold=21, onset_threshold=0.75, vote_prob_threshold=0.5
+      → GuitarSet Test 60曲: F1=0.8916 (P=0.8864, R=0.8968)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Extracting CQT features for {os.path.basename(wav_path)} ...")
@@ -34,43 +34,29 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
     log_cqt = librosa.amplitude_to_db(np.abs(cqt_spec), ref=np.max)
     features = torch.tensor(log_cqt, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
     
-    # 各ドメインの最良モデルを動的に選択（最新ステージ優先）
+    # 全ステージ統合MoE: 7ドメイン × 5ステージ = 35モデル合議
+    # 論文 Section 10.15: vote=21/35 で F1=0.8916 達成
     domain_names = [
         "martin_finger", "taylor_finger", "luthier_finger",
         "martin_pick", "taylor_pick", "luthier_pick",
         "gibson_thumb",
     ]
-    # Best F1で動的選択: _3ds (個別F1=0.78-0.80) > _3ds_ga (0.75-0.78) > _3ds_ga_gc
-    stage_suffixes = ["multitask_3ds", "multitask_3ds_ga", "multitask_3ds_ga_gc"]
+    stage_suffixes = [
+        "model",            # 合成データのみ（事前学習）
+        "guitarset_ft",     # + GuitarSet FT
+        "multitask",        # + GAPS混合
+        "multitask_3ds",    # + GAPS + AG-PT混合
+        "multitask_3ds_ga", # + GAPS + Synth V2混合
+    ]
     
     models_to_test = []
     for dname in domain_names:
-        best_f1 = -1.0
-        best_candidate = None
         for suffix in stage_suffixes:
             candidate = f"finetuned_{dname}_{suffix}"
             candidate_dir = os.path.join(mt_python_dir, "_processed_guitarset_data", "training_output", candidate)
             candidate_path = os.path.join(candidate_dir, "best_model.pth")
-            if not os.path.exists(candidate_path):
-                continue
-            # training_logからBest F1を読み取り
-            log_path = os.path.join(candidate_dir, "training_log.txt")
-            f1 = 0.0
-            if os.path.exists(log_path):
-                with open(log_path, 'r', encoding='utf-8', errors='ignore') as lf:
-                    for line in lf:
-                        if "Best F1:" in line:
-                            try:
-                                f1 = float(line.split("Best F1:")[1].strip().split()[0])
-                            except:
-                                pass
-            if f1 > best_f1:
-                best_f1 = f1
-                best_candidate = candidate
-            elif best_candidate is None:
-                best_candidate = candidate
-        if best_candidate:
-            models_to_test.append(best_candidate)
+            if os.path.exists(candidate_path):
+                models_to_test.append(candidate)
     # --- モデル一括ロード（キャッシュ利用） ---
     global _CACHED_MODELS
     if '_CACHED_MODELS' not in globals():

@@ -256,7 +256,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=2,
+            vote_threshold=6,       # 35モデルでの緩い検出（noise_gateで後段調整）
             onset_threshold=0.3,
             vote_prob_threshold=0.3
         )
