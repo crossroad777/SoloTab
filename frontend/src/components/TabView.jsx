@@ -266,28 +266,18 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     settings.display.resources.titleFont = new window.alphaTab.model.Font("Arial", 16, 1); // 1=Bold
                 }
 
-                // === Score Player (SoundFont合成) ===
+                // === Player: boundsLookup生成に必要なので有効化、カーソルは無効 ===
                 settings.player.enablePlayer = true;
-                settings.player.enableCursor = true;
+                settings.player.enableCursor = false; // AlphaTabカーソルOFF（カスタムカーソルを使用）
+                settings.player.scrollMode = 0; // スクロールOFF（横シフト防止）
                 settings.player.soundFont = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.3.0/dist/soundfont/sonivox.sf2";
-                settings.player.scrollElement = containerRef.current;
-                settings.player.scrollMode = 1; // continuous
-                settings.core.includeNoteBounds = true; // ノートクリック検出に必要
+                settings.core.includeNoteBounds = true; // boundsLookup + ノートクリック検出に必要
 
                 const api = new window.alphaTab.AlphaTabApi(wrapperRef.current, settings);
                 apiRef.current = api;
                 if (onApiReady) {
                     onApiReady(api);
                 }
-
-                // --- Score Player events ---
-                api.playerReady.on(() => {
-                    if (!destroyed) setScorePlayerReady(true);
-                    console.log("[TabView] Score player ready (SoundFont loaded)");
-                });
-                api.playerStateChanged.on((e) => {
-                    if (!destroyed) setScorePlayerState(e.state);
-                });
 
                 // --- ノートクリック → 編集UI ---
                 api.noteMouseDown.on((note, evt) => {
@@ -499,32 +489,32 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     try {
                         const track = score.tracks[0];
                         if (!track) return;
-                        // Staff 2 (TAB) のノートにfret/stringを適用
-                        // Default mode: staves[0]=五線譜, staves[1]=TAB
-                        const tabStaffIdx = track.staves.length > 1 ? 1 : 0;
-                        const tabStaff = track.staves[tabStaffIdx];
-                        let noteIdx = 0;
-                        let overridden = 0;
-                        for (const bar of tabStaff.bars) {
-                            for (const voice of bar.voices) {
-                                for (const beat of voice.beats) {
-                                    if (beat.isRest) continue;
-                                    for (const note of beat.notes) {
-                                        if (noteIdx < tabFrets.length) {
-                                            const target = tabFrets[noteIdx];
-                                            if (note.fret !== target.fret || note.string !== target.string) {
-                                                note.fret = target.fret;
-                                                note.string = target.string;
-                                                overridden++;
+                        // 全stavesのfret/stringを上書き（五線譜+TAB両方）
+                        let totalOverridden = 0;
+                        for (const staff of track.staves) {
+                            let noteIdx = 0;
+                            for (const bar of staff.bars) {
+                                for (const voice of bar.voices) {
+                                    for (const beat of voice.beats) {
+                                        if (beat.isRest) continue;
+                                        for (const note of beat.notes) {
+                                            if (noteIdx < tabFrets.length) {
+                                                const target = tabFrets[noteIdx];
+                                                if (note.fret !== target.fret || note.string !== target.string) {
+                                                    note.fret = target.fret;
+                                                    note.string = target.string;
+                                                    totalOverridden++;
+                                                }
                                             }
+                                            noteIdx++;
                                         }
-                                        noteIdx++;
                                     }
                                 }
                             }
+                            console.log(`[TabView] Staff fret override: ${noteIdx} notes processed`);
                         }
-                        console.log(`[TabView] Fret override: ${overridden}/${noteIdx} notes corrected`);
-                        if (overridden > 0) {
+                        console.log(`[TabView] Total fret override: ${totalOverridden} notes corrected`);
+                        if (totalOverridden > 0) {
                             api.render();
                         }
                     } catch (e) {
@@ -816,47 +806,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 position: "fixed", bottom: 80, right: 24, zIndex: 50,
                 display: "flex", gap: 8, alignItems: "center",
             }}>
-                {/* Score Player コントロール */}
-                <div style={{
-                    display: "flex", gap: 4, alignItems: "center",
-                    background: "rgba(30,41,59,0.92)", borderRadius: 10,
-                    padding: "4px 10px", boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-                }}>
-                    <button
-                        onClick={() => {
-                            if (!apiRef.current) return;
-                            if (scorePlayerState === 1) {
-                                apiRef.current.pause();
-                            } else {
-                                apiRef.current.play();
-                            }
-                        }}
-                        disabled={!scorePlayerReady}
-                        style={{
-                            width: 32, height: 32, borderRadius: "50%", border: "none",
-                            background: scorePlayerReady ? "#10b981" : "#475569",
-                            color: "white", fontSize: 16, cursor: scorePlayerReady ? "pointer" : "default",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            opacity: scorePlayerReady ? 1 : 0.5,
-                        }}
-                        title={scorePlayerState === 1 ? "一時停止" : "スコア再生"}
-                    >
-                        {scorePlayerState === 1 ? "⏸" : "▶"}
-                    </button>
-                    <button
-                        onClick={() => { if (apiRef.current) { apiRef.current.stop(); } }}
-                        disabled={!scorePlayerReady || scorePlayerState === 0}
-                        style={{
-                            width: 28, height: 28, borderRadius: "50%", border: "none",
-                            background: "#475569", color: "white", fontSize: 13,
-                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                        }}
-                        title="停止"
-                    >⏹</button>
-                    <span style={{ color: "#94a3b8", fontSize: 10, marginLeft: 2, whiteSpace: "nowrap" }}>
-                        {scorePlayerReady ? "♪ MIDI" : "読込中..."}
-                    </span>
-                </div>
+
                 {/* ズームコントロール */}
                 <div style={{
                     display: "flex", gap: 2, alignItems: "center",
