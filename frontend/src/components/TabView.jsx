@@ -329,7 +329,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (!destroyed) { setError("TAB表示エラー"); setLoading(false); }
                 });
 
-                // --- fret/string抽出（1スタッフ構造: 全ノートにfret/string付き） ---
+                // --- fret/string抽出（2スタッフ構造: staff 1のノートにfret/string付き） ---
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
                 const xmlNoteEls = xmlDoc.getElementsByTagName("note");
@@ -348,35 +348,38 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 }
                 console.log(`[TabView] XML fret/string: ${tabFrets.length} notes`);
 
-                // --- fret override: 順序一致で適用 ---
+                // --- fret override: 全staveを走査して順序一致で適用 ---
                 let fretOverrideApplied = false;
                 api.scoreLoaded.on((score) => {
                     if (fretOverrideApplied || destroyed) return;
                     fretOverrideApplied = true;
                     try {
-                        const stave = score.tracks[0]?.staves[0];
-                        if (!stave) return;
+                        const track = score.tracks[0];
+                        if (!track) return;
                         let noteIdx = 0;
                         let changed = 0;
-                        for (const bar of stave.bars) {
-                            for (const voice of bar.voices) {
-                                for (const beat of voice.beats) {
-                                    if (beat.isRest) continue;
-                                    for (const note of beat.notes) {
-                                        if (noteIdx < tabFrets.length) {
-                                            const t = tabFrets[noteIdx];
-                                            if (note.fret !== t.fret || note.string !== t.string) {
-                                                note.fret = t.fret;
-                                                note.string = t.string;
-                                                changed++;
+                        // 全staveを走査（2スタッフ構造: stave 0 = treble, stave 1 = TAB）
+                        for (const stave of track.staves) {
+                            for (const bar of stave.bars) {
+                                for (const voice of bar.voices) {
+                                    for (const beat of voice.beats) {
+                                        if (beat.isRest) continue;
+                                        for (const note of beat.notes) {
+                                            if (noteIdx < tabFrets.length) {
+                                                const t = tabFrets[noteIdx];
+                                                if (note.fret !== t.fret || note.string !== t.string) {
+                                                    note.fret = t.fret;
+                                                    note.string = t.string;
+                                                    changed++;
+                                                }
+                                                noteIdx++;
                                             }
-                                            noteIdx++;
                                         }
                                     }
                                 }
                             }
                         }
-                        console.log(`[TabView] Fret override: ${changed}/${noteIdx} corrected`);
+                        console.log(`[TabView] Fret override: ${changed}/${noteIdx} corrected (${track.staves.length} staves)`);
                         if (changed > 0) api.render();
                     } catch (e) {
                         console.warn("[TabView] Fret override error:", e);

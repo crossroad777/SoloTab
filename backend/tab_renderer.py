@@ -2,7 +2,7 @@
 tab_renderer.py — TAB用MusicXML生成
 ====================================
 弦/フレットデータからAlphaTabで表示可能なMusicXMLを生成する。
-五線譜パートは省略し、TABのみを出力。
+2スタッフ構造(五線譜+TAB)でAlphaTab ScoreTab表示に対応。
 """
 
 import xml.etree.ElementTree as ET
@@ -155,14 +155,22 @@ def notes_to_tab_musicxml(notes: List[dict], *,
             else:
                 ET.SubElement(key_el, "mode").text = "major"
 
-            # 1スタッフ構造: 五線譜+TABをAlphaTab ScoreTabが統合表示
-            clef1 = ET.SubElement(attrs, "clef")
+            # 2スタッフ構造: staff 1 = 五線譜(treble), staff 2 = TAB
+            ET.SubElement(attrs, "staves").text = "2"
+
+            # Staff 1: Treble clef (8vb = guitar standard)
+            clef1 = ET.SubElement(attrs, "clef", number="1")
             ET.SubElement(clef1, "sign").text = "G"
             ET.SubElement(clef1, "line").text = "2"
             ET.SubElement(clef1, "clef-octave-change").text = "-1"
 
-            # TABチューニング情報
-            sd = ET.SubElement(attrs, "staff-details")
+            # Staff 2: TAB clef
+            clef2 = ET.SubElement(attrs, "clef", number="2")
+            ET.SubElement(clef2, "sign").text = "TAB"
+            ET.SubElement(clef2, "line").text = "5"
+
+            # TABチューニング情報 (staff 2 only)
+            sd = ET.SubElement(attrs, "staff-details", number="2")
             ET.SubElement(sd, "staff-lines").text = "6"
             for i in range(6):
                 st = ET.SubElement(sd, "staff-tuning", line=str(i + 1))
@@ -220,16 +228,27 @@ def notes_to_tab_musicxml(notes: List[dict], *,
         bar_total: int = int(divisions) * int(beats_per_bar)
 
         if not bar_notes:
-            # Empty bar: whole rest on both staves
+            # Empty bar: whole rest on staff 1 (AlphaTab mirrors to staff 2)
             note_el = ET.SubElement(measure, "note")
             ET.SubElement(note_el, "rest")
             ET.SubElement(note_el, "duration").text = str(bar_total)
+            ET.SubElement(note_el, "voice").text = "1"
             ET.SubElement(note_el, "type").text = "whole"
+            ET.SubElement(note_el, "staff").text = "1"
+            # Staff 2: backup + rest
+            backup_el = ET.SubElement(measure, "backup")
+            ET.SubElement(backup_el, "duration").text = str(bar_total)
+            note_el2 = ET.SubElement(measure, "note")
+            ET.SubElement(note_el2, "rest")
+            ET.SubElement(note_el2, "duration").text = str(bar_total)
+            ET.SubElement(note_el2, "voice").text = "5"
+            ET.SubElement(note_el2, "type").text = "whole"
+            ET.SubElement(note_el2, "staff").text = "2"
         else:
             bar_notes.sort(key=lambda e: float(e["beat_pos"]))
             groups: List[List[dict]] = _group_by_time(bar_notes, threshold=0.1)
 
-            # === 1スタッフ構造: 五線譜+TAB統合 ===
+            # === 2スタッフ構造: staff 1に五線譜ノート、AlphaTabがstaff 2にTAB自動生成 ===
             current_pos: int = 0
             for group_idx, group in enumerate(groups):
                 target_pos: int = int(float(group[0]["beat_pos"]))
@@ -238,7 +257,9 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                     rest_el = ET.SubElement(measure, "note")
                     ET.SubElement(rest_el, "rest")
                     ET.SubElement(rest_el, "duration").text = str(gap)
+                    ET.SubElement(rest_el, "voice").text = "1"
                     ET.SubElement(rest_el, "type").text = _duration_to_type(gap, divisions)
+                    ET.SubElement(rest_el, "staff").text = "1"
                     if is_triplet_mode and gap in [4, 8]:
                         tm = ET.SubElement(rest_el, "time-modification")
                         ET.SubElement(tm, "actual-notes").text = "3"
@@ -263,6 +284,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                     voice = "2" if pitch <= 52 else "1"
                     ET.SubElement(note_el, "voice").text = voice
                     ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
+                    ET.SubElement(note_el, "staff").text = "1"
                     if entry.get("is_dotted"):
                         ET.SubElement(note_el, "dot")
                     if is_triplet_mode and dur in [4, 8]:
@@ -273,7 +295,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                         ET.SubElement(note_el, "tie", type="start")
                     ET.SubElement(note_el, "stem").text = "up" if voice == "1" else "down"
 
-                    # notations: fret/string + テクニック（1スタッフに統合）
+                    # notations: fret/string + テクニック
                     notations = ET.SubElement(note_el, "notations")
                     if entry.get("_tie_start"):
                         ET.SubElement(notations, "tied", type="start")
@@ -337,6 +359,16 @@ def notes_to_tab_musicxml(notes: List[dict], *,
             remaining = bar_total - current_pos
             if remaining > 0:
                 _add_forward(measure, remaining)
+
+            # Staff 2 (TAB): backup + forward で時間軸を揃える
+            # AlphaTab ScoreTabはstaff 1のノートをstaff 2にミラーするが、
+            # staff 2の時間軸も正しく宣言する必要がある
+            backup_el = ET.SubElement(measure, "backup")
+            ET.SubElement(backup_el, "duration").text = str(bar_total)
+            fwd_el = ET.SubElement(measure, "forward")
+            ET.SubElement(fwd_el, "duration").text = str(bar_total)
+            ET.SubElement(fwd_el, "staff").text = "2"
+            ET.SubElement(fwd_el, "voice").text = "5"
 
     # Serialize with pretty print (DOMParser互換性のため)
     xml_str = ET.tostring(root, encoding="unicode")
