@@ -24,7 +24,7 @@ import jams
 import soundfile as sf
 
 # --- 定数 ---
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]  # E2 A2 D3 G3 B3 E4
+from solotab_utils import STANDARD_TUNING
 SR = 22050  # ダウンサンプリング先
 HOP_LENGTH = 512
 N_BINS = 84  # CQTのビン数

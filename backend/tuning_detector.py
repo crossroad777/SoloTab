@@ -12,21 +12,7 @@ tuning_detector.py — チューニング自動検出
 import numpy as np
 from typing import List, Dict, Optional
 
-# チューニング定義 {name: [6th, 5th, 4th, 3rd, 2nd, 1st] MIDI notes}
-TUNINGS = {
-    "standard":       [40, 45, 50, 55, 59, 64],   # EADGBE
-    "half_down":      [39, 44, 49, 54, 58, 63],   # Eb Ab Db Gb Bb Eb
-    "full_down":      [38, 43, 48, 53, 57, 62],   # DGCFAD
-    "drop_d":         [38, 45, 50, 55, 59, 64],   # DADGBE
-    "drop_c":         [36, 43, 48, 53, 57, 62],   # CGCFAD
-    "double_drop_d":  [38, 45, 50, 55, 59, 62],   # DADGBD
-    "dadgad":         [38, 45, 50, 55, 57, 62],   # DADGAD
-    "open_d":         [38, 45, 50, 54, 57, 62],   # DADF#AD
-    "open_e":         [40, 47, 52, 56, 59, 64],   # EBEG#BE
-    "open_g":         [38, 43, 50, 55, 59, 62],   # DGDGBD
-    "open_a":         [40, 45, 49, 52, 57, 64],   # EAC#EAE
-    "open_c":         [36, 43, 48, 55, 60, 64],   # CGCGCE
-}
+from solotab_utils import TUNINGS
 
 # チューニングの最低音 (6弦開放)
 TUNING_LOWEST = {name: notes[0] for name, notes in TUNINGS.items()}
