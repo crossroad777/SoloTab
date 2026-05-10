@@ -127,6 +127,185 @@ def _predict_string_probs(audio_path: str, onset_time: float,
         return None
 
 # =============================================================================
+# V3 FingeringTransformer — 記号ベース運指予測 (GProTab 800万ノートで学習)
+# =============================================================================
+
+_FINGERING_TRANSFORMER = None  # lazy-loaded
+_FINGERING_TRANSFORMER_CTX_LEN = 16  # 文脈窓サイズ
+
+
+def _load_fingering_transformer():
+    """V3 FingeringTransformerモデルをlazy-load。"""
+    global _FINGERING_TRANSFORMER
+    if _FINGERING_TRANSFORMER is not None:
+        return _FINGERING_TRANSFORMER
+
+    model_path = os.path.join(
+        os.path.dirname(__file__),
+        "..", "gp_training_data", "v3", "models",
+        "fingering_transformer_v3_best.pt"
+    )
+    model_path = os.path.normpath(model_path)
+    if not os.path.exists(model_path):
+        print(f"[string_assigner] V3 Transformerモデルなし: {model_path}")
+        _FINGERING_TRANSFORMER = False
+        return False
+
+    try:
+        import torch
+        import sys
+        train_dir = os.path.join(os.path.dirname(__file__), "train")
+        if train_dir not in sys.path:
+            sys.path.insert(0, train_dir)
+        from fingering_model_v3 import FingeringTransformer
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # 学習時のハイパーパラメータ: d_model=192, nhead=6, num_layers=4, embed_dim=48
+        model = FingeringTransformer(
+            d_model=192, nhead=6, num_layers=4, embed_dim=48, dropout=0.1
+        ).to(device)
+        state_dict = torch.load(model_path, map_location=device, weights_only=True)
+        # チェックポイント形式の場合、model_state_dictキーを抽出
+        if 'model_state_dict' in state_dict:
+            state_dict = state_dict['model_state_dict']
+        model.load_state_dict(state_dict)
+        model.eval()
+
+        _FINGERING_TRANSFORMER = {'model': model, 'device': device}
+        print(f"[string_assigner] V3 FingeringTransformerロード完了 (device={device})")
+        return _FINGERING_TRANSFORMER
+    except Exception as e:
+        print(f"[string_assigner] V3 Transformerロード失敗: {e}")
+        _FINGERING_TRANSFORMER = False
+        return False
+
+
+def _predict_string_transformer(notes: List[dict], tuning: List[int] = None) -> List[dict]:
+    """
+    V3 FingeringTransformerで弦予測確率を各ノートに注入する。
+
+    過去の弦・フレット割り当て結果を文脈として使用し、
+    各ノートに 'transformer_string_probs' フィールドを追加する。
+
+    Parameters
+    ----------
+    notes : 弦・フレットが既に割り当て済みのノートリスト
+    tuning : チューニング
+
+    Returns
+    -------
+    notes : transformer_string_probs が注入されたノートリスト
+    """
+    transformer = _load_fingering_transformer()
+    if not transformer:
+        return notes
+
+    if tuning is None:
+        tuning = STANDARD_TUNING
+
+    import torch
+
+    model = transformer['model']
+    device = transformer['device']
+    ctx_len = _FINGERING_TRANSFORMER_CTX_LEN
+    injected = 0
+
+    for idx, note in enumerate(notes):
+        pitch = note.get('pitch', 60)
+
+        # 文脈窓: 直前ctx_len個のノート（割り当て済み弦・フレットを使用）
+        ctx_pitches = []
+        ctx_strings = []
+        ctx_frets = []
+        ctx_durations = []
+        ctx_intervals = []
+
+        start = max(0, idx - ctx_len)
+        context_notes = notes[start:idx]
+
+        prev_pitch = pitch  # 逆順に辿る用
+        for ci, cn in enumerate(context_notes):
+            cp = cn.get('pitch', 60)
+            cs = cn.get('string', 0)
+            cf = cn.get('fret', 0)
+            # duration: 簡易量子化 (秒→0-31)
+            dur = cn.get('duration', 0.5)
+            dur_q = min(31, int(dur * 8))
+            # interval: 前ノートとのピッチ差 (-24~+24 → 0~48)
+            if ci > 0:
+                prev_p = context_notes[ci - 1].get('pitch', cp)
+                interval = max(-24, min(24, cp - prev_p)) + 24
+            else:
+                interval = 24  # 0 (no interval)
+
+            ctx_pitches.append(min(127, max(0, cp)))
+            ctx_strings.append(min(6, max(0, cs)))
+            ctx_frets.append(min(24, max(0, cf)))
+            ctx_durations.append(dur_q)
+            ctx_intervals.append(interval)
+
+        # パディング (文脈が足りない場合は左側をゼロ埋め)
+        pad_len = ctx_len - len(ctx_pitches)
+        if pad_len > 0:
+            ctx_pitches = [0] * pad_len + ctx_pitches
+            ctx_strings = [0] * pad_len + ctx_strings
+            ctx_frets = [0] * pad_len + ctx_frets
+            ctx_durations = [0] * pad_len + ctx_durations
+            ctx_intervals = [24] * pad_len + ctx_intervals
+
+        # ターゲット特徴量
+        target_dur = min(31, int(note.get('duration', 0.5) * 8))
+        if idx > 0:
+            target_interval = max(-24, min(24, pitch - notes[idx - 1].get('pitch', pitch))) + 24
+        else:
+            target_interval = 24
+
+        # position_context: 直近8ノートのフレット中央値
+        recent_frets = [n.get('fret', 0) for n in notes[max(0, idx - 8):idx] if n.get('fret', 0) > 0]
+        pos_ctx = int(np.median(recent_frets)) if recent_frets else 0
+        pos_ctx = min(24, max(0, pos_ctx))
+
+        # テンソル化
+        with torch.no_grad():
+            t_cp = torch.LongTensor([ctx_pitches]).to(device)
+            t_cs = torch.LongTensor([ctx_strings]).to(device)
+            t_cf = torch.LongTensor([ctx_frets]).to(device)
+            t_cd = torch.LongTensor([ctx_durations]).to(device)
+            t_ci = torch.LongTensor([ctx_intervals]).to(device)
+            t_tp = torch.LongTensor([min(127, max(0, pitch))]).to(device)
+            t_td = torch.LongTensor([target_dur]).to(device)
+            t_ti = torch.LongTensor([target_interval]).to(device)
+            t_pc = torch.LongTensor([pos_ctx]).to(device)
+
+            logits = model(t_cp, t_cs, t_cf, t_cd, t_ci, t_tp, t_td, t_ti, t_pc)
+            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+
+        # 物理的に弾けるポジションのみに制限
+        positions = get_possible_positions(pitch, tuning)
+        valid_strings = set(s for s, f in positions)
+
+        # 弾けない弦の確率をゼロにして再正規化
+        filtered = {}
+        total = 0.0
+        for s_idx in range(6):
+            s_num = s_idx + 1
+            if s_num in valid_strings:
+                filtered[s_num] = float(probs[s_idx])
+                total += float(probs[s_idx])
+
+        if total > 0:
+            for s_num in filtered:
+                filtered[s_num] /= total
+            note['transformer_string_probs'] = filtered
+            injected += 1
+
+    if injected > 0:
+        print(f"[string_assigner] V3 Transformer: {injected}/{len(notes)}ノートに弦確率注入")
+
+    return notes
+
+
+# =============================================================================
 # 音楽理論エンジン: 典型フォームDB + コード情報統合
 # (坂井論文 2024「主旋律と和音を同時に演奏するソロギターのためのタブ譜生成」準拠)
 # =============================================================================
@@ -563,7 +742,7 @@ def guess_tuning(notes: list, top_n: int = 3) -> list:
     results.sort(key=lambda x: -x[1])
     return results[:top_n]
 
-MAX_FRET = 19  # アコースティックギターの実用フレット範囲
+MAX_FRET = 15  # アコースティックギターの実用フレット範囲
 
 
 # =============================================================================
@@ -629,8 +808,8 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,    # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
 
     # 音色コスト
-    "w_open_string_bonus":   -1.0,    # 開放弦ボーナス（微量—過剰優遍防止）
-    "w_open_match_bonus":    -5.0,    # 開放弦でしか出せない音のボーナス
+    "w_open_string_bonus":   -5.0,    # 開放弦ボーナス（開放弦を適切に活用）
+    "w_open_match_bonus":   -15.0,    # 開放弦でしか出せない音のボーナス
     "w_barre_bonus":         -5.0,    # バレーコードボーナス (per extra string)
 
     # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
@@ -736,6 +915,10 @@ def _position_cost(s: int, f: int, pitch: int = None) -> float:
             extra *= WEIGHTS["w_low_string_high_fret"]
         cost += extra
 
+    # 開放弦ボーナス（手の位置に依存しない＝運指自由度が高い）
+    if f == 0:
+        cost -= 5.0
+
     # Sweet spot ボーナス (負のコスト) — 0-9fまで拡大
     if 0 <= f <= 9:
         cost += WEIGHTS["w_sweet_spot_bonus"]
@@ -765,7 +948,7 @@ def _transition_cost(s: int, f: int,
     if f == 0 or prev_f == 0:
         # 開放弦: ポジション制約を緩和（手の位置に依存しない）
         if f == 0:
-            cost -= 1.0  # 開放弦ボーナス (w_open=1.0)
+            cost -= 3.0  # 開放弦ボーナス (強化)
         if prev_f == 0:
             cost += f * WEIGHTS["w_movement"] * 0.5
         elif f == 0:
@@ -888,6 +1071,22 @@ def _ergonomic_cost_chord(combo: Tuple[Tuple[int, int], ...]) -> float:
         unique_fret_positions = len(set(frets_nonzero))
         if unique_fret_positions > 4:
             cost += WEIGHTS["w_too_many_fingers"]
+    else:
+        unique_fret_positions = len(set(frets_nonzero)) if frets_nonzero else 0
+
+    # ⑩ シェイクハンドグリップ: 6弦を親指で押さえる奏法
+    # 条件: 6弦が低フレット(1-3)で、他の弦も同時に使用
+    # 効果: 指交差ペナルティを軽減 + 使える指が1本増える
+    string_fret_map = {s: f for s, f in combo}
+    if 6 in string_fret_map:
+        fret_6 = string_fret_map[6]
+        other_frets = [f for s, f in combo if s != 6 and f > 0]
+        if 1 <= fret_6 <= 3 and other_frets:
+            # 親指で6弦を押さえられる → ボーナス
+            cost -= 8.0
+            # 指交差のリスクも軽減（親指は独立動作）
+            if unique_fret_positions > 4:
+                cost -= WEIGHTS.get("w_too_many_fingers", 100.0) * 0.5
 
     return cost
 
@@ -977,10 +1176,14 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         tmb_cost = _timbre_cost(s, f, tuning)
         # CNN弦推定ヒントを取り込む
         cnn_bonus = 0.0
+        tfm_bonus = 0.0
         if len(groups[0]) == 1:
             cnn_probs = groups[0][0].get('cnn_string_probs')
             if cnn_probs and s in cnn_probs:
                 cnn_bonus = -cnn_probs[s] * 30.0  # ボーナス (コスト減)
+            tfm_probs = groups[0][0].get('transformer_string_probs')
+            if tfm_probs and s in tfm_probs:
+                tfm_bonus = -tfm_probs[s] * 20.0  # Transformerボーナス
         # 初期ポジションからの距離
         init_cost = abs(f - initial_position) * WEIGHTS["w_movement"] * 0.3 if f > 0 else 0.0
         # ⑪ ソロギター用: コードフォーム内ポジション優先
@@ -989,7 +1192,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             chord_name = groups[0][0].get("_chord_name", "")
             if chord_name:
                 chord_form_cost = _chord_form_position_cost(s, f, chord_name, tuning)
-        total = pos_cost + tmb_cost + cnn_bonus + init_cost + chord_form_cost
+        total = pos_cost + tmb_cost + cnn_bonus + tfm_bonus + init_cost + chord_form_cost
         trellis[0][(s, f)] = (total, None)
 
     # Forward pass
@@ -1025,6 +1228,10 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
                 if cnn_probs and s in cnn_probs:
                     emission -= cnn_probs[s] * 30.0
+                # V3 Transformer運指予測ヒント
+                tfm_probs = groups[gi][0].get('transformer_string_probs')
+                if tfm_probs and s in tfm_probs:
+                    emission -= tfm_probs[s] * 20.0  # Transformerボーナス
                 # ⑪ ソロギター用: コードフォーム内ポジション優先
                 chord_name = groups[gi][0].get("_chord_name", "")
                 if chord_name:
@@ -1469,54 +1676,14 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                 print(f"[string_assigner] 弦分類器CNN: {injected}/{len(notes)}ノートに弦確率注入")
 
     # Group simultaneous notes (within 10ms — アルペジオの順次音を分離)
-    # CNN弦分類器が利用可能な場合: CNN-first + DP後段修正
+    # CNN弦分類器の確率はViterbi DP内でcnn_string_probsフィールド経由で活用される。
+    # CNN-firstモード（DPバイパス）は遷移コストを無視するため廃止。
+    # 常にViterbi DPで全体最適化する。
     has_cnn = any(note.get('cnn_string_probs') for note in notes)
-    
     if has_cnn:
-        # === CNN-first アーキテクチャ + 開放弦優先 ===
-        # LSTM hybrid は GuitarSet Hex→マイク音声のドメインギャップで汎化失敗のため無効化
-        OPEN_STRING_PROB_THRESHOLD = 0.01
-        
-        for note in notes:
-            cnn_probs = note.get('cnn_string_probs')
-            positions = get_possible_positions(note["pitch"], tuning, max_fret)
-            if not positions:
-                positions = [_fallback_position(note["pitch"], tuning, max_fret)]
-            
-            if cnn_probs:
-                # 開放弦優先チェック
-                open_positions = [(s, f) for s, f in positions if f == 0]
-                
-                if open_positions:
-                    for os_s, os_f in open_positions:
-                        os_prob = cnn_probs.get(str(os_s), cnn_probs.get(os_s, 0))
-                        if os_prob >= OPEN_STRING_PROB_THRESHOLD:
-                            note["string"] = os_s
-                            note["fret"] = os_f
-                            break
-                    else:
-                        open_positions = None
-                
-                if not open_positions:
-                    sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
-                    assigned = False
-                    for s_cand, prob in sorted_strings:
-                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
-                        if pos_for_string:
-                            note["string"] = pos_for_string[0][0]
-                            note["fret"] = pos_for_string[0][1]
-                            assigned = True
-                            break
-                    if not assigned:
-                        note["string"] = positions[0][0]
-                        note["fret"] = positions[0][1]
-            else:
-                note["string"] = positions[0][0]
-                note["fret"] = positions[0][1]
-        
-        return notes
+        print(f"[string_assigner] CNN弦分類器ヒント: {sum(1 for n in notes if n.get('cnn_string_probs'))}音に適用 (Viterbi DPで統合)")
     
-    # === 従来のViterbi DP アーキテクチャ（CNN未使用時）===
+    # === Viterbi DP アーキテクチャ（CNN情報はDP内部でヒントとして使用）===
     groups = _group_simultaneous(notes, threshold=0.01)
 
     # フレーズに分割 (0.5秒以上の休符で区切る)
@@ -1553,4 +1720,124 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
+    # --- V3 Transformer 2パス目 ---
+    # 1パス目のViterbi結果を文脈として、Transformerで弦予測を実行
+    # 低確信度のノートのみ再割り当て（高確信度はViterbi結果を維持）
+    result = _predict_string_transformer(result, tuning)
+    tfm_reassigned = 0
+    for note in result:
+        tfm_probs = note.get('transformer_string_probs')
+        if not tfm_probs:
+            continue
+        # CNN確率がある場合はCNNを優先（音声情報のほうが信頼性が高い）
+        if note.get('cnn_string_probs'):
+            continue
+        # Transformer確信度が高い場合のみ再割り当て
+        best_s = max(tfm_probs, key=tfm_probs.get)
+        best_prob = tfm_probs[best_s]
+        current_s = note.get('string', 0)
+        if best_prob > 0.5 and best_s != current_s:
+            # 物理的に弾けるか確認
+            positions = get_possible_positions(note.get('pitch', 60), tuning, max_fret)
+            pos_map = {s: f for s, f in positions}
+            if best_s in pos_map:
+                note['string'] = best_s
+                note['fret'] = pos_map[best_s]
+                tfm_reassigned += 1
+    if tfm_reassigned > 0:
+        print(f"[string_assigner] V3 Transformer再割り当て: {tfm_reassigned}音")
+
+    # コードポジション連動後処理: 無効化
+    # クラシックギターではメロディがハイポジションでもアルペジオは開放弦で弾くため
+    # この後処理は逆効果（82%→75%に悪化）。将来的にはジャンル判定後に適用を検討。
+    # if chords:
+    #     result = _chord_position_postprocess(result, chords, tuning, max_fret)
+
     return result
+
+
+def _chord_position_postprocess(notes: List[dict], chords: List[dict],
+                                 tuning: List[int], max_fret: int) -> List[dict]:
+    """
+    コードポジション連動の後処理。
+
+    同一コードセクション内で、メロディ（最高音弦）のフレット位置から
+    演奏ポジションを推定し、アルペジオ音が不自然にオープンポジション
+    に留まっている場合、同ポジション内の代替フレットに再配置する。
+
+    例: メロディが7thポジション(fret 7-11)の時、
+        D#4(63)は s2/f4 ではなく s3/f8 が自然
+        F#4(66)は s1/f2 ではなく s2/f7 が自然
+    """
+    if not chords or not notes:
+        return notes
+
+    reassigned = 0
+
+    for chord in chords:
+        c_start = chord.get('start', chord.get('time', 0))
+        c_end = chord.get('end', c_start + chord.get('duration', 999))
+
+        # このコードセクション内のノートを収集
+        section_notes = [n for n in notes if c_start <= n.get('start', 0) < c_end]
+        if len(section_notes) < 3:
+            continue
+
+        # メロディノートのフレットを収集（str1の非ゼロフレット）
+        melody_frets = [n.get('fret', 0) for n in section_notes
+                        if n.get('string') == 1 and n.get('fret', 0) > 0]
+        if not melody_frets:
+            continue
+
+        # 演奏ポジション = メロディフレットの中央値
+        melody_frets_sorted = sorted(melody_frets)
+        melody_pos = melody_frets_sorted[len(melody_frets_sorted) // 2]
+
+        # ローポジション（fret ≤ 4）は調整不要
+        if melody_pos <= 4:
+            continue
+
+        # ポジション範囲: melody_pos ± 3
+        pos_low = max(1, melody_pos - 3)
+        pos_high = min(max_fret, melody_pos + 3)
+
+        # アルペジオ音（str2, str3）でポジション外にいるものを修正
+        for n in section_notes:
+            s = n.get('string', 0)
+            f = n.get('fret', 0)
+            pitch = n.get('pitch', 0)
+
+            # str1（メロディ）とstr4-6（ベース）は対象外
+            if s not in (2, 3):
+                continue
+
+            # 既にポジション範囲内なら調整不要
+            if pos_low <= f <= pos_high:
+                continue
+
+            # 代替ポジションを探す
+            alternatives = get_possible_positions(pitch, tuning, max_fret)
+            best_alt = None
+            best_score = float('inf')
+
+            for alt_s, alt_f in alternatives:
+                if alt_s in (1, 2, 3) and pos_low <= alt_f <= pos_high:
+                    # ポジション中心との距離 + 弦変更ペナルティ
+                    dist = abs(alt_f - melody_pos)
+                    string_penalty = abs(alt_s - s) * 2
+                    score = dist + string_penalty
+                    if score < best_score:
+                        best_score = score
+                        best_alt = (alt_s, alt_f)
+
+            if best_alt:
+                old_s, old_f = s, f
+                n['string'] = best_alt[0]
+                n['fret'] = best_alt[1]
+                reassigned += 1
+
+    if reassigned > 0:
+        print(f"[string_assigner] コードポジション連動: {reassigned}音を再配置")
+
+    return notes
+
