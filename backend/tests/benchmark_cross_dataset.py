@@ -9,7 +9,7 @@ sys.path.insert(0, r'D:\Music\nextchord-solotab\backend')
 from string_classifier import StringClassifierCNN, N_BINS, CONTEXT_FRAMES, SR, HOP_LENGTH
 
 IDMT_BASE = r'D:\Music\datasets\IDMT-SMT-GUITAR\IDMT-SMT-GUITAR_V2'
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]
+from solotab_utils import STANDARD_TUNING
 
 # IDMT stringNumber: 1=6th(low E), 6=1st(high E)
 # GuitarSet/SoloTab: 1=1st(high E), 6=6th(low E)

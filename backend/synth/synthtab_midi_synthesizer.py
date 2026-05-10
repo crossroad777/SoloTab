@@ -21,7 +21,7 @@ from typing import Dict, List, Tuple, Optional
 
 
 # ギター標準チューニング (MIDI note numbers: E2=40, A2=45, D3=50, G3=55, B3=59, E4=64)
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]
+from solotab_utils import STANDARD_TUNING
 SR = 22050  # FretNet学習と同じサンプルレート
 
 

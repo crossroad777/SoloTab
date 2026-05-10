@@ -39,7 +39,7 @@ SF2_PATH = r"D:\Music\datasets\acoustic_guitar\FluidR3_GM.sf2"
 OUTPUT_DIR = r"D:\Music\datasets\synth_v2"
 SR = config.SAMPLE_RATE  # 22050
 
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]  # E2 A2 D3 G3 B3 E4
+from solotab_utils import STANDARD_TUNING
 MAX_FRET = config.MAX_FRETS  # 20
 
 # GM Programs

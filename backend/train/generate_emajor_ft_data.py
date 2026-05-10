@@ -29,7 +29,7 @@ if mt_python_dir not in sys.path:
 import config
 
 # ギター標準チューニング (MIDI)
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]  # E2, A2, D3, G3, B3, E4
+from solotab_utils import STANDARD_TUNING
 
 # E major のハイポジションコードフォーム
 # Romance de Amor E major section のフィンガリング:

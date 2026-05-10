@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 import string_assigner
 
 GUITARSET_DIR = r"D:\Music\datasets\GuitarSet\annotation"
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]
+from solotab_utils import STANDARD_TUNING
 DS_TO_STRING = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}
 
 

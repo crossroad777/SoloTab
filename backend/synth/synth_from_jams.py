@@ -35,7 +35,7 @@ if os.path.exists(_FLUIDSYNTH_BIN) and _FLUIDSYNTH_BIN not in os.environ.get('PA
 
 
 # Standard tuning MIDI pitches
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]
+from solotab_utils import STANDARD_TUNING
 
 PPQ = 480  # SynthTab default ticks per quarter note
 

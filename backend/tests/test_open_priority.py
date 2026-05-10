@@ -11,7 +11,7 @@ for n in [x for x in notes if x['start'] < 5.0]:
 
 # Apply open string priority rule manually
 OPEN_STRING_PROB_THRESHOLD = 0.01
-STANDARD_TUNING = [40, 45, 50, 55, 59, 64]
+from solotab_utils import STANDARD_TUNING
 MAX_FRET = 19
 
 modified = copy.deepcopy(notes)
