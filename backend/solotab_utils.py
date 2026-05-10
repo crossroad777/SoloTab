@@ -1,4 +1,69 @@
+"""
+solotab_utils.py — SoloTab 共通ユーティリティ
+=============================================
+全モジュールから参照される定数・ヘルパー・環境設定。
+import時にffmpeg PATHとNumPy互換パッチが自動適用される。
+"""
+
+import os
 import numpy as np
+from pathlib import Path
+
+# ─── 環境設定 (import時に1回だけ実行) ───
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _setup_ffmpeg():
+    """ffmpeg を PATH に追加（dotenv → venv312 → システム の順で探索）"""
+    import shutil
+    if shutil.which("ffmpeg"):
+        return  # 既にPATHにある
+
+    # 1. dotenv (.env) から FFMPEG_PATH を取得
+    try:
+        from dotenv import load_dotenv
+        env_path = _PROJECT_ROOT.parent / "nextchord" / ".env"
+        if env_path.exists():
+            load_dotenv(env_path)
+    except ImportError:
+        pass
+
+    ffmpeg_path = os.getenv("FFMPEG_PATH", "")
+    if ffmpeg_path and Path(ffmpeg_path).exists():
+        bin_dir = str(Path(ffmpeg_path).parent)
+        if bin_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+            return
+
+    # 2. venv312 内の ffmpeg を探索
+    venv_ffmpeg = _PROJECT_ROOT.parent / "nextchord" / "venv312" / "Scripts" / "ffmpeg.exe"
+    if venv_ffmpeg.exists():
+        bin_dir = str(venv_ffmpeg.parent)
+        if bin_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+
+def _setup_numpy_compat():
+    """NumPy 2.0+ で削除された属性のパッチ (madmom互換)"""
+    if not hasattr(np, 'int'): np.int = int
+    if not hasattr(np, 'float'): np.float = float
+    if not hasattr(np, 'complex'): np.complex = complex
+    if not hasattr(np, 'bool'): np.bool = bool
+
+def _setup_collections_compat():
+    """Python 3.10+ で collections.abc に移動された属性のパッチ (madmom互換)"""
+    import collections
+    import collections.abc
+    for attr in ('MutableSequence', 'MutableMapping', 'MutableSet',
+                 'Mapping', 'Sequence', 'Callable', 'Iterable',
+                 'Iterator', 'Generator'):
+        if not hasattr(collections, attr) and hasattr(collections.abc, attr):
+            setattr(collections, attr, getattr(collections.abc, attr))
+
+# 初回import時に実行
+_setup_numpy_compat()
+_setup_collections_compat()
+_setup_ffmpeg()
+
 
 def _to_native(obj):
     """numpy型をPythonネイティブ型に再帰変換 (JSONシリアライズ用)"""

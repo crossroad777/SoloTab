@@ -27,11 +27,8 @@ from pathlib import Path
 from enum import Enum
 import numpy as np
 
-# NumPy 2.0+ patch for madmom
-if not hasattr(np, 'int'): np.int = int
-if not hasattr(np, 'float'): np.float = float
-if not hasattr(np, 'complex'): np.complex = complex
-if not hasattr(np, 'bool'): np.bool = bool
+# solotab_utils import で NumPy/collections/ffmpeg パッチが自動適用
+from solotab_utils import TUNINGS  # noqa: F401
 
 # BasicPitch/TF等のWARNING:root:ログを抑制（uvicornのログは保持）
 import logging
@@ -45,26 +42,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = PROJECT_ROOT.parent / "nextchord" / "venv312"
 PYTHON_PATH = str(VENV_DIR / "Scripts" / "python.exe")
 
-# FFMPEGパス
+# FFMPEG_PATH / YT_DLP_PATH（エンドポイントで参照）
 from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT.parent / "nextchord" / ".env")
 FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
-FFMPEG_BIN_DIR = str(Path(FFMPEG_PATH).parent)
-if FFMPEG_BIN_DIR and FFMPEG_BIN_DIR not in os.environ.get("PATH", ""):
-    # 最前列に追加して優先度を上げる
-    os.environ["PATH"] = FFMPEG_BIN_DIR + os.pathsep + os.environ.get("PATH", "")
-    print(f"[SoloTab] Added ffmpeg to PATH: {FFMPEG_BIN_DIR}")
-
-# yt-dlp パス
 YT_DLP_PATH = os.getenv("YT_DLP_PATH", "yt-dlp")
 if not shutil.which(YT_DLP_PATH):
     venv_yt = VENV_DIR / "Scripts" / "yt-dlp.exe"
     if venv_yt.exists():
         YT_DLP_PATH = str(venv_yt)
-print(f"[SoloTab] FFMPEG: {FFMPEG_PATH}, yt-dlp: {YT_DLP_PATH}")
+print(f"[SoloTab] FFMPEG: {shutil.which('ffmpeg') or FFMPEG_PATH}, yt-dlp: {YT_DLP_PATH}")
 
-# Available tunings (for validation)
-from solotab_utils import TUNINGS
 
 # Uploads
 UPLOAD_DIR = PROJECT_ROOT / "uploads"

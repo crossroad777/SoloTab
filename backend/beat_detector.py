@@ -11,22 +11,11 @@ beat_detector.py — ビート検出 + 拍子推定 (madmom + librosa)
 
 import numpy as np
 import atexit
+import warnings
 from pathlib import Path
 
-# NumPy 2.0+ patch for madmom
-if not hasattr(np, 'int'): np.int = int
-if not hasattr(np, 'float'): np.float = float
-if not hasattr(np, 'complex'): np.complex = complex
-if not hasattr(np, 'bool'): np.bool = bool
-
-# Python 3.10+ patch for madmom: collections.MutableSequence → collections.abc
-import collections
-import collections.abc
-for _attr in ('MutableSequence', 'MutableMapping', 'MutableSet',
-              'Mapping', 'Sequence', 'Callable', 'Iterable',
-              'Iterator', 'Generator'):
-    if not hasattr(collections, _attr) and hasattr(collections.abc, _attr):
-        setattr(collections, _attr, getattr(collections.abc, _attr))
+# solotab_utils import で NumPy/collections/ffmpeg パッチが自動適用
+import solotab_utils  # noqa: F401
 
 # atexit patch: background threadでのatexitエラーを回避
 _original_atexit_register = atexit.register
@@ -37,21 +26,24 @@ def _safe_atexit_register(*args, **kwargs):
         pass
 atexit.register = _safe_atexit_register
 
-# madmom (optional)
+# madmom (optional) — pkg_resources deprecation warning を抑制
 _HAS_MADMOM = False
 _HAS_MADMOM_DOWNBEAT = False
-try:
-    from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
-    _HAS_MADMOM = True
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
     try:
-        from madmom.features.downbeats import (
-            RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
-        )
-        _HAS_MADMOM_DOWNBEAT = True
+        from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
+        _HAS_MADMOM = True
+        try:
+            from madmom.features.downbeats import (
+                RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
+            )
+            _HAS_MADMOM_DOWNBEAT = True
+        except ImportError:
+            pass
     except ImportError:
-        pass
-except ImportError:
-    print("[beat_detector] Warning: madmom not available")
+        print("[beat_detector] Warning: madmom not available")
 
 
 def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
@@ -92,11 +84,14 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
         print(f"[beat_detector] Truncation failed, using full audio: {e}")
 
     # --- ビートトラッキング ---
-    beat_proc = _beat_proc or RNNBeatProcessor()
-    beat_tracker = _beat_tracker or DBNBeatTrackingProcessor(fps=100)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", message="dtype.*align")
+        beat_proc = _beat_proc or RNNBeatProcessor()
+        beat_tracker = _beat_tracker or DBNBeatTrackingProcessor(fps=100)
 
-    activations = beat_proc(truncated_path)
-    beats = beat_tracker(activations)
+        activations = beat_proc(truncated_path)
+        beats = beat_tracker(activations)
 
     # 一時ファイル削除
     if truncated_path != wav_path:
@@ -330,8 +325,11 @@ def _detect_time_signature(
 
 def _detect_ts_madmom_downbeat(wav_path: str) -> tuple:
     """madmom の DBNDownBeatTrackingProcessor で拍子推定"""
-    proc = RNNDownBeatProcessor()
-    acts = proc(wav_path)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", message="dtype.*align")
+        proc = RNNDownBeatProcessor()
+        acts = proc(wav_path)
 
     # 3/4 と 4/4 の両方で試す
     results = {}
