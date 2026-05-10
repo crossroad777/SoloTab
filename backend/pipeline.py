@@ -73,7 +73,7 @@ def _run_demucs_separation(wav_path: Path, session_dir: Path, report) -> tuple:
                     guitar_path = stems_dir / "guitar.wav"
 
     if not guitar_path.exists():
-        report("demucs", f"❌ 分離失敗、元音声を使用 ({time.time()-t0:.1f}s)")
+        report("demucs", f"[FAIL] 分離失敗、元音声を使用 ({time.time()-t0:.1f}s)")
         return guitar_wav, is_solo_guitar
 
     # ソロギター判定
@@ -118,11 +118,11 @@ def _run_demucs_separation(wav_path: Path, session_dir: Path, report) -> tuple:
             mixed_path = stems_dir / "guitar_full.wav"
             sf.write(str(mixed_path), mixed, sr_g)
             guitar_wav = str(mixed_path)
-            report("demucs", f"🎸 ソロギター検出 (guitar_ratio={guitar_ratio:.0%}) "
+            report("demucs", f"[SOLO] ソロギター検出 (guitar_ratio={guitar_ratio:.0%}) "
                    f"→ guitar+bassミックス使用（低音域保護） ({time.time()-t0:.1f}s)")
         else:
             guitar_wav = str(wav_path)
-            report("demucs", f"🎸 ソロギター検出 (guitar_ratio={guitar_ratio:.0%}) "
+            report("demucs", f"[SOLO] ソロギター検出 (guitar_ratio={guitar_ratio:.0%}) "
                    f"→ 元音声を使用 ({time.time()-t0:.1f}s)")
     else:
         if bass_audio is not None and guitar_audio is not None:
@@ -134,10 +134,10 @@ def _run_demucs_separation(wav_path: Path, session_dir: Path, report) -> tuple:
             mixed_path = stems_dir / "guitar_full.wav"
             sf.write(str(mixed_path), mixed, sr_g)
             guitar_wav = str(mixed_path)
-            report("demucs", f"🎵 バンド曲 → guitar+bass合成 ({time.time()-t0:.1f}s)")
+            report("demucs", f"[BAND] バンド曲 → guitar+bass合成 ({time.time()-t0:.1f}s)")
         else:
             guitar_wav = str(guitar_path)
-            report("demucs", f"✅ ギター分離完了 ({time.time()-t0:.1f}s)")
+            report("demucs", f"[OK] ギター分離完了 ({time.time()-t0:.1f}s)")
 
     return guitar_wav, is_solo_guitar
 
@@ -149,7 +149,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
-        print(f"[{session_id}] [{step}] {msg}")
+        try:
+            print(f"[{session_id}] [{step}] {msg}")
+        except UnicodeEncodeError:
+            print(f"[{session_id}] [{step}] {msg.encode('ascii', 'replace').decode()}")
 
     print(f"DEBUG: run_pipeline started. session_id: {session_id}, session_dir: {session_dir}")
     tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
@@ -161,7 +164,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     try:
         beat_result = detect_beats(str(wav_path))
     except Exception as e:
-        report("beats", f"❌ ビート検出致命的エラー: {e}")
+        report("beats", f"[FAIL] ビート検出致命的エラー: {e}")
         # フォールバック: 空の値を返して続行を試みるか、あるいは明示的に例外を投げる
         import traceback
         traceback.print_exc()
@@ -223,7 +226,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     if is_solo_guitar:
         # ソロギター: 前処理EQをスキップ（HPFがE2=82Hzを減衰、lowシェルフがさらに低音カット）
         transcription_wav = guitar_wav
-        report("preprocess", f"🎸 ソロギター → 前処理スキップ（元音声を直接使用）")
+        report("preprocess", f"[SOLO] ソロギター → 前処理スキップ（元音声を直接使用）")
     else:
         report("preprocess", "音声前処理中 (ラウドネス正規化・ノイズ除去)...")
         t0 = time.time()
@@ -254,9 +257,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=5,
-            onset_threshold=0.75,
-            vote_prob_threshold=0.5
+            vote_threshold=2,
+            onset_threshold=0.3,
+            vote_prob_threshold=0.3
         )
         report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
@@ -281,11 +284,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
 
     # --- 3c: 融合 ---
-    MATCH_ONSET_TOL = 0.07   # 70ms (最適値: スイープで確認済み)
+    MATCH_ONSET_TOL = 0.10   # 100ms (緩和: 速い曲で取りこぼし防止)
     MATCH_PITCH_TOL = 1      # ±1 semitone
+    MOE_SOLO_MIN_VOTE = 4    # MoE独自ノート追加に必要な最小合意数
 
     if bp_notes_list and moe_notes_list:
-        # 融合C: BPノートのうちMoEも検出したもののみ採用（MoEのフレット情報を使用）
+        # 融合D: BPとMoEの一致ノート + MoE高確信独自ノートも追加
         fused_notes = []
         used_moe = set()
         for bp_n in bp_notes_list:
@@ -299,14 +303,28 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     used_moe.add(j)
                     break
 
+        # MoE独自ノート: BPが拾えなかったがMoEが高確信で検出したノートも追加
+        # これにより速いパッセージの取りこぼしを補う
+        moe_only_added = 0
+        for j, moe_n in enumerate(moe_notes_list):
+            if j not in used_moe:
+                vel = float(moe_n.get("velocity", 0))
+                if vel >= 0.65:  # Modal版と統一
+                    fused_notes.append(moe_n)
+                    moe_only_added += 1
+
+        # 時間順にソート
+        fused_notes.sort(key=lambda n: (n["start"], n["pitch"]))
+
         notes = fused_notes
         method = "fusion_bp_moe"
         model_stats = {
             "bp_notes": len(bp_notes_list),
             "moe_notes": len(moe_notes_list),
             "fused_notes": len(notes),
+            "moe_only_added": moe_only_added,
         }
-        report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (両者一致)")
+        report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (一致={len(notes)-moe_only_added}, MoE独自={moe_only_added})")
     elif moe_notes_list:
         # BPが使えない場合はMoE単独
         notes = moe_notes_list
@@ -384,18 +402,43 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("tuning_detect", f"チューニング推定スキップ: {e}")
 
-    # --- Step: 音楽理論フィルタ ---
-    # スケール外のノートを最近傍のスケールトーン/コードトーンに補正する。
-    # キーはコード進行から自動推定。
-    report("theory", "音楽理論フィルタ適用中...")
+    # --- Step: 音楽理論解析 ---
+    report("theory", "音楽理論解析中...")
     t0 = time.time()
-    rhythm_info = {'subdivision': 'eighth', 'confidence': 0.0}
+    rhythm_info = {'subdivision': 'straight', 'triplet_ratio': 0.0}
+    detected_key_sig = detected_key or "C"
     try:
-        from music_theory import apply_music_theory_filter  # type: ignore
-        notes, rhythm_info = apply_music_theory_filter(notes, chords, tuning=tuning, beats=beats)
-        report("theory", f"音楽理論フィルタ完了 ({time.time()-t0:.1f}s)")
+        from music_theory import detect_rhythm_pattern, detect_key_signature
+        rhythm_info = detect_rhythm_pattern(notes, beats)
+        detected_key_sig = detect_key_signature(notes)
+        
+        # 3/4拍子のアルペジオ3連符パターン補正
+        # ロマンス等: onset fraction分析では検出できないが、
+        # 1拍あたり3音のパターンが支配的なら3連符と判定
+        if time_signature == "3/4" and rhythm_info["subdivision"] == "straight":
+            import numpy as np
+            beats_arr = np.array(beats)
+            notes_per_beat = []
+            for bi in range(min(len(beats)-1, 60)):
+                bt, nbt = beats[bi], beats[bi+1]
+                count = sum(1 for n in notes if bt <= float(n["start"]) < nbt)
+                if count > 0:
+                    notes_per_beat.append(count)
+            if notes_per_beat:
+                avg_npb = np.mean(notes_per_beat)
+                three_ratio = sum(1 for c in notes_per_beat if c == 3) / len(notes_per_beat)
+                two_or_three = sum(1 for c in notes_per_beat if c in [2, 3]) / len(notes_per_beat)
+                if avg_npb >= 2.0 and two_or_three >= 0.7:
+                    rhythm_info["subdivision"] = "triplet"
+                    rhythm_info["triplet_ratio"] = three_ratio
+                    report("theory", f"3/4アルペジオ3連符パターン検出 "
+                           f"(avg={avg_npb:.1f} notes/beat, 2or3-note ratio={two_or_three:.0%})")
+        
+        report("theory", f"音楽理論解析完了: rhythm={rhythm_info['subdivision']} "
+               f"(triplet_ratio={rhythm_info.get('triplet_ratio', 0):.2f}), "
+               f"key={detected_key_sig} ({time.time()-t0:.1f}s)")
     except Exception as e:
-        report("theory", f"音楽理論フィルタスキップ: {e}")
+        report("theory", f"音楽理論解析スキップ: {e}")
 
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
     # Conformer出力のpitchは正確だが、string/fret割り当ては
@@ -436,6 +479,25 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("assign", f"LSTMリファインメントスキップ: {e}")
 
+    # --- フレットクランプ: 異常に高いフレット値を修正 ---
+    MAX_FRET = 12
+    clamp_count = 0
+    for n in notes:
+        if n.get("fret", 0) > MAX_FRET:
+            pitch = n.get("pitch", 60)
+            best_str, best_fret = None, 99
+            for s_idx, open_pitch in enumerate(tuning):
+                s_num = 6 - s_idx
+                f = pitch - open_pitch
+                if 0 <= f <= MAX_FRET and (best_str is None or f < best_fret):
+                    best_str, best_fret = s_num, f
+            if best_str is not None:
+                n["string"] = best_str
+                n["fret"] = best_fret
+                clamp_count += 1
+    if clamp_count > 0:
+        report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
+
     # Save assigned notes
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
         json.dump(_to_native(notes), f, ensure_ascii=False, indent=2)
@@ -454,6 +516,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         chords=chords,
         time_signature=time_signature,
         rhythm_info=rhythm_info,
+        key_signature=detected_key_sig,
+        noise_gate=0.15,  # 低確信ノートを初回からフィルタ
     )
 
     musicxml_path = session_dir / "tab.musicxml"
@@ -469,12 +533,30 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     # --- Step: MuseScoreによる五線譜+TAB譜PDF生成 ---
     try:
-        from musescore_renderer import render_pdf_with_musescore
         report("pdf", "五線譜+TAB譜PDF生成中 (MuseScore)...")
         t0 = time.time()
         pdf_path = session_dir / "tab.pdf"
-        render_pdf_with_musescore(str(musicxml_path), str(pdf_path), title=title or "Guitar TAB")
-        report("pdf", f"PDF生成完了 ({time.time()-t0:.1f}s)")
+        
+        # tab.musicxml は既に2スタッフ構成（五線譜+TAB）なので、
+        # tab_dual.musicxml としてコピーするだけで良い（二重変換を回避）
+        import shutil
+        dual_xml_path = session_dir / "tab_dual.musicxml"
+        shutil.copy2(str(musicxml_path), str(dual_xml_path))
+        report("pdf", "Dual-staff MusicXML = tab.musicxml のコピー")
+        
+        from musescore_renderer import MUSESCORE_EXE
+        import subprocess as sp
+        if not Path(MUSESCORE_EXE).exists():
+            raise FileNotFoundError(f"MuseScore not found: {MUSESCORE_EXE}")
+        sp.run(
+            [MUSESCORE_EXE, "-o", str(pdf_path), str(dual_xml_path)],
+            capture_output=True, text=True, timeout=120,
+            encoding="utf-8", errors="replace"
+        )
+        if pdf_path.exists():
+            report("pdf", f"PDF生成完了 ({time.time()-t0:.1f}s)")
+        else:
+            raise RuntimeError("PDF file was not created")
     except Exception as e:
         report("pdf", f"MuseScore PDF生成スキップ: {e}")
         # フォールバック: 旧reportlabレンダラー

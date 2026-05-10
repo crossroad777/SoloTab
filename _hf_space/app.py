@@ -1,8 +1,9 @@
 """
-SoloTab V2.0 — Pure MoE Guitar Tablature Transcriber
+SoloTab V2.2 — Pure MoE Guitar Tablature Transcriber
 =====================================================
 Hugging Face Spaces 用 Gradio アプリケーション
-6つのドメイン特化CRNNエキスパートモデルによるアンサンブル推論
+7つのドメイン特化CRNNエキスパートモデルによるアンサンブル推論
+テクニック検出 (h/p/slide/bend) 対応
 """
 
 import os
@@ -172,9 +173,9 @@ def _frames_to_notes(
 
 def _transcribe_moe(
     audio_path: str,
-    vote_threshold: int = 5,
-    onset_threshold: float = 0.8,
-    vote_prob_threshold: float = 0.5,
+    vote_threshold: int = 3,
+    onset_threshold: float = 0.5,
+    vote_prob_threshold: float = 0.4,
 ) -> list[dict]:
     """Pure MoE 推論"""
     models = _download_and_load_models()
@@ -215,6 +216,54 @@ def _transcribe_moe(
         n["start"] = float(n["start"])
         n["end"] = float(n["end"])
 
+    # テクニック検出
+    notes = _detect_techniques(notes)
+    return notes
+
+
+# ---------------------------------------------------------------------------
+# Technique Detection (Inline)
+# ---------------------------------------------------------------------------
+def _detect_techniques(notes: list[dict], bpm: float = 120.0) -> list[dict]:
+    """隣接ノートのパターンからテクニックを検出する"""
+    if len(notes) < 2:
+        return notes
+
+    tempo_scale = min(1.5, max(0.7, 120.0 / max(bpm, 60.0)))
+    hp_max = 0.15 * tempo_scale
+    slide_max = 0.20 * tempo_scale
+
+    for i in range(1, len(notes)):
+        prev = notes[i - 1]
+        curr = notes[i]
+        if curr.get("technique"):
+            continue
+
+        ioi = curr["start"] - prev["start"]
+        pitch_diff = curr["pitch"] - prev["pitch"]
+        abs_pitch = abs(pitch_diff)
+        same_string = (curr.get("string") == prev.get("string"))
+        fret_diff = abs(curr.get("fret", 0) - prev.get("fret", 0))
+
+        # ハンマリング・オン / プルオフ
+        if same_string and 0 < ioi <= hp_max and 0 < abs_pitch <= 5:
+            curr["technique"] = "h" if pitch_diff > 0 else "p"
+            continue
+
+        # スライド
+        if same_string and 0 < ioi <= slide_max and fret_diff >= 2:
+            if pitch_diff > 0:
+                curr["technique"] = "/"
+            elif pitch_diff < 0:
+                curr["technique"] = "\\"
+            continue
+
+        # ベンド
+        if (same_string and 0 < ioi <= 0.10
+                and 1 <= pitch_diff <= 3 and fret_diff == 0):
+            curr["technique"] = "b"
+            continue
+
     return notes
 
 
@@ -240,11 +289,17 @@ def _render_tablature(notes: list[dict], duration: float) -> str:
     # 各弦のスロット配列を初期化
     tab_lines = {s: ["-"] * total_slots for s in range(6)}
 
+    # テクニック記号のマッピング
+    TECH_PREFIX = {"h": "h", "p": "p", "/": "/", "\\": "\\", "b": "b"}
+
     for note in notes:
         slot = int(note["start"] / time_per_slot)
         string_idx = 6 - note["string"]  # MusicXML弦番号 → 内部インデックス
         if 0 <= slot < total_slots and 0 <= string_idx < 6:
             fret_str = str(note["fret"])
+            tech = note.get("technique", "")
+            if tech in TECH_PREFIX:
+                fret_str = TECH_PREFIX[tech] + fret_str
             tab_lines[string_idx][slot] = fret_str
 
     # テキスト出力
@@ -312,13 +367,25 @@ def transcribe(audio_path, vote_threshold, onset_threshold):
 
         # サマリー
         summary_lines = [
-            f"🎸 **SoloTab V2.0 — Pure MoE Transcription Result**",
+            f"🎸 **SoloTab V2.2 — Pure MoE Transcription Result**",
             f"",
             f"- 検出ノート数: **{len(notes)}**",
             f"- 楽曲長: **{duration:.1f}秒**",
             f"- ノート密度: **{len(notes)/duration:.1f} notes/sec**" if duration > 0 else "",
             f"- 投票閾値: {int(vote_threshold)}/6, オンセット閾値: {onset_threshold:.2f}",
         ]
+
+        # テクニック情報
+        if notes:
+            from collections import Counter as TechCounter
+            tech_counts = TechCounter(n.get("technique", "normal") for n in notes)
+            tech_parts = []
+            tech_labels = {"h": "H.O.", "p": "P.O.", "/": "Slide↑", "\\": "Slide↓", "b": "Bend"}
+            for k, label in tech_labels.items():
+                if tech_counts.get(k, 0) > 0:
+                    tech_parts.append(f"{label}: {tech_counts[k]}")
+            if tech_parts:
+                summary_lines.append(f"- テクニック: {', '.join(tech_parts)}")
 
         if notes:
             from collections import Counter
@@ -352,14 +419,16 @@ def transcribe(audio_path, vote_threshold, onset_threshold):
 # UI
 # ---------------------------------------------------------------------------
 DESCRIPTION = """
-# 🎸 SoloTab V2.0 — Pure MoE Guitar Tablature Transcriber
+# 🎸 SoloTab V2.2 — Pure MoE Guitar Tablature Transcriber
 
 ソロギター音源をアップロードすると、AIが自動でタブ譜を生成します。
 
 **仕組み:** 6つのドメイン特化CRNNモデル（Martin/Taylor/Luthier × Finger/Pick）が
 独立して解析し、多数決で高精度なノート検出を行います。
 
-**性能:** GuitarSet Test F1 = 0.8310 | Full F1 = 0.8478
+**V2.2 新機能:** テクニック自動検出（ハンマリング・オン、プルオフ、スライド、ベンド）
+
+**性能:** GuitarSet MoE F1 = 0.8877
 
 > ⚠️ CPU推論のため、1曲あたり1〜3分程度かかる場合があります。
 """
@@ -382,11 +451,11 @@ with gr.Blocks(
             )
             with gr.Row():
                 vote_slider = gr.Slider(
-                    minimum=1, maximum=6, step=1, value=5,
+                    minimum=1, maximum=6, step=1, value=3,
                     label="投票閾値（何モデル以上の合意が必要か）",
                 )
                 onset_slider = gr.Slider(
-                    minimum=0.1, maximum=0.95, step=0.05, value=0.8,
+                    minimum=0.1, maximum=0.95, step=0.05, value=0.5,
                     label="オンセット閾値",
                 )
             transcribe_btn = gr.Button("🎼 タブ譜を生成", variant="primary", size="lg")

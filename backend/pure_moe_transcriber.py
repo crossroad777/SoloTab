@@ -71,18 +71,21 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
                 best_candidate = candidate
         if best_candidate:
             models_to_test.append(best_candidate)
+    # --- モデル一括ロード（キャッシュ利用） ---
+    global _CACHED_MODELS
+    if '_CACHED_MODELS' not in globals():
+        _CACHED_MODELS = {}
     
-    all_onset_probs = []
-    all_fret_preds = []
-    
-    for i, model_dir in enumerate(models_to_test):
-        print(f"Loading and inferencing Expert {i+1}/{len(models_to_test)}: {model_dir}")
+    models_loaded = []
+    for model_dir in models_to_test:
         model_path = os.path.join(mt_python_dir, "_processed_guitarset_data", "training_output", model_dir, "best_model.pth")
-        
         if not os.path.exists(model_path):
-            print(f"  -> Model not found, skipping.")
             continue
-            
+        
+        if model_dir in _CACHED_MODELS:
+            models_loaded.append((model_dir, _CACHED_MODELS[model_dir]))
+            continue
+        
         model = architecture.GuitarTabCRNN(
             num_frames_rnn_input_dim=1280, rnn_type="GRU", 
             rnn_hidden_size=768, rnn_layers=2, rnn_dropout=0.3, rnn_bidirectional=True
@@ -93,18 +96,23 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 5, onset_threshold:
         model.load_state_dict(state_dict)
         model.to(device)
         model.eval()
-        
-        with torch.no_grad():
+        _CACHED_MODELS[model_dir] = model
+        models_loaded.append((model_dir, model))
+    
+    print(f"Models ready: {len(models_loaded)} (cached: {len(_CACHED_MODELS)})")
+    
+    # --- 一括推論 ---
+    all_onset_probs = []
+    all_fret_preds = []
+    
+    with torch.no_grad():
+        for i, (name, model) in enumerate(models_loaded):
             onset_logits, fret_logits = model(features)
             onset_probs = torch.sigmoid(onset_logits[0]).cpu().numpy()
             fret_probs = torch.softmax(fret_logits[0], dim=-1).cpu().numpy()
-            
-        all_onset_probs.append(onset_probs)
-        all_fret_preds.append(np.argmax(fret_probs, axis=-1))
-        
-        del model
-        del state_dict
-        torch.cuda.empty_cache()
+            all_onset_probs.append(onset_probs)
+            all_fret_preds.append(np.argmax(fret_probs, axis=-1))
+            print(f"  Expert {i+1}/{len(models_loaded)}: {name} done")
         
     if not all_onset_probs:
         print("No models were successfully loaded.")
@@ -163,7 +171,7 @@ def _apply_physical_constraints(notes: list) -> list:
     filtered = []
     MIN_INTERVAL = 0.030   # 同一弦の最小間隔 30ms
     MIN_DURATION = 0.025   # 最小ノート長 25ms
-    MAX_FRET = 19
+    MAX_FRET = 15
     
     for note in notes:
         # Rule 3: フレット範囲チェック

@@ -19,7 +19,8 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                           chords: list | None = None,
                           time_signature: str = "4/4",
                           noise_gate: float = 0.0,
-                          rhythm_info: dict | None = None) -> tuple[str, list]:
+                          rhythm_info: dict | None = None,
+                          key_signature: str = "C") -> tuple[str, list]:
     """
     Generate a MusicXML string with TAB staff only.
 
@@ -97,6 +98,18 @@ def notes_to_tab_musicxml(notes: List[dict], *,
 
     total_bars = max(total_bars, 1)
 
+    # --- 音楽理論統合 ---
+    is_triplet_mode = (rhythm_info or {}).get("subdivision") == "triplet"
+    bar_dynamics: dict = {}  # {bar_num: "mf" etc.}
+    try:
+        from music_theory import quantize_note_durations, assign_dynamics_to_bars, snap_duration, velocity_to_dynamic
+        # 音価スナップ: duration_divsを音楽的音価に補正
+        note_entries = quantize_note_durations(note_entries, is_triplet_mode=is_triplet_mode, beats_per_bar=beats_per_bar)
+        # 強弱マッピング: 各小節の平均velocityからダイナミクスを決定
+        bar_dynamics = assign_dynamics_to_bars(note_entries, beats_per_bar=beats_per_bar)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+
     # Build XML
     root = ET.Element("score-partwise", version="4.0")
 
@@ -107,7 +120,13 @@ def notes_to_tab_musicxml(notes: List[dict], *,
     # Part list
     part_list = ET.SubElement(root, "part-list")
     sp = ET.SubElement(part_list, "score-part", id="P1")
-    ET.SubElement(sp, "part-name").text = "Guitar TAB"
+    ET.SubElement(sp, "part-name").text = "Guitar"
+    si = ET.SubElement(sp, "score-instrument", id="P1-I1")
+    ET.SubElement(si, "instrument-name").text = "Acoustic Guitar (steel)"
+    mi = ET.SubElement(sp, "midi-instrument", id="P1-I1")
+    ET.SubElement(mi, "midi-channel").text = "1"
+    ET.SubElement(mi, "midi-program").text = "26"
+    ET.SubElement(mi, "volume").text = "80"
 
     # Part
     part = ET.SubElement(root, "part", id="P1")
@@ -125,16 +144,34 @@ def notes_to_tab_musicxml(notes: List[dict], *,
             ET.SubElement(time_el, "beats").text = str(beats_per_bar)
             ET.SubElement(time_el, "beat-type").text = str(beat_type)
 
-            # TAB clef
-            clef = ET.SubElement(attrs, "clef")
-            ET.SubElement(clef, "sign").text = "TAB"
-            ET.SubElement(clef, "line").text = "5"
+            # Key signature
+            key_fifths_map = {"C": 0, "Am": 0, "G": 1, "Em": 1, "D": 2, "Bm": 2,
+                              "A": 3, "F#m": 3, "E": 4, "C#m": 4, "B": 5,
+                              "F": -1, "Dm": -1, "Bb": -2, "Gm": -2, "Eb": -3, "Cm": -3, "Ab": -4}
+            fifths = key_fifths_map.get(key_signature, 0)
+            key_el = ET.SubElement(attrs, "key")
+            ET.SubElement(key_el, "fifths").text = str(fifths)
+            if key_signature.endswith("m"):
+                ET.SubElement(key_el, "mode").text = "minor"
+            else:
+                ET.SubElement(key_el, "mode").text = "major"
 
-            # Staff details (6-string guitar TAB)
-            sd = ET.SubElement(attrs, "staff-details")
+            ET.SubElement(attrs, "staves").text = "2"
+
+            # Staff 1: 五線譜 (treble clef, 8va bassa for guitar)
+            clef1 = ET.SubElement(attrs, "clef", number="1")
+            ET.SubElement(clef1, "sign").text = "G"
+            ET.SubElement(clef1, "line").text = "2"
+            ET.SubElement(clef1, "clef-octave-change").text = "-1"
+
+            # Staff 2: TAB clef
+            clef2 = ET.SubElement(attrs, "clef", number="2")
+            ET.SubElement(clef2, "sign").text = "TAB"
+            ET.SubElement(clef2, "line").text = "5"
+
+            # Staff details (6-string guitar TAB) — Staff 2 only
+            sd = ET.SubElement(attrs, "staff-details", number="2")
             ET.SubElement(sd, "staff-lines").text = "6"
-            _tuning_names = ["E", "A", "D", "G", "B", "E"]
-            _tuning_octaves = ["2", "2", "3", "3", "3", "4"]
             for i in range(6):
                 st = ET.SubElement(sd, "staff-tuning", line=str(i + 1))
                 ET.SubElement(st, "tuning-step").text = _midi_to_step(tuning[i])
@@ -142,11 +179,26 @@ def notes_to_tab_musicxml(notes: List[dict], *,
 
             # Direction (tempo)
             direction = ET.SubElement(measure, "direction", placement="above")
+            ET.SubElement(direction, "staff").text = "1"
             dt = ET.SubElement(direction, "direction-type")
             metro = ET.SubElement(dt, "metronome")
             ET.SubElement(metro, "beat-unit").text = "quarter"
             ET.SubElement(metro, "per-minute").text = str(int(bpm))
             sound = ET.SubElement(direction, "sound", tempo=str(int(bpm)))
+
+        # Dynamics direction — 無効化（ML推論のvelocityからの自動推定は不正確）
+        # ユーザーが手動で追加すべき情報
+        # if bar_num in bar_dynamics:
+        #     dyn_mark = bar_dynamics[bar_num]
+        #     if dyn_mark != last_dyn_mark:
+        #         dir_el = ET.SubElement(measure, "direction", placement="below")
+        #         dt = ET.SubElement(dir_el, "direction-type")
+        #         dynamics_el = ET.SubElement(dt, "dynamics")
+        #         ET.SubElement(dynamics_el, dyn_mark)
+        #         ET.SubElement(dir_el, "staff").text = "1"
+        #         dyn_vel_map = {"pp": 20, "p": 40, "mp": 55, "mf": 70, "f": 90, "ff": 110, "fff": 127}
+        #         sound_el = ET.SubElement(dir_el, "sound", dynamics=str(dyn_vel_map.get(dyn_mark, 70)))
+        #         last_dyn_mark = dyn_mark
 
         # Add chord symbol (harmony) at start of bar
         if chords is not None and isinstance(chords, list):
@@ -186,154 +238,207 @@ def notes_to_tab_musicxml(notes: List[dict], *,
         # Get notes for this bar
         bar_notes = [e for e in note_entries if e["bar"] == bar_num]
 
-        if not bar_notes:
-            # Empty bar: whole rest
-            note_el = ET.SubElement(measure, "note")
-            rest_el = ET.SubElement(note_el, "rest")
-            ET.SubElement(note_el, "duration").text = str(int(divisions) * int(beats_per_bar))
-            ET.SubElement(note_el, "type").text = "whole"
-        else:
-            # Sort by beat position
-            bar_notes.sort(key=lambda e: float(e["beat_pos"]))
+        bar_total: int = int(divisions) * int(beats_per_bar)
 
+        if not bar_notes:
+            # Empty bar: whole rest on both staves
+            for staff_num in ["1", "2"]:
+                note_el = ET.SubElement(measure, "note")
+                ET.SubElement(note_el, "rest")
+                ET.SubElement(note_el, "duration").text = str(bar_total)
+                ET.SubElement(note_el, "type").text = "whole"
+                ET.SubElement(note_el, "staff").text = staff_num
+                if staff_num == "1":
+                    backup_el = ET.SubElement(measure, "backup")
+                    ET.SubElement(backup_el, "duration").text = str(bar_total)
+        else:
+            bar_notes.sort(key=lambda e: float(e["beat_pos"]))
             groups: List[List[dict]] = _group_by_time(bar_notes, threshold=0.1)
 
-            current_pos: int = 0  # in divisions units
+            # === Staff 1: 五線譜 ===
+            current_pos: int = 0
             for group_idx, group in enumerate(groups):
                 target_pos: int = int(float(group[0]["beat_pos"]))
-
-                # Insert rest if there's a gap
-                gap: int = target_pos - int(current_pos)  # type: ignore
+                gap: int = target_pos - current_pos
                 if gap > 0:
-                    # 休符として挿入（TABビューアで表示される）
                     rest_el = ET.SubElement(measure, "note")
                     ET.SubElement(rest_el, "rest")
-                    rest_dur: int = int(gap)
-                    ET.SubElement(rest_el, "duration").text = str(rest_dur)
-                    ET.SubElement(rest_el, "type").text = _duration_to_type(rest_dur, int(divisions))
-                    
-                    if rest_dur in [4, 8]:
+                    ET.SubElement(rest_el, "duration").text = str(gap)
+                    ET.SubElement(rest_el, "type").text = _duration_to_type(gap, divisions)
+                    ET.SubElement(rest_el, "staff").text = "1"
+                    if is_triplet_mode and gap in [4, 8]:
                         tm = ET.SubElement(rest_el, "time-modification")
                         ET.SubElement(tm, "actual-notes").text = "3"
                         ET.SubElement(tm, "normal-notes").text = "2"
-                        
                     current_pos = target_pos
 
-                # Determine the exact distance to the NEXT note to prevent single-voice timeline shifting
-                bar_total_in: int = int(divisions) * int(beats_per_bar)
-                next_target_pos: int = bar_total_in
-                if group_idx + 1 < len(groups):
-                    next_target_pos = int(float(groups[group_idx + 1][0]["beat_pos"]))
+                next_target: int = bar_total if group_idx + 1 >= len(groups) else int(float(groups[group_idx + 1][0]["beat_pos"]))
+                gap_to_next: int = max(1, min(next_target - target_pos, bar_total - target_pos))
 
-                dur_advance: int = next_target_pos - target_pos
-                if dur_advance < 1:
-                    dur_advance = max(1, int(group[0].get("duration_divs", divisions)))
-                
-                max_dur: int = bar_total_in - target_pos
-                if dur_advance > max_dur:
-                    dur_advance = max_dur
-
-                # Dynamics marker logic removed to prevent visual clutter
-                # FretNet's raw velocity variance causes chaotic f/ff switching.
-                # In standard tabs (like Songsterr), velocity is implicit.
-                
                 for i, entry in enumerate(group):
-                    # Force duration to exactly dur_advance to perfectly serialize the timeline
-                    dur: int = dur_advance
-
+                    # 音楽理論エンジンでスナップされた音価を使用
+                    dur = int(entry.get("duration_divs", gap_to_next))
+                    # 小節を超えない & 次のノートの前に収まる
+                    dur = min(dur, gap_to_next, bar_total - target_pos)
                     note_el = ET.SubElement(measure, "note")
-
-                    if i > 0:
-                        ET.SubElement(note_el, "chord")
-
+                    if i > 0: ET.SubElement(note_el, "chord")
                     pitch_el = ET.SubElement(note_el, "pitch")
-                    pitch: int = int(entry["pitch"])
+                    pitch = int(entry["pitch"])
                     ET.SubElement(pitch_el, "step").text = _midi_to_step(pitch)
                     alter = _midi_to_alter(pitch)
-                    if alter != 0:
-                        ET.SubElement(pitch_el, "alter").text = str(alter)
+                    if alter != 0: ET.SubElement(pitch_el, "alter").text = str(alter)
                     ET.SubElement(pitch_el, "octave").text = str(_midi_to_octave(pitch))
-
                     ET.SubElement(note_el, "duration").text = str(dur)
-                    ET.SubElement(note_el, "type").text = _duration_to_type(dur, int(divisions))
-
-                    # 3-tuple / Triplet modifier
-                    if dur in [4, 8]:
+                    # 声部分離: ベース(voice 2) vs メロディ(voice 1)
+                    voice = "2" if pitch <= 52 else "1"
+                    ET.SubElement(note_el, "voice").text = voice
+                    ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
+                    # 付点
+                    if entry.get("is_dotted"):
+                        ET.SubElement(note_el, "dot")
+                    if is_triplet_mode and dur in [4, 8]:
                         tm = ET.SubElement(note_el, "time-modification")
                         ET.SubElement(tm, "actual-notes").text = "3"
                         ET.SubElement(tm, "normal-notes").text = "2"
+                    # タイ: 次の小節に持続する場合
+                    if entry.get("_tie_start"):
+                        ET.SubElement(note_el, "tie", type="start")
+                    ET.SubElement(note_el, "stem").text = "up" if voice == "1" else "down"
+                    ET.SubElement(note_el, "staff").text = "1"
+                    # タイの notations
+                    if entry.get("_tie_start"):
+                        notations_s1 = ET.SubElement(note_el, "notations")
+                        ET.SubElement(notations_s1, "tied", type="start")
+                current_pos = current_pos + gap_to_next
 
+            remaining = bar_total - current_pos
+            if remaining > 0:
+                _add_forward(measure, remaining)
+
+            # === Backup to start of measure ===
+            backup_el = ET.SubElement(measure, "backup")
+            ET.SubElement(backup_el, "duration").text = str(bar_total)
+
+            # === Staff 2: TAB ===
+            current_pos = 0
+            for group_idx, group in enumerate(groups):
+                target_pos = int(float(group[0]["beat_pos"]))
+                gap = target_pos - current_pos
+                if gap > 0:
+                    rest_el = ET.SubElement(measure, "note")
+                    ET.SubElement(rest_el, "rest")
+                    ET.SubElement(rest_el, "duration").text = str(gap)
+                    ET.SubElement(rest_el, "type").text = _duration_to_type(gap, divisions)
+                    ET.SubElement(rest_el, "staff").text = "2"
+                    if is_triplet_mode and gap in [4, 8]:
+                        tm = ET.SubElement(rest_el, "time-modification")
+                        ET.SubElement(tm, "actual-notes").text = "3"
+                        ET.SubElement(tm, "normal-notes").text = "2"
+                    current_pos = target_pos
+
+                next_target = bar_total if group_idx + 1 >= len(groups) else int(float(groups[group_idx + 1][0]["beat_pos"]))
+                gap_to_next = max(1, min(next_target - target_pos, bar_total - target_pos))
+
+                for i, entry in enumerate(group):
+                    # 音楽理論エンジンでスナップされた音価を使用
+                    dur = int(entry.get("duration_divs", gap_to_next))
+                    dur = min(dur, gap_to_next, bar_total - target_pos)
+                    note_el = ET.SubElement(measure, "note")
+                    if i > 0: ET.SubElement(note_el, "chord")
+                    pitch_el = ET.SubElement(note_el, "pitch")
+                    pitch = int(entry["pitch"])
+                    ET.SubElement(pitch_el, "step").text = _midi_to_step(pitch)
+                    alter = _midi_to_alter(pitch)
+                    if alter != 0: ET.SubElement(pitch_el, "alter").text = str(alter)
+                    ET.SubElement(pitch_el, "octave").text = str(_midi_to_octave(pitch))
+                    ET.SubElement(note_el, "duration").text = str(dur)
+                    # 声部
+                    voice = "2" if int(entry.get("pitch", 60)) <= 52 else "1"
+                    ET.SubElement(note_el, "voice").text = voice
+                    ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
+                    # 付点
+                    if entry.get("is_dotted"):
+                        ET.SubElement(note_el, "dot")
+                    if is_triplet_mode and dur in [4, 8]:
+                        tm = ET.SubElement(note_el, "time-modification")
+                        ET.SubElement(tm, "actual-notes").text = "3"
+                        ET.SubElement(tm, "normal-notes").text = "2"
+                    # タイ
+                    if entry.get("_tie_start"):
+                        ET.SubElement(note_el, "tie", type="start")
                     ET.SubElement(note_el, "stem").text = "none"
+                    ET.SubElement(note_el, "staff").text = "2"
 
-                    # Notations with technical (string/fret)
                     notations = ET.SubElement(note_el, "notations")
-                    
-                    # 3-tuple brackets (bracket visualizer for AlphaTab)
-                    if i == 0 and dur in [4, 8]:
+                    # 3連符ブラケット: 最初の4小節のみ表示（以降は慣例により省略）
+                    if is_triplet_mode and i == 0 and dur in [4, 8] and bar_num < 4:
                         cycle = dur * 3
                         rem = target_pos % cycle
-                        if rem == 0:
-                            ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                        elif rem == cycle - dur:
-                            ET.SubElement(notations, "tuplet", type="stop")
+                        if rem == 0: ET.SubElement(notations, "tuplet", type="start", bracket="yes")
+                        elif rem == cycle - dur: ET.SubElement(notations, "tuplet", type="stop")
 
                     technical = ET.SubElement(notations, "technical")
                     ET.SubElement(technical, "string").text = str(entry.get("string", 1))
                     ET.SubElement(technical, "fret").text = str(entry.get("fret", 0))
 
-                    # テクニックマップに記録 + MusicXML要素の追加
                     tech = str(entry.get("technique") or "normal")
-                    
                     if tech == "h":
+                        ho = ET.SubElement(technical, "hammer-on", type="start"); ho.text = "H"
                         technique_map.append("hammer_on")
                     elif tech == "p":
+                        po = ET.SubElement(technical, "pull-off", type="start"); po.text = "P"
                         technique_map.append("pull_off")
                     elif tech == "/":
+                        ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
                         technique_map.append("slide_up")
                     elif tech == "\\":
+                        ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
                         technique_map.append("slide_down")
-                    elif tech == "palm_mute":
-                        technique_map.append("palm_mute")
+                    elif tech == "gliss_up":
+                        gl = ET.SubElement(notations, "glissando", type="start", **{"line-type": "wavy"})
+                        gl.text = "gliss."
+                        technique_map.append("gliss_up")
+                    elif tech == "gliss_down":
+                        gl = ET.SubElement(notations, "glissando", type="start", **{"line-type": "wavy"})
+                        gl.text = "gliss."
+                        technique_map.append("gliss_down")
+                    elif tech == "palm_mute": technique_map.append("palm_mute")
                     elif tech == "harmonic":
-                        ET.SubElement(technical, "harmonic")
-                        technique_map.append("harmonic")
+                        ET.SubElement(technical, "harmonic"); technique_map.append("harmonic")
                     elif tech == "b":
-                        technique_map.append("bend")
+                        bend_el = ET.SubElement(technical, "bend")
+                        ET.SubElement(bend_el, "bend-alter").text = "2"; technique_map.append("bend")
                     elif tech == "~":
-                        # ビブラート: <ornaments><wavy-line>
                         ornaments = notations.find("ornaments")
-                        if ornaments is None:
-                            ornaments = ET.SubElement(notations, "ornaments")
-                        ET.SubElement(ornaments, "wavy-line", type="start")
-                        technique_map.append("vibrato")
-                    elif tech == "let_ring":
-                        # Convert FretNet's let_ring to a visual indicator
-                        if i == 0 and len(group) == 1:
-                            direction2 = ET.SubElement(measure, "direction", placement="above")
-                            dt2 = ET.SubElement(direction2, "direction-type")
-                            words = ET.SubElement(dt2, "words", font_style="italic")
-                            words.text = "let ring"
-                        technique_map.append("normal")
+                        if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
+                        ET.SubElement(ornaments, "wavy-line", type="start"); technique_map.append("vibrato")
                     elif tech == "x":
-                        # ゴーストノート: noteheadをxに
-                        notehead = ET.SubElement(note_el, "notehead")
-                        notehead.text = "x"
-                        technique_map.append("ghost_note")
+                        ET.SubElement(note_el, "notehead").text = "x"; technique_map.append("ghost_note")
                     elif tech == "tr":
-                        # トリル: <ornaments><trill-mark>
                         ornaments = notations.find("ornaments")
-                        if ornaments is None:
-                            ornaments = ET.SubElement(notations, "ornaments")
-                        ET.SubElement(ornaments, "trill-mark")
-                        technique_map.append("trill")
-                    else:
-                        technique_map.append("normal")
+                        if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
+                        ET.SubElement(ornaments, "trill-mark"); technique_map.append("trill")
+                    elif tech == "let_ring":
+                        # レットリング: direction要素でテキスト表示
+                        dir_el = ET.SubElement(measure, "direction", placement="below")
+                        dt = ET.SubElement(dir_el, "direction-type")
+                        words = ET.SubElement(dt, "words", **{"font-style": "italic", "font-size": "7"})
+                        words.text = "let ring"
+                        ET.SubElement(dir_el, "staff").text = "2"
+                        technique_map.append("let_ring")
+                    elif tech == "palm_mute":
+                        # パームミュート: direction要素でP.M.表示
+                        dir_el = ET.SubElement(measure, "direction", placement="below")
+                        dt = ET.SubElement(dir_el, "direction-type")
+                        words = ET.SubElement(dt, "words", **{"font-weight": "bold", "font-size": "7"})
+                        words.text = "P.M."
+                        ET.SubElement(dir_el, "staff").text = "2"
+                        technique_map.append("palm_mute")
+                    else: technique_map.append("normal")
 
-                current_pos = int(current_pos) + int(dur_advance)  # type: ignore
+                current_pos = current_pos + gap_to_next
 
-            # Fill remaining bar with forward
-            bar_total_out: int = int(divisions) * int(beats_per_bar)
-            remaining: int = bar_total_out - int(current_pos)
+            remaining = bar_total - current_pos
             if remaining > 0:
                 _add_forward(measure, remaining)
 
@@ -407,15 +512,17 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
         beat_pos = bar * (beats_per_bar * divisions) + beat_in_bar * divisions + sub_divs
         beat_interval = (float(beats_arr[1]) - float(beats_arr[0])) if len(beats_arr) > 1 else 0.5
 
-        note_dur_sec = float(note["end"]) - float(note["start"])
-        dur_divs = max(1, int(round(note_dur_sec / beat_interval * divisions)))
-        dur_divs = min(dur_divs, divisions * beats_per_bar)
+        # --- ノートの実際の持続時間を秒→divisions変換 ---
+        note_end = float(note.get("end", t + beat_interval))
+        actual_dur_sec = max(0.01, note_end - t)
+        # 秒→divisions: 1拍 = beat_interval秒 = divisions (12) divs
+        actual_dur_divs = max(1, int(round(actual_dur_sec / beat_interval * divisions)))
 
         entries.append({
             "bar": bar,
-            "beat_pos_absolute": beat_pos, # Used to find exact durations without bar wrap logic bugs
+            "beat_pos_absolute": beat_pos,
             "beat_pos_in_bar": beat_in_bar * divisions + sub_divs,
-            "duration_divs": dur_divs,
+            "duration_divs": actual_dur_divs,  # ★ノートの実際の持続時間
             "pitch": note["pitch"],
             "string": note.get("string", 1),
             "fret": note.get("fret", 0),
@@ -424,10 +531,36 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
             "start_time": t,
         })
 
-    # Fix: beat_pos in the original logic was used as relative to the bar. We use absolute for grouping across.
-    # Grouping function relies on "beat_pos" so we rename back appropriately.
+    # beat_pos: _group_by_time が参照するキーを設定
     for e in entries:
         e["beat_pos"] = e["beat_pos_in_bar"]
+
+    # --- duration_divsの後処理: 同一弦の次のノートとの重複を防止 ---
+    # ギターの物理特性: 異なる弦のノートは同時に鳴り続ける
+    # 同じ弦の次のノートが来た時だけ、前のノートは切れる
+    bar_total = beats_per_bar * divisions
+    for i, e in enumerate(entries):
+        my_string = e.get("string", 0)
+        # 同じ弦の次のノートを探す
+        gap_same_string = bar_total * 2  # デフォルト: 制限なし
+        for j in range(i + 1, len(entries)):
+            other = entries[j]
+            gap = other["beat_pos_absolute"] - e["beat_pos_absolute"]
+            if gap <= 0:
+                continue  # 同時発音はスキップ
+            if other.get("string", -1) == my_string:
+                gap_same_string = gap
+                break
+            # 弦情報がない場合は全ノートを考慮
+            if my_string == 0:
+                gap_same_string = min(gap_same_string, gap)
+                break
+        # 実際のduration_divsを同弦の次のノートまでの距離でキャップ
+        e["duration_divs"] = min(e["duration_divs"], gap_same_string)
+        # 小節内に収まるようにキャップ
+        max_in_bar = bar_total - e["beat_pos_in_bar"]
+        e["duration_divs"] = min(e["duration_divs"], max(1, max_in_bar))
+        e["duration_divs"] = max(1, e["duration_divs"])
 
     return entries
 

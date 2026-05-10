@@ -51,6 +51,14 @@ def convert_to_dual_staff(input_musicxml: str, output_musicxml: str) -> str:
     tree = ET.parse(input_musicxml)
     root = tree.getroot()
     
+    # 既に2スタッフ構成かチェック（tab_renderer.pyが生成済みの場合）
+    staves_el = root.find(".//attributes/staves")
+    if staves_el is not None and staves_el.text == "2":
+        # 既にデュアルスタッフ → 変換不要、そのままコピー
+        import shutil
+        shutil.copy2(input_musicxml, output_musicxml)
+        return output_musicxml
+    
     # パートリストを更新
     part_list = root.find("part-list")
     if part_list is not None:

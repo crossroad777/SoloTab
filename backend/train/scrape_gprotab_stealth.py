@@ -144,6 +144,7 @@ def create_stealth_browser(playwright):
         viewport=vp,
         locale="en-US",
         timezone_id="America/New_York",
+        ignore_https_errors=True,
         # WebDriver検出回避
         extra_http_headers={
             "Accept-Language": "en-US,en;q=0.9",
@@ -321,7 +322,11 @@ def main():
 
             for letter in letters:
                 print(f"\n=== Letter: {letter.upper()} ===")
-                artists = get_artists_for_letter(page, letter)
+                try:
+                    artists = get_artists_for_letter(page, letter)
+                except Exception as e:
+                    print(f"  ERROR listing artists for '{letter}': {e}")
+                    continue
                 random.shuffle(artists)  # ランダム順
                 print(f"  Artists: {len(artists)}")
 
@@ -331,32 +336,51 @@ def main():
 
                     print(f"  [{i+1}] {artist_name}")
 
-                    # 時折の脱線
-                    human_distraction(page)
+                    try:
+                        # 時折の脱線
+                        human_distraction(page)
 
-                    tabs = get_tabs_for_artist(page, artist_url, artist_name)
-                    random.shuffle(tabs)  # ランダム順
-                    print(f"      Tabs: {len(tabs)}")
+                        tabs = get_tabs_for_artist(page, artist_url, artist_name)
+                        random.shuffle(tabs)  # ランダム順
+                        print(f"      Tabs: {len(tabs)}")
 
-                    artist_count = 0
-                    for tab_url, tab_name in tabs[:args.max_tabs]:
-                        # 人間的な遅延
-                        human_delay(3, 2)
+                        artist_count = 0
+                        for tab_url, tab_name in tabs[:args.max_tabs]:
+                            try:
+                                # 人間的な遅延
+                                human_delay(3, 2)
 
-                        filepath = download_tab_file(page, context, tab_url, artist_name)
-                        if filepath:
-                            print(f"      OK: {tab_name}")
-                            artist_count += 1
-                            total_downloaded += 1
-                        else:
-                            # 10%の確率でスキップ理由を変える（人間は全部DLしない）
-                            if random.random() < 0.1:
-                                print(f"      [human] skipping rest of this artist")
-                                break
+                                filepath = download_tab_file(page, context, tab_url, artist_name)
+                                if filepath:
+                                    print(f"      OK: {tab_name}")
+                                    artist_count += 1
+                                    total_downloaded += 1
+                                else:
+                                    # 10%の確率でスキップ理由を変える（人間は全部DLしない）
+                                    if random.random() < 0.1:
+                                        print(f"      [human] skipping rest of this artist")
+                                        break
+                            except Exception as tab_err:
+                                print(f"      ERROR downloading '{tab_name}': {tab_err}")
+                                continue
 
-                    progress["completed_artists"].append(artist_name)
-                    progress["total_files"] += artist_count
-                    save_progress(progress)
+                        progress["completed_artists"].append(artist_name)
+                        progress["total_files"] += artist_count
+                        save_progress(progress)
+
+                    except Exception as artist_err:
+                        print(f"    ERROR processing '{artist_name}': {artist_err}")
+                        # ブラウザがクラッシュした可能性 → 再起動
+                        try:
+                            page.goto(BASE_URL + "/en", timeout=15000)
+                        except Exception:
+                            print("    [recovery] Browser crash detected, restarting...")
+                            try: browser.close()
+                            except Exception: pass
+                            browser, context, page = create_stealth_browser(pw)
+                            page.goto(BASE_URL + "/en", timeout=15000)
+                            human_delay(3, 1)
+                        continue
 
                     # アーティスト間の休憩（人間は一気にやらない）
                     if random.random() < 0.15:

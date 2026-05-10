@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import ScoreToolbar from "./ScoreToolbar";
 
 /**
  * TabView — AlphaTab TAB 譜表示
@@ -23,12 +24,39 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const [error, setError] = useState(null);
     const [autoScroll, setAutoScroll] = useState(true);
     const autoScrollRef = useRef(true);
+    const [scale, setScale] = useState(0.75);
+    const scaleRef = useRef(0.75);
+
+    // --- Score Player state ---
+    const [scorePlayerReady, setScorePlayerReady] = useState(false);
+    const [scorePlayerState, setScorePlayerState] = useState(0); // 0=stopped, 1=playing, 2=paused
 
     // --- TAB編集UI state ---
     const [editNote, setEditNote] = useState(null); // {noteIndex, fret, string, x, y}
     const [editInput, setEditInput] = useState("");
     const [editSaving, setEditSaving] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
     const editInputRef = useRef(null);
+
+    // --- Score Model state ---
+    const [scoreData, setScoreData] = useState(null);
+
+    const fetchScore = useCallback(async () => {
+        if (!sessionId) return;
+        try {
+            const res = await fetch(`${apiBase}/result/${sessionId}/score`);
+            if (res.ok) setScoreData(await res.json());
+        } catch (e) { console.warn("Score fetch failed:", e); }
+    }, [sessionId, apiBase]);
+
+    useEffect(() => { fetchScore(); }, [fetchScore]);
+
+    const handleScoreUpdate = useCallback(() => {
+        fetchScore();
+        // MusicXMLが再生成されたのでAlphaTabをリロード
+        setReloadKey(k => k + 1);
+        initKeyRef.current = null;
+    }, [fetchScore]);
 
     useEffect(() => {
         timeRef.current = currentTime;
@@ -166,8 +194,14 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             setError(null);
 
             try {
-                // Cache-bust the fetch so new retunes are properly loaded instead of browser-cached versions
-                const res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`);
+                // Cache-bust + retry (Volume commit遅延対策)
+                let res;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`);
+                    if (res.ok) break;
+                    console.warn(`[TabView] musicxml attempt ${attempt + 1} failed, retrying...`);
+                    await new Promise(r => setTimeout(r, 1500));
+                }
                 if (!res.ok) throw new Error("MusicXML not available");
                 let xmlText = await res.text();
                 if (destroyed) return;
@@ -209,17 +243,19 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 const settings = new window.alphaTab.Settings();
                 settings.core.tex = false;
-                settings.core.fontDirectory = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/";
+                settings.core.fontDirectory = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.3.0/dist/font/";
 
-                // === TAB表示最適化 ===
-                settings.display.staveProfile = window.alphaTab.StaveProfile.Tab;
+                // === 五線譜 + TAB 2段表示 ===
+                // ScoreTab: 五線譜+TABの両方を強制描画する
+                // フレット値はscoreLoadedイベント後にMusicXMLの値で上書き
+                settings.display.staveProfile = window.alphaTab.StaveProfile.ScoreTab;
                 settings.display.layoutMode = window.alphaTab.LayoutMode.Page;
-                settings.display.scale = 0.75;              // スケール縮小で密集解消
+                settings.display.scale = scaleRef.current;   // ズームレベル（state管理）
                 settings.display.stretchForce = 1.2;        // ノート間スペースを広げる
                 settings.display.barsPerRow = 4;             // 1行4小節で読みやすく
 
                 // === 記譜設定 ===
-                settings.notation.rhythmMode = window.alphaTab.TabRhythmMode?.ShowWithBars || 0;
+                settings.notation.rhythmMode = 0;            // TABリズム表記OFF（視認性向上）
                 settings.notation.fingeringMode = 0;         // 運指表記OFF
 
                 // テクニック記号の表示はAlphaTabのデフォルト設定に依存
@@ -230,8 +266,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     settings.display.resources.titleFont = new window.alphaTab.model.Font("Arial", 16, 1); // 1=Bold
                 }
 
-                settings.player.enablePlayer = false;
-                settings.player.enableCursor = false;
+                // === Score Player (SoundFont合成) ===
+                settings.player.enablePlayer = true;
+                settings.player.enableCursor = true;
+                settings.player.soundFont = "https://cdn.jsdelivr.net/npm/@coderline/alphatab@1.3.0/dist/soundfont/sonivox.sf2";
+                settings.player.scrollElement = containerRef.current;
+                settings.player.scrollMode = 1; // continuous
                 settings.core.includeNoteBounds = true; // ノートクリック検出に必要
 
                 const api = new window.alphaTab.AlphaTabApi(wrapperRef.current, settings);
@@ -239,6 +279,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 if (onApiReady) {
                     onApiReady(api);
                 }
+
+                // --- Score Player events ---
+                api.playerReady.on(() => {
+                    if (!destroyed) setScorePlayerReady(true);
+                    console.log("[TabView] Score player ready (SoundFont loaded)");
+                });
+                api.playerStateChanged.on((e) => {
+                    if (!destroyed) setScorePlayerState(e.state);
+                });
 
                 // --- ノートクリック → 編集UI ---
                 api.noteMouseDown.on((note, evt) => {
@@ -420,14 +469,67 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (!destroyed) { setError("TAB表示エラー"); setLoading(false); }
                 });
 
-                // scoreLoadedイベント: テクニック適用後に再レンダリング
-                let techApplied = false;
-                api.scoreLoaded.on(async (score) => {
-                    if (techApplied || destroyed) return;
-                    techApplied = true;
-                    await applyTechniques(score);
-                    // テクニック適用後に再レンダリング
-                    api.render();
+                // --- フレット/弦オーバーライド ---
+                // AlphaTabはpitchからフレットを自動計算するが、
+                // MusicXMLの<technical>値と一致しない。scoreLoaded後に
+                // MusicXMLのfret/string値で上書きする。
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                const xmlNotes = xmlDoc.querySelectorAll("note");
+                const tabFrets = [];
+                for (const noteEl of xmlNotes) {
+                    const staffEl = noteEl.querySelector("staff");
+                    if (!staffEl || staffEl.textContent !== "2") continue;
+                    if (noteEl.querySelector("rest")) continue;
+                    const fretEl = noteEl.querySelector("fret");
+                    const stringEl = noteEl.querySelector("string");
+                    if (fretEl && stringEl) {
+                        tabFrets.push({
+                            fret: parseInt(fretEl.textContent),
+                            string: parseInt(stringEl.textContent),
+                        });
+                    }
+                }
+                console.log(`[TabView] Parsed ${tabFrets.length} TAB fret/string values from MusicXML`);
+
+                let fretOverrideApplied = false;
+                api.scoreLoaded.on((score) => {
+                    if (fretOverrideApplied || destroyed) return;
+                    fretOverrideApplied = true;
+                    try {
+                        const track = score.tracks[0];
+                        if (!track) return;
+                        // Staff 2 (TAB) のノートにfret/stringを適用
+                        // Default mode: staves[0]=五線譜, staves[1]=TAB
+                        const tabStaffIdx = track.staves.length > 1 ? 1 : 0;
+                        const tabStaff = track.staves[tabStaffIdx];
+                        let noteIdx = 0;
+                        let overridden = 0;
+                        for (const bar of tabStaff.bars) {
+                            for (const voice of bar.voices) {
+                                for (const beat of voice.beats) {
+                                    if (beat.isRest) continue;
+                                    for (const note of beat.notes) {
+                                        if (noteIdx < tabFrets.length) {
+                                            const target = tabFrets[noteIdx];
+                                            if (note.fret !== target.fret || note.string !== target.string) {
+                                                note.fret = target.fret;
+                                                note.string = target.string;
+                                                overridden++;
+                                            }
+                                        }
+                                        noteIdx++;
+                                    }
+                                }
+                            }
+                        }
+                        console.log(`[TabView] Fret override: ${overridden}/${noteIdx} notes corrected`);
+                        if (overridden > 0) {
+                            api.render();
+                        }
+                    } catch (e) {
+                        console.warn("[TabView] Fret override error:", e);
+                    }
                 });
 
                 const encoder = new TextEncoder();
@@ -445,7 +547,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             boundsReadyRef.current = false;
             initKeyRef.current = null;
         };
-    }, [sessionId, apiBase, transpose, capo]);
+    }, [sessionId, apiBase, transpose, capo, reloadKey]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -512,15 +614,23 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     }, []);
 
     return (
-        <div
-            ref={containerRef}
-            className="tab-print-container"
-            style={{
-                width: "100%", height: "100%",
-                overflow: "auto", position: "relative",
-                background: "white", paddingBottom: 500,
-            }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* PowerTab互換ツールバー */}
+            <ScoreToolbar
+                sessionId={sessionId}
+                apiBase={apiBase}
+                score={scoreData}
+                onScoreUpdate={handleScoreUpdate}
+            />
+            <div
+                ref={containerRef}
+                className="tab-print-container"
+                style={{
+                    width: "100%", flex: 1,
+                    overflow: "auto", position: "relative",
+                    background: "white", paddingBottom: 500,
+                }}
+            >
             {loading && (
                 <div style={{
                     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
@@ -568,45 +678,72 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 {/* ノート編集ポップアップ */}
                 {editNote && (
+                    <>
+                    {/* 枠外クリックで閉じるオーバーレイ */}
+                    <div
+                        onClick={() => setEditNote(null)}
+                        style={{
+                            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+                            zIndex: 99, background: "transparent",
+                        }}
+                    />
                     <div
                         style={{
                             position: "absolute",
-                            left: Math.max(10, editNote.x - 60), top: editNote.y + 20,
+                            left: Math.max(10, editNote.x - 80), top: editNote.y + 20,
                             zIndex: 100,
-                            background: "rgba(20,20,30,0.95)",
+                            background: "rgba(20,20,30,0.97)",
                             border: "2px solid #3b82f6",
                             borderRadius: 12,
-                            padding: "10px 14px",
+                            padding: "12px 14px",
                             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                            display: "flex", flexDirection: "column", gap: 6,
-                            minWidth: 120,
+                            display: "flex", flexDirection: "column", gap: 8,
+                            minWidth: 180,
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>
-                            🎸 弦{editNote.string} フレット{editNote.fret}
+                            🎸 弦{editNote.editString ?? editNote.string} フレット{editNote.fret}
                         </div>
+                        {/* 弦選択 */}
+                        <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                            <span style={{ fontSize: 10, color: "#64748b", width: 20 }}>弦</span>
+                            {[1,2,3,4,5,6].map(s => (
+                                <button key={s}
+                                    onClick={() => setEditNote(prev => ({ ...prev, editString: s }))}
+                                    style={{
+                                        width: 26, height: 26, borderRadius: 6, border: "none",
+                                        background: (editNote.editString ?? editNote.string) === s ? "#3b82f6" : "#334155",
+                                        color: "white", fontWeight: 700, fontSize: 12,
+                                        cursor: "pointer", transition: "all 0.15s",
+                                    }}
+                                >{s}</button>
+                            ))}
+                        </div>
+                        {/* フレット入力 + 保存 */}
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ fontSize: 10, color: "#64748b", width: 20 }}>F</span>
                             <input
                                 ref={editInputRef}
                                 type="number"
-                                min="0" max="24"
+                                min="0" max="15"
                                 value={editInput}
                                 onChange={(e) => setEditInput(e.target.value)}
                                 onKeyDown={async (e) => {
                                     if (e.key === "Enter") {
                                         e.preventDefault();
                                         const newFret = parseInt(editInput);
-                                        if (isNaN(newFret) || newFret < 0 || newFret > 24) return;
+                                        const newString = editNote.editString ?? editNote.string;
+                                        if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                         setEditSaving(true);
                                         try {
                                             await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                                 method: "PATCH",
                                                 headers: { "Content-Type": "application/json" },
-                                                body: JSON.stringify({ noteIndex: editNote.noteIndex, fret: newFret }),
+                                                body: JSON.stringify({ fret: newFret, string: newString }),
                                             });
                                             setEditNote(null);
-                                            initKeyRef.current = null; // 再読み込み強制
+                                            setReloadKey(k => k + 1);
                                         } catch (err) { console.error("Edit failed:", err); }
                                         setEditSaving(false);
                                     } else if (e.key === "Escape") {
@@ -624,16 +761,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             <button
                                 onClick={async () => {
                                     const newFret = parseInt(editInput);
-                                    if (isNaN(newFret) || newFret < 0 || newFret > 24) return;
+                                    const newString = editNote.editString ?? editNote.string;
+                                    if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                     setEditSaving(true);
                                     try {
                                         await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ noteIndex: editNote.noteIndex, fret: newFret }),
+                                            body: JSON.stringify({ fret: newFret, string: newString }),
                                         });
                                         setEditNote(null);
-                                        initKeyRef.current = null;
+                                        setReloadKey(k => k + 1);
                                     } catch (err) { console.error("Edit failed:", err); }
                                     setEditSaving(false);
                                 }}
@@ -652,10 +790,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ noteIndex: editNote.noteIndex, delete: true }),
+                                            body: JSON.stringify({ delete: true }),
                                         });
                                         setEditNote(null);
-                                        initKeyRef.current = null;
+                                        setReloadKey(k => k + 1);
                                     } catch (err) { console.error("Delete failed:", err); }
                                     setEditSaving(false);
                                 }}
@@ -667,31 +805,125 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                 }}
                             >🗑</button>
                         </div>
-                        <div style={{ fontSize: 10, color: "#64748b" }}>Enter=保存 Esc=閉じる</div>
+                        <div style={{ fontSize: 10, color: "#64748b" }}>枠外クリック or Esc=閉じる</div>
                     </div>
+                    </>
                 )}
             </div>
 
-            {/* Auto-scroll toggle */}
-            <div
-                className="auto-scroll-btn"
-                style={{
-                    position: "fixed", bottom: 24, right: 24, zIndex: 50,
-                    padding: "8px 16px", borderRadius: 20, cursor: "pointer",
-                    background: autoScroll ? "#10b981" : "rgba(30,30,40,0.8)",
-                    color: "white", fontSize: 12, fontWeight: 700,
+            {/* スコアプレーヤー + ズームコントロール + Auto-scroll */}
+            <div style={{
+                position: "fixed", bottom: 80, right: 24, zIndex: 50,
+                display: "flex", gap: 8, alignItems: "center",
+            }}>
+                {/* Score Player コントロール */}
+                <div style={{
+                    display: "flex", gap: 4, alignItems: "center",
+                    background: "rgba(30,41,59,0.92)", borderRadius: 10,
+                    padding: "4px 10px", boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                }}>
+                    <button
+                        onClick={() => {
+                            if (!apiRef.current) return;
+                            if (scorePlayerState === 1) {
+                                apiRef.current.pause();
+                            } else {
+                                apiRef.current.play();
+                            }
+                        }}
+                        disabled={!scorePlayerReady}
+                        style={{
+                            width: 32, height: 32, borderRadius: "50%", border: "none",
+                            background: scorePlayerReady ? "#10b981" : "#475569",
+                            color: "white", fontSize: 16, cursor: scorePlayerReady ? "pointer" : "default",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            opacity: scorePlayerReady ? 1 : 0.5,
+                        }}
+                        title={scorePlayerState === 1 ? "一時停止" : "スコア再生"}
+                    >
+                        {scorePlayerState === 1 ? "⏸" : "▶"}
+                    </button>
+                    <button
+                        onClick={() => { if (apiRef.current) { apiRef.current.stop(); } }}
+                        disabled={!scorePlayerReady || scorePlayerState === 0}
+                        style={{
+                            width: 28, height: 28, borderRadius: "50%", border: "none",
+                            background: "#475569", color: "white", fontSize: 13,
+                            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                        }}
+                        title="停止"
+                    >⏹</button>
+                    <span style={{ color: "#94a3b8", fontSize: 10, marginLeft: 2, whiteSpace: "nowrap" }}>
+                        {scorePlayerReady ? "♪ MIDI" : "読込中..."}
+                    </span>
+                </div>
+                {/* ズームコントロール */}
+                <div style={{
+                    display: "flex", gap: 2, alignItems: "center",
+                    background: "rgba(30,30,40,0.9)",
+                    borderRadius: 20, padding: "4px 8px",
                     boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-                    transition: "all 0.2s", userSelect: "none",
-                }}
-                onClick={() => {
-                    setAutoScroll((v) => {
-                        const next = !v;
-                        autoScrollRef.current = next;
-                        return next;
-                    });
-                }}
-            >
-                {autoScroll ? "📌 AUTO SCROLL ON" : "✋ AUTO SCROLL OFF"}
+                }}>
+                    <button
+                        onClick={() => {
+                            const next = Math.max(0.4, scale - 0.1);
+                            setScale(next);
+                            scaleRef.current = next;
+                            if (apiRef.current) {
+                                apiRef.current.settings.display.scale = next;
+                                apiRef.current.updateSettings();
+                                apiRef.current.render();
+                            }
+                        }}
+                        style={{
+                            width: 28, height: 28, borderRadius: "50%", border: "none",
+                            background: "#334155", color: "white", fontSize: 16,
+                            fontWeight: 700, cursor: "pointer", display: "flex",
+                            alignItems: "center", justifyContent: "center",
+                        }}
+                    >−</button>
+                    <span style={{
+                        color: "white", fontSize: 11, fontWeight: 700,
+                        minWidth: 38, textAlign: "center",
+                    }}>{Math.round(scale * 100)}%</span>
+                    <button
+                        onClick={() => {
+                            const next = Math.min(1.5, scale + 0.1);
+                            setScale(next);
+                            scaleRef.current = next;
+                            if (apiRef.current) {
+                                apiRef.current.settings.display.scale = next;
+                                apiRef.current.updateSettings();
+                                apiRef.current.render();
+                            }
+                        }}
+                        style={{
+                            width: 28, height: 28, borderRadius: "50%", border: "none",
+                            background: "#334155", color: "white", fontSize: 16,
+                            fontWeight: 700, cursor: "pointer", display: "flex",
+                            alignItems: "center", justifyContent: "center",
+                        }}
+                    >+</button>
+                </div>
+                {/* Auto-scroll toggle */}
+                <div
+                    style={{
+                        padding: "8px 16px", borderRadius: 20, cursor: "pointer",
+                        background: autoScroll ? "#10b981" : "rgba(30,30,40,0.8)",
+                        color: "white", fontSize: 12, fontWeight: 700,
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                        transition: "all 0.2s", userSelect: "none",
+                    }}
+                    onClick={() => {
+                        setAutoScroll((v) => {
+                            const next = !v;
+                            autoScrollRef.current = next;
+                            return next;
+                        });
+                    }}
+                >
+                    {autoScroll ? "📌 AUTO SCROLL ON" : "✋ AUTO SCROLL OFF"}
+                </div>
             </div>
 
             <style>{`
@@ -714,6 +946,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     .tab-print-container { height: auto !important; overflow: visible !important; padding-bottom: 0 !important; }
                 }
             `}</style>
+        </div>
         </div>
     );
 };

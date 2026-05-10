@@ -37,6 +37,8 @@ unified_datasets/
 unified_models/
 SynthTab-main/
 backend/fretnet_models/
+gprotab_downloads/
+gp_training_data/
 
 # Node
 node_modules/
@@ -55,6 +57,18 @@ Thumbs.db
 # Temporary & Generated
 scratch/
 generated/
+backend/test_*.py
+backend/train/test_*.py
+backend/train/fingering_model.py
+backend/train/build_fingering_dataset.py
+backend/train/build_fingering_dataset_v2.py
+backend/train/train_fingering.py
+backend/train/train_fingering_v2.py
+backend/train/eval_v2_checkpoint.py
+backend/train/inspect_guitarset.py
+backend/train/verify_string_mapping.py
+backend/train/benchmark_guitarset_detailed.py
+backend/train/benchmark_guitarset_vs_v2.py
 *.wav
 *.mp3
 *.lnk

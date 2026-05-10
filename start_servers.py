@@ -5,10 +5,14 @@ import time
 import os
 
 def tail_process(process, prefix):
-    # 文字化け防止のため utf-8 / replace でデコード
     for line in iter(process.stdout.readline, b''):
         try:
-            print(f"{prefix} {line.decode('utf-8', errors='replace').rstrip()}")
+            # UTF-8を試し、失敗したらcp932（Windows日本語コンソール）
+            try:
+                text = line.decode('utf-8').rstrip()
+            except UnicodeDecodeError:
+                text = line.decode('cp932', errors='replace').rstrip()
+            print(f"{prefix} {text}")
         except Exception:
             pass
 
@@ -43,16 +47,47 @@ def main():
     _kill_port(8001)
     _kill_port(5174)
     
-    # __pycache__ を削除して古いバイトコードが残らないようにする
+    # __pycache__ を全階層から削除して古いバイトコードが残らないようにする
     import shutil
     from pathlib import Path
-    cache_dir = Path(r"D:\Music\nextchord-solotab\backend\__pycache__")
-    if cache_dir.exists():
+    
+    cleaned = 0
+    for cache_dir in Path(r"D:\Music\nextchord-solotab").rglob("__pycache__"):
         try:
             shutil.rmtree(cache_dir)
-            print("[cleanup] __pycache__ を削除しました")
-        except Exception as e:
-            print(f"[cleanup] __pycache__ 削除失敗: {e}")
+            cleaned += 1
+        except Exception:
+            pass
+    if cleaned:
+        print(f"[cleanup] __pycache__ x{cleaned} を削除しました")
+    
+    # Vite キャッシュ削除
+    vite_cache = Path(r"D:\Music\nextchord-solotab\frontend\node_modules\.vite")
+    if vite_cache.exists():
+        try:
+            shutil.rmtree(vite_cache)
+            print("[cleanup] Vite キャッシュを削除しました")
+        except Exception:
+            pass
+    
+    # 前回セッションの中間生成ファイルを削除（tab_dual, pdf等の古い結果）
+    uploads_dir = Path(r"D:\Music\nextchord-solotab\uploads")
+    if uploads_dir.exists():
+        stale_files = ["tab_dual.musicxml", "tab.pdf"]
+        stale_count = 0
+        for session_dir in uploads_dir.iterdir():
+            if not session_dir.is_dir():
+                continue
+            for fname in stale_files:
+                f = session_dir / fname
+                if f.exists():
+                    try:
+                        f.unlink()
+                        stale_count += 1
+                    except Exception:
+                        pass
+        if stale_count:
+            print(f"[cleanup] 前回セッションの中間ファイル x{stale_count} を削除しました")
 
     backend_cmd = [
         "D:\\Music\\nextchord\\venv312\\Scripts\\python.exe",
@@ -64,6 +99,15 @@ def main():
     frontend_env = os.environ.copy()
     frontend_env["CI"] = "true"  
     
+    # バックエンド用: 文字化け防止 + TF Warning抑制
+    backend_env = os.environ.copy()
+    backend_env["PYTHONIOENCODING"] = "utf-8"
+    backend_env["PYTHONUTF8"] = "1"
+    backend_env["TF_CPP_MIN_LOG_LEVEL"] = "3"  # TF INFO/WARNING/ERROR抑制
+    backend_env["TF_ENABLE_ONEDNN_OPTS"] = "0"  # oneDNN Warning抑制
+    # BasicPitch/TFLite/requests の Python Warningを抑制
+    backend_env["PYTHONWARNINGS"] = "ignore::UserWarning,ignore::DeprecationWarning"
+
     frontend_cmd = ["cmd", "/c", "npm run dev"]
     
     # Windowsでプロセスグループを作ってCtrl+Cでまとめてキルしやすくするフラグ
@@ -75,7 +119,8 @@ def main():
         cwd="D:\\Music\\nextchord-solotab\\backend",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        bufsize=1
+        env=backend_env,
+        bufsize=0
     )
     
     print("[2/2] Starting Frontend... (Port 5174)")
@@ -85,7 +130,7 @@ def main():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=frontend_env,
-        bufsize=1
+        bufsize=0
     )
     
     # ログ出力用スレッド開始

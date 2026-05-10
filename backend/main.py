@@ -33,6 +33,11 @@ if not hasattr(np, 'float'): np.float = float
 if not hasattr(np, 'complex'): np.complex = complex
 if not hasattr(np, 'bool'): np.bool = bool
 
+# BasicPitch/TF等のWARNING:root:ログを抑制（uvicornのログは保持）
+import logging
+logging.getLogger().setLevel(logging.ERROR)
+# uvicornのロガーは独立なので影響なし
+
 # プロジェクトルート
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -89,6 +94,89 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _strip_to_tab_staff(xml_text: str) -> str:
+    """2スタッフMusicXMLからStaff 2(TAB)のみ抽出し、単一スタッフに変換。
+    さらにStaff 2のpitchをfret/stringから再計算し、AlphaTabの
+    自動フレット計算が正しい値を出すようにする。"""
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(xml_text)
+    
+    staves_el = root.find(".//attributes/staves")
+    if staves_el is None or staves_el.text != "2":
+        return xml_text
+    
+    part = root.find(".//part[@id='P1']")
+    if part is None:
+        return xml_text
+    
+    # Standard tuning MIDI: string 6=E2(40), 5=A2(45), 4=D3(50), 3=G3(55), 2=B3(59), 1=E4(64)
+    STRING_MIDI = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
+    NOTE_NAMES = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"]
+    NOTE_ALTER = [ 0,   1,   0,   1,   0,   0,   1,   0,   1,   0,   1,   0]
+    
+    for measure in part.findall("measure"):
+        attrs = measure.find("attributes")
+        if attrs is not None:
+            st = attrs.find("staves")
+            if st is not None:
+                st.text = "1"
+            for clef in attrs.findall("clef"):
+                if clef.get("number") == "1":
+                    attrs.remove(clef)
+            for clef in attrs.findall("clef"):
+                if clef.get("number") == "2":
+                    clef.set("number", "1")
+            for sd in attrs.findall("staff-details"):
+                if sd.get("number") == "2":
+                    sd.set("number", "1")
+        
+        to_remove = []
+        for elem in measure:
+            if elem.tag == "note":
+                staff = elem.find("staff")
+                if staff is not None and staff.text == "1":
+                    to_remove.append(elem)
+                elif staff is not None and staff.text == "2":
+                    staff.text = "1"
+                    # pitchをfret/stringから再計算
+                    fret_el = elem.find(".//fret")
+                    str_el = elem.find(".//string")
+                    pitch_el = elem.find("pitch")
+                    if fret_el is not None and str_el is not None and pitch_el is not None:
+                        s = int(str_el.text)
+                        f = int(fret_el.text)
+                        if s in STRING_MIDI:
+                            midi = STRING_MIDI[s] + f
+                            step_name = NOTE_NAMES[midi % 12]
+                            alter = NOTE_ALTER[midi % 12]
+                            octave = (midi // 12) - 1
+                            
+                            step_el = pitch_el.find("step")
+                            if step_el is not None:
+                                step_el.text = step_name
+                            alter_el = pitch_el.find("alter")
+                            if alter != 0:
+                                if alter_el is None:
+                                    alter_el = ET.SubElement(pitch_el, "alter")
+                                alter_el.text = str(alter)
+                            elif alter_el is not None:
+                                pitch_el.remove(alter_el)
+                            octave_el = pitch_el.find("octave")
+                            if octave_el is not None:
+                                octave_el.text = str(octave)
+            elif elem.tag == "backup":
+                to_remove.append(elem)
+            elif elem.tag == "forward":
+                fwd_staff = elem.find("staff")
+                if fwd_staff is not None and fwd_staff.text == "1":
+                    to_remove.append(elem)
+        
+        for elem in to_remove:
+            measure.remove(elem)
+    
+    return ET.tostring(root, encoding="unicode")
 
 
 # --- Session Management ---
@@ -497,6 +585,15 @@ async def get_musicxml(session_id: str):
         raise HTTPException(status_code=404, detail="MusicXML not generated")
     with open(xml_path, "r", encoding="utf-8") as f:
         content = f.read()
+    
+    # AlphaTab用: Staff 2(TAB)のみ抽出 + pitchをfret/stringから再計算
+    # AlphaTabはpitchからフレットを自動計算するため、pitchが正しくないと
+    # fret 19/15等の異常値が表示される。
+    try:
+        content = _strip_to_tab_staff(content)
+    except Exception as e:
+        print(f"[musicxml] AlphaTab変換エラー: {e}")
+    
     filename = s.get("filename", session_id)
     if "." in filename:
         filename = filename.rsplit(".", 1)[0]

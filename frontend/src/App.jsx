@@ -540,78 +540,67 @@ export default function SoloTabApp() {
         {/* ── COMPLETED: Result ── */}
         {status === STATUS.COMPLETED && session && (
           <>
-            {/* Song Info */}
-            <div className="result-header">
-              <h1>{session.fileName || "Untitled"}</h1>
-              <div className="result-badges">
-                {session.detectedKey && <span className="badge" style={{ color: '#10b981' }}>🎵 Key: {session.detectedKey}</span>}
-                {session.detectedCapo > 0 && <span className="badge" style={{ color: '#f59e0b' }}>Capo {session.detectedCapo}</span>}
-                {session.totalNotes && <span className="badge accent">♪ {session.totalNotes} notes</span>}
-                {session.bpm && <span className="badge amber">♩ {Math.round(session.bpm)} BPM</span>}
-                <select
-                  className="tuning-select"
-                  value={session.tuning || "standard"}
-                  onChange={(e) => handleRetune(e.target.value)}
-                  disabled={retuning}
-                >
+            {/* Compact Song Info Bar */}
+            <div className="result-header" style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
+              background: 'var(--st-surface)', borderBottom: '1px solid var(--st-border)',
+              flexWrap: 'wrap', minHeight: 44,
+            }}>
+              <h1 style={{ fontSize: 15, fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>
+                {session.fileName || "Untitled"}
+              </h1>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                {session.detectedKey && <span className="badge" style={{ color: '#10b981', fontSize: 11 }}>🎵 {session.detectedKey}</span>}
+                {session.bpm && <span className="badge amber" style={{ fontSize: 11 }}>♩ {Math.round(session.bpm)}</span>}
+                {session.totalNotes && <span className="badge accent" style={{ fontSize: 11 }}>♪ {session.totalNotes}</span>}
+                {session.detectedCapo > 0 && <span className="badge" style={{ color: '#f59e0b', fontSize: 11 }}>Capo {session.detectedCapo}</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+                <select className="tuning-select" value={session.tuning || "standard"}
+                  onChange={(e) => handleRetune(e.target.value)} disabled={retuning}
+                  style={{ fontSize: 11, padding: '4px 6px', maxWidth: 160 }}>
                   {TUNING_GROUPS.map(group => (
                     <optgroup key={group.label} label={group.label}>
-                      {group.options.map(t => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
-                      ))}
+                      {group.options.map(t => (<option key={t.value} value={t.value}>{t.label}</option>))}
                     </optgroup>
                   ))}
                 </select>
-                {retuning && <span className="badge" style={{ color: 'var(--st-amber)' }}>更新中...</span>}
-                <div className="transpose-controls">
-                  <button className="transpose-btn" onClick={() => setTranspose(t => t - 1)}>−</button>
-                  <span className="transpose-label">{transpose >= 0 ? '+' : ''}{transpose}</span>
-                  <button className="transpose-btn" onClick={() => setTranspose(t => t + 1)}>+</button>
-                </div>
-                <select
-                  className="tuning-select"
-                  value={capo}
+                <select className="tuning-select" value={capo}
                   onChange={(e) => { const v = Number(e.target.value); setCapo(v); handleRetune(null, v); }}
-                  style={{ minWidth: 90 }}
-                >
+                  style={{ fontSize: 11, padding: '4px 6px', minWidth: 70 }}>
                   <option value={0}>カポなし</option>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(n => (
-                    <option key={n} value={n}>カポ {n}</option>
-                  ))}
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (<option key={n} value={n}>Capo {n}</option>))}
                 </select>
-                <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-                  <button
-                    className="home-btn"
-                    title="PDF印刷"
-                    onClick={() => {
-                      window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank');
-                    }}
-                  >
-                    <Printer size={14} style={{ marginRight: 4 }} />PDF
-                  </button>
-                  <button
-                    className="home-btn"
-                    title="MusicXMLダウンロード"
-                    onClick={async () => {
-                      try {
-                        const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
-                        if (!res.ok) throw new Error("MusicXML取得失敗");
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        const baseName = (session.fileName || 'tab').replace(/\.[^.]+$/, '');
-                        a.download = `${baseName}.musicxml`;
-                        a.style.display = 'none';
-                        document.body.appendChild(a);
-                        a.click();
-                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                      } catch(e) { _showToast("MusicXML: " + e.message); }
-                    }}
-                  >
-                    <Download size={14} style={{ marginRight: 4 }} />MusicXML
-                  </button>
+                <div className="transpose-controls" style={{ gap: 2 }}>
+                  <button className="transpose-btn" onClick={() => setTranspose(t => t - 1)} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
+                  <span className="transpose-label" style={{ fontSize: 11, minWidth: 28 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
+                  <button className="transpose-btn" onClick={() => setTranspose(t => t + 1)} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
                 </div>
+                {retuning && <span style={{ fontSize: 10, color: 'var(--st-amber)' }}>⏳</span>}
+                <button className="home-btn" title="PDF"
+                  onClick={() => window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank')}
+                  style={{ fontSize: 11, padding: '4px 8px' }}>
+                  <Printer size={12} style={{ marginRight: 2 }} />PDF
+                </button>
+                <button className="home-btn" title="MusicXML"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
+                      if (!res.ok) throw new Error("取得失敗");
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.musicxml`;
+                      a.style.display = 'none';
+                      document.body.appendChild(a);
+                      a.click();
+                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                    } catch(e) { _showToast("MusicXML: " + e.message); }
+                  }}
+                  style={{ fontSize: 11, padding: '4px 8px' }}>
+                  <Download size={12} style={{ marginRight: 2 }} />XML
+                </button>
               </div>
             </div>
 
