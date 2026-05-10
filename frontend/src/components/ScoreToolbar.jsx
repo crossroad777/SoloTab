@@ -122,11 +122,8 @@ const ScoreToolbar = ({ sessionId, apiBase, onScoreUpdate, score }) => {
   }, [undo, redo, totalBars]);
 
   if (!sessionId) return null;
-  if (!score) return (
-    <div style={{ padding: "6px 12px", borderBottom: "1px solid #e5e7eb", background: "#fafbfc", fontSize: 11, color: "#9ca3af" }}>
-      スコアデータを読み込み中...
-    </div>
-  );
+  // scoreがnull（/score APIが未実装 or 404）の場合はToolbarを非表示
+  if (!score) return null;
 
   return (
     <div style={{ borderBottom: "2px solid #e5e7eb", background: "#fafbfc", userSelect: "none" }}>

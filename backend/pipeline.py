@@ -1,5 +1,4 @@
 # pyre-ignore-all-errors
-# type: ignore
 from __future__ import annotations
 """
 pipeline.py — SoloTab 解析パイプライン
@@ -13,15 +12,14 @@ pipeline.py — SoloTab 解析パイプライン
 import json
 import time
 import sys
+import numpy as np
 from pathlib import Path
 from typing import Callable, Optional
-import numpy as np  # type: ignore
 
-from beat_detector import detect_beats  # type: ignore
+from beat_detector import detect_beats
+from solotab_utils import _to_native, STANDARD_TUNING, TUNINGS
+from tab_renderer import notes_to_tab_musicxml
 
-
-from solotab_utils import _to_native, STANDARD_TUNING, TUNINGS  # type: ignore
-from tab_renderer import notes_to_tab_musicxml  # type: ignore
 
 
 def _get_open_string_pitches(tuning: list) -> dict:
@@ -232,7 +230,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         preprocessed_path = session_dir / "preprocessed.wav"
         try:
-            from ensemble_transcriber import preprocess_audio_for_transcription
+            from audio_preprocessor import preprocess_audio_for_transcription
             preprocess_audio_for_transcription(guitar_wav, str(preprocessed_path))
             transcription_wav = str(preprocessed_path)
             report("preprocess", f"前処理適用（メロディ強調・ベース抑制） ({time.time()-t0:.1f}s)")
@@ -376,10 +374,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- Palm Mute / Harmonic 検出 ---
     report("technique_pm", "PM/NH検出中...")
     try:
-        from ensemble_transcriber import _annotate_techniques  # type: ignore
+        from technique_classifier_cnn import annotate_techniques
         t0 = time.time()
         pre_techs = {i: n.get("technique") for i, n in enumerate(notes) if n.get("technique")}
-        notes = _annotate_techniques(str(guitar_wav), notes, report=lambda msg: report("technique_pm", msg))
+        notes = annotate_techniques(str(guitar_wav), notes, report=lambda msg: report("technique_pm", msg))
         for i, tech in pre_techs.items():
             if i < len(notes) and tech in ("h", "p", "/", "\\"):
                 notes[i]["technique"] = tech
@@ -536,20 +534,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("pdf", "五線譜+TAB譜PDF生成中 (MuseScore)...")
         t0 = time.time()
         pdf_path = session_dir / "tab.pdf"
-        
-        # tab.musicxml は既に2スタッフ構成（五線譜+TAB）なので、
-        # tab_dual.musicxml としてコピーするだけで良い（二重変換を回避）
-        import shutil
-        dual_xml_path = session_dir / "tab_dual.musicxml"
-        shutil.copy2(str(musicxml_path), str(dual_xml_path))
-        report("pdf", "Dual-staff MusicXML = tab.musicxml のコピー")
-        
+
         from musescore_renderer import MUSESCORE_EXE
         import subprocess as sp
         if not Path(MUSESCORE_EXE).exists():
             raise FileNotFoundError(f"MuseScore not found: {MUSESCORE_EXE}")
         sp.run(
-            [MUSESCORE_EXE, "-o", str(pdf_path), str(dual_xml_path)],
+            [MUSESCORE_EXE, "-o", str(pdf_path), str(musicxml_path)],
             capture_output=True, text=True, timeout=120,
             encoding="utf-8", errors="replace"
         )

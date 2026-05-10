@@ -96,88 +96,6 @@ app.add_middleware(
 )
 
 
-def _strip_to_tab_staff(xml_text: str) -> str:
-    """2スタッフMusicXMLからStaff 2(TAB)のみ抽出し、単一スタッフに変換。
-    さらにStaff 2のpitchをfret/stringから再計算し、AlphaTabの
-    自動フレット計算が正しい値を出すようにする。"""
-    import xml.etree.ElementTree as ET
-    root = ET.fromstring(xml_text)
-    
-    staves_el = root.find(".//attributes/staves")
-    if staves_el is None or staves_el.text != "2":
-        return xml_text
-    
-    part = root.find(".//part[@id='P1']")
-    if part is None:
-        return xml_text
-    
-    # Standard tuning MIDI: string 6=E2(40), 5=A2(45), 4=D3(50), 3=G3(55), 2=B3(59), 1=E4(64)
-    STRING_MIDI = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
-    NOTE_NAMES = ["C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B"]
-    NOTE_ALTER = [ 0,   1,   0,   1,   0,   0,   1,   0,   1,   0,   1,   0]
-    
-    for measure in part.findall("measure"):
-        attrs = measure.find("attributes")
-        if attrs is not None:
-            st = attrs.find("staves")
-            if st is not None:
-                st.text = "1"
-            for clef in attrs.findall("clef"):
-                if clef.get("number") == "1":
-                    attrs.remove(clef)
-            for clef in attrs.findall("clef"):
-                if clef.get("number") == "2":
-                    clef.set("number", "1")
-            for sd in attrs.findall("staff-details"):
-                if sd.get("number") == "2":
-                    sd.set("number", "1")
-        
-        to_remove = []
-        for elem in measure:
-            if elem.tag == "note":
-                staff = elem.find("staff")
-                if staff is not None and staff.text == "1":
-                    to_remove.append(elem)
-                elif staff is not None and staff.text == "2":
-                    staff.text = "1"
-                    # pitchをfret/stringから再計算
-                    fret_el = elem.find(".//fret")
-                    str_el = elem.find(".//string")
-                    pitch_el = elem.find("pitch")
-                    if fret_el is not None and str_el is not None and pitch_el is not None:
-                        s = int(str_el.text)
-                        f = int(fret_el.text)
-                        if s in STRING_MIDI:
-                            midi = STRING_MIDI[s] + f
-                            step_name = NOTE_NAMES[midi % 12]
-                            alter = NOTE_ALTER[midi % 12]
-                            octave = (midi // 12) - 1
-                            
-                            step_el = pitch_el.find("step")
-                            if step_el is not None:
-                                step_el.text = step_name
-                            alter_el = pitch_el.find("alter")
-                            if alter != 0:
-                                if alter_el is None:
-                                    alter_el = ET.SubElement(pitch_el, "alter")
-                                alter_el.text = str(alter)
-                            elif alter_el is not None:
-                                pitch_el.remove(alter_el)
-                            octave_el = pitch_el.find("octave")
-                            if octave_el is not None:
-                                octave_el.text = str(octave)
-            elif elem.tag == "backup":
-                to_remove.append(elem)
-            elif elem.tag == "forward":
-                fwd_staff = elem.find("staff")
-                if fwd_staff is not None and fwd_staff.text == "1":
-                    to_remove.append(elem)
-        
-        for elem in to_remove:
-            measure.remove(elem)
-    
-    return ET.tostring(root, encoding="unicode")
-
 
 # --- Session Management ---
 class SessionStatus(str, Enum):
@@ -586,14 +504,6 @@ async def get_musicxml(session_id: str):
     with open(xml_path, "r", encoding="utf-8") as f:
         content = f.read()
     
-    # AlphaTab用: Staff 2(TAB)のみ抽出 + pitchをfret/stringから再計算
-    # AlphaTabはpitchからフレットを自動計算するため、pitchが正しくないと
-    # fret 19/15等の異常値が表示される。
-    try:
-        content = _strip_to_tab_staff(content)
-    except Exception as e:
-        print(f"[musicxml] AlphaTab変換エラー: {e}")
-    
     filename = s.get("filename", session_id)
     if "." in filename:
         filename = filename.rsplit(".", 1)[0]
@@ -630,9 +540,7 @@ async def get_pdf(session_id: str):
         # MuseScoreで生成を試みる
         try:
             from musescore_renderer import render_pdf_with_musescore
-            dual_xml = session_dir / "tab_dual.musicxml"
-            src_xml = str(dual_xml) if dual_xml.exists() else str(xml_path)
-            render_pdf_with_musescore(src_xml, str(pdf_path), title=s.get("filename", "Guitar TAB"))
+            render_pdf_with_musescore(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
         except Exception:
             pass
 
@@ -666,6 +574,45 @@ async def get_pdf(session_id: str):
     )
 
 
+def _regenerate_musicxml(session_id: str, notes: list,
+                         tuning: list = None, noise_gate: float = None):
+    """notes → tab.musicxml 再生成の共通関数"""
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+
+    if tuning is None:
+        tuning_name = s.get("tuning", "standard")
+        tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
+        capo = s.get("capo", 0)
+        if capo and capo > 0:
+            tuning = [p + capo for p in tuning]
+
+    beats, bpm = [], s.get("bpm", 120)
+    time_sig = s.get("time_signature", "4/4")
+    beats_path = session_dir / "beats.json"
+    if beats_path.exists():
+        with open(beats_path, "r") as f:
+            bd = json.load(f)
+        beats = bd.get("beats", [])
+        bpm = bd.get("bpm", bpm)
+        time_sig = bd.get("time_signature", time_sig)
+
+    from tab_renderer import notes_to_tab_musicxml
+    kwargs = dict(
+        beats=beats, bpm=bpm,
+        title=s.get("filename", session_id),
+        tuning=tuning,
+        time_signature=time_sig,
+    )
+    if noise_gate is not None:
+        kwargs["noise_gate"] = noise_gate
+    xml_content, tech_map = notes_to_tab_musicxml(notes, **kwargs)
+
+    with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
+        f.write(xml_content)
+    return xml_content, tech_map
+
+
 class RetuneRequest(BaseModel):
     tuning: str
     capo: Optional[int] = 0
@@ -685,17 +632,16 @@ async def retune(session_id: str, request: RetuneRequest):
     s = sessions[session_id]
     session_dir = Path(s["session_dir"])
 
-    import json as json_mod
-    import shutil
+    import copy
 
     # オリジナルノートを保持: retune後も初期状態に戻れるようにする
     original_path = session_dir / "notes_assigned_original.json"
     assigned_path = session_dir / "notes_assigned.json"
-    
+
     # 初回retune時にオリジナルをバックアップ
     if not original_path.exists() and assigned_path.exists():
         shutil.copy2(assigned_path, original_path)
-    
+
     # 常にオリジナルから読み込む（retune結果で上書きされない）
     notes_path = original_path if original_path.exists() else assigned_path
     if not notes_path.exists():
@@ -704,61 +650,34 @@ async def retune(session_id: str, request: RetuneRequest):
         raise HTTPException(status_code=404, detail="Notes data not found. Run analysis first.")
 
     with open(notes_path, "r", encoding="utf-8") as f:
-        notes_data = json_mod.load(f)
+        notes_data = json.load(f)
 
     # notes_assigned.jsonはリスト直接、notes.jsonは{"notes": [...]}
-    import copy
     notes = copy.deepcopy(notes_data if isinstance(notes_data, list) else notes_data.get("notes", notes_data))
     tuning = TUNINGS[tuning_name]
 
     # カポ対応: tuningにカポ分を加算
-    # request.capo=0でも有効（カポ解除）にするためis not Noneチェック
     capo = request.capo if request.capo is not None else s.get("capo", 0)
     if capo is None:
         capo = 0
-    if capo > 0:
-        capo_tuning = [p + capo for p in tuning]
-    else:
-        capo_tuning = tuning
+    capo_tuning = [p + capo for p in tuning] if capo > 0 else tuning
 
     # Re-run string assignment
     from string_assigner import assign_strings_dp
-    from tab_renderer import notes_to_tab_musicxml
-
     notes = assign_strings_dp(notes, tuning=capo_tuning)
 
     # Save reassigned notes（オリジナルは保持、表示用のみ上書き）
     with open(assigned_path, "w", encoding="utf-8") as f:
-        json_mod.dump(notes, f, ensure_ascii=False, indent=2)
+        json.dump(notes, f, ensure_ascii=False, indent=2)
 
-    # Load beats
-    beats_path = session_dir / "beats.json"
-    beats = []
-    bpm = s.get("bpm", 120)
-    time_sig = s.get("time_signature", "4/4")
-    if beats_path.exists():
-        with open(beats_path, "r") as f:
-            beat_data = json_mod.load(f)
-        beats = beat_data.get("beats", [])
-        bpm = beat_data.get("bpm", bpm)
-        time_sig = beat_data.get("time_signature", time_sig)
+    # Re-generate MusicXML
+    _regenerate_musicxml(session_id, notes, tuning=capo_tuning, noise_gate=request.noise_gate)
 
-    # Re-generate MusicXML (カポ適用済みtuningを使用)
-    xml_content, tech_map = notes_to_tab_musicxml(
-        notes, beats=beats, bpm=bpm,
-        title=s.get("filename", session_id),
-        tuning=capo_tuning,
-        time_signature=time_sig,
-        noise_gate=request.noise_gate
-    )
-    with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
-        f.write(xml_content)
     # techniques.jsonはカポ/チューニングに依存しない → オリジナルを保持
     tech_original = session_dir / "techniques_original.json"
     tech_current = session_dir / "techniques.json"
     if not tech_original.exists() and tech_current.exists():
         shutil.copy2(tech_current, tech_original)
-    # MusicXML再生成で生まれたtech_mapは使わず、オリジナルを復元
     if tech_original.exists():
         shutil.copy2(tech_original, tech_current)
 
@@ -790,15 +709,14 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     if not assigned_path.exists():
         raise HTTPException(status_code=404, detail="Notes not found")
     
-    import json as json_mod
     with open(assigned_path, "r", encoding="utf-8") as f:
-        notes = json_mod.load(f)
-    
+        notes = json.load(f)
+
     if note_index < 0 or note_index >= len(notes):
         raise HTTPException(status_code=400, detail=f"Invalid note index: {note_index}")
-    
+
     if request.delete:
-        deleted = notes.pop(note_index)
+        notes.pop(note_index)
         action = "deleted"
     else:
         note = notes[note_index]
@@ -807,41 +725,15 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
         if request.string is not None:
             note["string"] = request.string
         action = f"edited fret={note.get('fret')} string={note.get('string')}"
-    
-    # Save updated notes
+
     with open(assigned_path, "w", encoding="utf-8") as f:
-        json_mod.dump(notes, f, ensure_ascii=False, indent=2)
-    
-    # Regenerate MusicXML
-    from tab_renderer import notes_to_tab_musicxml
-    tuning_name = s.get("tuning", "standard")
-    tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
-    capo = s.get("capo", 0)
-    if capo > 0:
-        tuning = [p + capo for p in tuning]
-    
-    beats_path = session_dir / "beats.json"
-    beats, bpm = [], s.get("bpm", 120)
-    time_sig = s.get("time_signature", "4/4")
-    if beats_path.exists():
-        with open(beats_path, "r") as f:
-            bd = json_mod.load(f)
-        beats = bd.get("beats", [])
-        bpm = bd.get("bpm", bpm)
-        time_sig = bd.get("time_signature", time_sig)
-    
-    xml_content, _ = notes_to_tab_musicxml(
-        notes, beats=beats, bpm=bpm,
-        title=s.get("filename", session_id),
-        tuning=tuning,
-        time_signature=time_sig,
-    )
-    with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
-        f.write(xml_content)
-    
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+
+    _regenerate_musicxml(session_id, notes)
+
     s["total_notes"] = len(notes)
     save_session(session_id)
-    
+
     return {"status": "ok", "action": action, "total_notes": len(notes)}
 
 
@@ -865,11 +757,9 @@ async def add_note(session_id: str, request: NoteAddRequest):
     if not assigned_path.exists():
         raise HTTPException(status_code=404, detail="Notes not found")
     
-    import json as json_mod
     with open(assigned_path, "r", encoding="utf-8") as f:
-        notes = json_mod.load(f)
-    
-    # 新しいノートを作成
+        notes = json.load(f)
+
     new_note = {
         "start": request.start,
         "end": request.end,
@@ -879,7 +769,7 @@ async def add_note(session_id: str, request: NoteAddRequest):
         "velocity": 0.7,
         "technique": None,
     }
-    
+
     # 時間順でソートされた位置に挿入
     insert_idx = 0
     for i, n in enumerate(notes):
@@ -887,43 +777,16 @@ async def add_note(session_id: str, request: NoteAddRequest):
             insert_idx = i
             break
         insert_idx = i + 1
-    
     notes.insert(insert_idx, new_note)
-    
-    # Save updated notes
+
     with open(assigned_path, "w", encoding="utf-8") as f:
-        json_mod.dump(notes, f, ensure_ascii=False, indent=2)
-    
-    # Regenerate MusicXML
-    from tab_renderer import notes_to_tab_musicxml
-    tuning_name = s.get("tuning", "standard")
-    tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
-    capo = s.get("capo", 0)
-    if capo > 0:
-        tuning = [p + capo for p in tuning]
-    
-    beats_path = session_dir / "beats.json"
-    beats, bpm = [], s.get("bpm", 120)
-    time_sig = s.get("time_signature", "4/4")
-    if beats_path.exists():
-        with open(beats_path, "r") as f:
-            bd = json_mod.load(f)
-        beats = bd.get("beats", [])
-        bpm = bd.get("bpm", bpm)
-        time_sig = bd.get("time_signature", time_sig)
-    
-    xml_content, _ = notes_to_tab_musicxml(
-        notes, beats=beats, bpm=bpm,
-        title=s.get("filename", session_id),
-        tuning=tuning,
-        time_signature=time_sig,
-    )
-    with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
-        f.write(xml_content)
-    
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+
+    _regenerate_musicxml(session_id, notes)
+
     s["total_notes"] = len(notes)
     save_session(session_id)
-    
+
     return {"status": "ok", "action": "added", "note_index": insert_idx, "total_notes": len(notes)}
 
 
