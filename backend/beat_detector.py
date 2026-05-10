@@ -19,6 +19,15 @@ if not hasattr(np, 'float'): np.float = float
 if not hasattr(np, 'complex'): np.complex = complex
 if not hasattr(np, 'bool'): np.bool = bool
 
+# Python 3.10+ patch for madmom: collections.MutableSequence → collections.abc
+import collections
+import collections.abc
+for _attr in ('MutableSequence', 'MutableMapping', 'MutableSet',
+              'Mapping', 'Sequence', 'Callable', 'Iterable',
+              'Iterator', 'Generator'):
+    if not hasattr(collections, _attr) and hasattr(collections.abc, _attr):
+        setattr(collections, _attr, getattr(collections.abc, _attr))
+
 # atexit patch: background threadでのatexitエラーを回避
 _original_atexit_register = atexit.register
 def _safe_atexit_register(*args, **kwargs):
