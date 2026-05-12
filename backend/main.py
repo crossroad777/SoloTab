@@ -66,6 +66,41 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_all_sessions()
+    # バックグラウンドでMoEモデルをプリロード（サーバー応答をブロックしない）
+    import threading
+    def _preload_models():
+        try:
+            t0 = time.time()
+            from pure_moe_transcriber import _FULL_STAGES, _DOMAINS, _CACHED_MODELS
+            import torch
+            mt_dir = os.path.join(os.path.dirname(__file__), "..", "music-transcription", "python")
+            if mt_dir not in sys.path:
+                sys.path.insert(0, mt_dir)
+            from model import architecture  # type: ignore
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            loaded = 0
+            for dname in _DOMAINS:
+                for suffix in _FULL_STAGES:
+                    key = f"finetuned_{dname}_{suffix}"
+                    path = os.path.join(mt_dir, "_processed_guitarset_data", "training_output", key, "best_model.pth")
+                    if os.path.exists(path) and key not in _CACHED_MODELS:
+                        model = architecture.GuitarTabCRNN(
+                            num_frames_rnn_input_dim=1280, rnn_type="GRU",
+                            rnn_hidden_size=768, rnn_layers=2, rnn_dropout=0.3, rnn_bidirectional=True
+                        )
+                        sd = torch.load(path, map_location=device, weights_only=False)
+                        if list(sd.keys())[0].startswith("module."):
+                            sd = {k[7:]: v for k, v in sd.items()}
+                        model.load_state_dict(sd)
+                        model.to(device)
+                        model.eval()
+                        _CACHED_MODELS[key] = model
+                        loaded += 1
+            print(f"[Preload] {loaded} MoE models cached on {device} in {time.time()-t0:.1f}s", flush=True)
+        except Exception as e:
+            print(f"[Preload] Failed (non-blocking): {e}", flush=True)
+            import traceback; traceback.print_exc()
+    threading.Thread(target=_preload_models, daemon=True).start()
     yield
 
 app = FastAPI(
@@ -171,6 +206,8 @@ class ResultResponse(BaseModel):
 @app.post("/upload", response_model=UploadResponse)
 async def upload_audio(file: UploadFile = File(...),
                        tuning: str = Form("standard"),
+                       skip_demucs: bool = Form(False),
+                       fast_moe: bool = Form(True),
                        background_tasks: BackgroundTasks = None):
     """音声ファイルをアップロードして解析開始"""
     session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -204,6 +241,8 @@ async def upload_audio(file: UploadFile = File(...),
         "progress": "アップロード完了",
         "error": None,
         "tuning": tuning if tuning in TUNINGS else "standard",
+        "skip_demucs": skip_demucs,
+        "fast_moe": fast_moe,
     }
     save_session(session_id)
 
@@ -339,7 +378,10 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
 
 def _run_pipeline_bg(session_id: str):
     """Background task: run the analysis pipeline."""
-    from pipeline import run_pipeline
+    import importlib
+    import pipeline as _pipeline_mod
+    importlib.reload(_pipeline_mod)
+    run_pipeline = _pipeline_mod.run_pipeline
 
     session = sessions[session_id]
     session_dir = Path(session["session_dir"])
@@ -381,6 +423,8 @@ def _run_pipeline_bg(session_id: str):
             tuning_name=tuning_name,
             title=song_title,
             progress_cb=progress_cb,
+            skip_demucs=session.get("skip_demucs", False),
+            fast_moe=session.get("fast_moe", True),
         )
 
         session["status"] = SessionStatus.COMPLETED
@@ -566,15 +610,9 @@ async def get_pdf(session_id: str):
 
     # パイプラインでMuseScore生成済みPDFがあればそのまま返す
     if not pdf_path.exists():
-        # MuseScoreで生成を試みる
-        try:
-            from musescore_renderer import render_pdf_with_musescore
-            render_pdf_with_musescore(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
-        except Exception:
-            pass
-
-        # MuseScore失敗時はreportlabフォールバック
-        if not pdf_path.exists():
+        xml_path = session_dir / "tab.musicxml"
+        # reportlab ベースのTAB譜レンダラー（TABスタッフ出力保証）
+        if xml_path.exists():
             try:
                 from pdf_renderer import musicxml_to_pdf
                 musicxml_to_pdf(str(xml_path), str(pdf_path), title=s.get("filename", "Guitar TAB"))
@@ -627,8 +665,16 @@ def _regenerate_musicxml(session_id: str, notes: list,
         bpm = bd.get("bpm", bpm)
         time_sig = bd.get("time_signature", time_sig)
 
-    title = s.get("filename", session_id)
-    gate = noise_gate if noise_gate is not None else 0.15
+    title_raw = s.get("filename", session_id)
+    # GP5 binary format uses Latin-1 encoding internally;
+    # non-Latin-1 characters (e.g. Japanese) cause 'charmap' codec errors
+    try:
+        title_raw.encode('latin-1')
+        title = title_raw
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        import re as _re
+        title = _re.sub(r'[^\x20-\x7E]', '', title_raw).strip() or session_id
+    gate = noise_gate if noise_gate is not None else 0.20
 
     # --- GP5再生成 ---
     try:
@@ -712,6 +758,22 @@ async def retune(session_id: str, request: RetuneRequest):
     # Re-run string assignment
     from string_assigner import assign_strings_dp
     notes = assign_strings_dp(notes, tuning=capo_tuning)
+
+    # フレットクランプ: パイプラインと同等の上限制約
+    MAX_FRET = 12
+    for n in notes:
+        if n.get("fret", 0) > MAX_FRET:
+            pitch = n.get("pitch", 60)
+            base_tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
+            best_str, best_fret = None, 99
+            for s_idx, open_pitch in enumerate(base_tuning):
+                s_num = 6 - s_idx
+                f = pitch - open_pitch
+                if 0 <= f <= MAX_FRET and (best_str is None or f < best_fret):
+                    best_str, best_fret = s_num, f
+            if best_str is not None:
+                n["string"] = best_str
+                n["fret"] = best_fret
 
     # Save reassigned notes（オリジナルは保持、表示用のみ上書き）
     with open(assigned_path, "w", encoding="utf-8") as f:

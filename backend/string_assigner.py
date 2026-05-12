@@ -21,6 +21,7 @@ from guitar_cost_functions import (
     MAX_FRET, WEIGHTS, POSITION_WIDTH,
     _position_cost, _transition_cost, _timbre_cost,
     _ergonomic_cost_chord, _get_max_span,
+    get_finger_candidates, _bio_finger_transition_cost,
 )
 
 # 音楽理論
@@ -382,10 +383,11 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             # CNN弦分類器による候補プルーニング
             cnn_probs = note.get('cnn_string_probs')
             if cnn_probs and len(positions) > 1:
+                # cnn_probsのキーは文字列('1'-'6')、positionsの弦番号は整数(1-6)
                 max_prob = max(cnn_probs.values())
                 if max_prob > 0.5:  # CNNが自信を持っている場合のみ
                     pruned = [(s, f) for s, f in positions
-                              if s in cnn_probs and cnn_probs[s] >= 0.05]
+                              if str(s) in cnn_probs and cnn_probs[str(s)] >= 0.05]
                     if len(pruned) >= 1:
                         positions = pruned
             
@@ -415,8 +417,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             fingering = tuple((n["string"], n["fret"]) for n in assigned)
             group_candidates[gi] = [fingering[0]] if fingering else [(1, 0)]
 
-    # --- Viterbi DP (単音のみ) ---
-    # trellis[gi] = {(s, f): (cumulative_cost, backpointer)}
+    # --- Viterbi DP (単音のみ) --- §4.2 Bio Viterbi: 状態空間 (弦, フレット, 指)
+    # trellis[gi] = {(s, f, finger): (cumulative_cost, backpointer)}
     trellis = [{} for _ in range(n_groups)]
 
     # 初期化 (最初のグループ)
@@ -428,16 +430,16 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         first_pitch = groups[0][0].get('pitch') if len(groups[0]) == 1 else None
         pos_cost = _position_cost(s, f, pitch=first_pitch)
         tmb_cost = _timbre_cost(s, f, tuning)
-        # CNN弦推定ヒントを取り込む
+        # --- 論文§12.2: 初期化でも3アプローチ統合 ---
         cnn_bonus = 0.0
         tfm_bonus = 0.0
         if len(groups[0]) == 1:
             cnn_probs = groups[0][0].get('cnn_string_probs')
-            if cnn_probs and s in cnn_probs:
-                cnn_bonus = -cnn_probs[s] * 30.0  # ボーナス (コスト減)
+            if cnn_probs and str(s) in cnn_probs:
+                cnn_bonus = -cnn_probs[str(s)] * 12.0
             tfm_probs = groups[0][0].get('transformer_string_probs')
-            if tfm_probs and s in tfm_probs:
-                tfm_bonus = -tfm_probs[s] * 20.0  # Transformerボーナス
+            if tfm_probs and str(s) in tfm_probs:
+                tfm_bonus = -tfm_probs[str(s)] * 8.0
         # 初期ポジションからの距離
         init_cost = abs(f - initial_position) * WEIGHTS["w_movement"] * 0.3 if f > 0 else 0.0
         # ⑪ ソロギター用: コードフォーム内ポジション優先
@@ -447,7 +449,9 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             if chord_name:
                 chord_form_cost = _chord_form_position_cost(s, f, chord_name, tuning)
         total = pos_cost + tmb_cost + cnn_bonus + tfm_bonus + init_cost + chord_form_cost
-        trellis[0][(s, f)] = (total, None)
+        # Bio Viterbi: 各指候補で状態を展開
+        for finger in get_finger_candidates(f):
+            trellis[0][(s, f, finger)] = (total, None)
 
     # Forward pass
     for gi in range(1, n_groups):
@@ -464,58 +468,68 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 note_pitch = groups[gi][0].get('pitch') if len(groups[gi]) == 1 else None
                 pos_cost = _position_cost(s, f, pitch=note_pitch)
                 tmb_cost = _timbre_cost(s, f, tuning)
-                trellis[gi][(s, f)] = (pos_cost + tmb_cost, None)
+                for finger in get_finger_candidates(f):
+                    trellis[gi][(s, f, finger)] = (pos_cost + tmb_cost, None)
             continue
 
         for s, f in candidates:
-            best_cost = float('inf')
-            best_prev = None
-
             # Emission cost (このポジション自体のコスト)
             note_pitch = groups[gi][0].get('pitch') if is_single else None
             pos_cost = _position_cost(s, f, pitch=note_pitch)
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
 
-            # CNN弦分類器ヒント
+            # --- 論文§12.2: 3アプローチ統合 ---
+            # [音声パス] CNN弦確率 → emission統合
+            # [記号パス] Transformer弦確率 → emission統合（2パス目のみ有効）
+            # [人間工学パス] position_cost + timbre_cost (上で計算済み)
             if is_single:
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
-                if cnn_probs and s in cnn_probs:
-                    emission -= cnn_probs[s] * 30.0
-                # V3 Transformer運指予測ヒント
+                if cnn_probs and str(s) in cnn_probs:
+                    emission -= cnn_probs[str(s)] * 12.0
                 tfm_probs = groups[gi][0].get('transformer_string_probs')
-                if tfm_probs and s in tfm_probs:
-                    emission -= tfm_probs[s] * 20.0  # Transformerボーナス
+                if tfm_probs and str(s) in tfm_probs:
+                    emission -= tfm_probs[str(s)] * 8.0
                 # ⑪ ソロギター用: コードフォーム内ポジション優先
                 chord_name = groups[gi][0].get("_chord_name", "")
                 if chord_name:
                     emission += _chord_form_position_cost(s, f, chord_name, tuning)
 
             # 全ての前状態からの遷移を評価
-            # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
-            ioi = 999.0  # デフォルト: 制限なし
+            ioi = 999.0
             prev_time = groups[gi - 1][0].get("start", 0)
             cur_time = groups[gi][0].get("start", 0)
             ioi = max(0.01, cur_time - prev_time)
-            # 人間の指の移動速度: 約12フレット/秒が限界
-            # IOI=0.1s → max_reach=1.2f, IOI=0.5s → max_reach=6f, IOI=1s → 12f
             max_fret_reach = min(MAX_FRET, max(2, int(ioi * 12)))
 
-            for (prev_s, prev_f), (prev_cost, _) in prev_trellis.items():
-                trans = _transition_cost(s, f, prev_s, prev_f, dt=ioi)
-                
-                # IOI制約: 物理的に不可能なフレットジャンプにペナルティ
-                fret_jump = abs(f - prev_f) if (f > 0 and prev_f > 0) else 0
-                if fret_jump > max_fret_reach:
-                    trans += (fret_jump - max_fret_reach) * 15.0  # 超過分に大きなペナルティ
-                
-                total = prev_cost + emission + trans
+            # Bio Viterbi: 各指候補で状態を展開
+            for finger in get_finger_candidates(f):
+                best_cost = float('inf')
+                best_prev = None
 
-                if total < best_cost:
-                    best_cost = total
-                    best_prev = (prev_s, prev_f)
+                for (prev_s, prev_f, prev_finger), (prev_cost, _) in prev_trellis.items():
+                    # 法則3: ピッチ近接性弦保持
+                    cur_pitch = groups[gi][0].get('pitch') if is_single else None
+                    prev_pitch = groups[gi-1][0].get('pitch') if len(groups[gi-1]) == 1 else None
+                    trans = _transition_cost(s, f, prev_s, prev_f, dt=ioi,
+                                            pitch=cur_pitch, prev_pitch=prev_pitch)
+                    
+                    # §4.2 Bio: 生体力学的指遷移コスト
+                    trans += _bio_finger_transition_cost(
+                        finger, prev_finger, f, prev_f, s, prev_s)
+                    
+                    # IOI制約: 物理的に不可能なフレットジャンプにペナルティ
+                    fret_jump = abs(f - prev_f) if (f > 0 and prev_f > 0) else 0
+                    if fret_jump > max_fret_reach:
+                        trans += (fret_jump - max_fret_reach) * 15.0
+                    
+                    total = prev_cost + emission + trans
 
-            trellis[gi][(s, f)] = (best_cost, best_prev)
+                    if total < best_cost:
+                        best_cost = total
+                        best_prev = (prev_s, prev_f, prev_finger)
+
+                trellis[gi][(s, f, finger)] = (best_cost, best_prev)
 
     # Backtrack: 最適パスを復元
     result = []
@@ -544,9 +558,9 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             if trellis[gi]:
                 path[gi] = min(trellis[gi].items(), key=lambda x: x[1][0])[0]
             else:
-                path[gi] = (1, 0)
+                path[gi] = (1, 0, 0)
 
-    # パスの結果をノートに適用
+    # パスの結果をノートに適用 (Bio状態 (s, f, finger) → (s, f) 抽出)
     for gi, group in enumerate(groups):
         if gi in chord_results:
             # 和音はすでに割り当て済み
@@ -557,6 +571,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             if state:
                 note["string"] = state[0]
                 note["fret"] = state[1]
+                note["finger"] = state[2]  # Bio指情報も保存
             else:
                 # フォールバック
                 positions = get_possible_positions(note["pitch"], tuning, max_fret)
@@ -678,7 +693,7 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     # minimaxの方が最大ステップコストが小さい場合にのみ置換
     # 保守的閾値: sum-optimalの最大ステップが100以上(明らかに弾けない)
     # かつminimax解が50%以上改善する場合にのみ適用
-    if sum_max_step > 100.0 and mm_max_step < sum_max_step * 0.5:
+    if sum_max_step > 50.0 and mm_max_step < sum_max_step * 0.75:
         replaced = 0
         for i in range(n):
             if mm_path[i] is None:
@@ -937,7 +952,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     if has_cnn:
         print(f"[string_assigner] CNN弦分類器ヒント: {sum(1 for n in notes if n.get('cnn_string_probs'))}音に適用 (Viterbi DPで統合)")
     
-    # === Viterbi DP アーキテクチャ（CNN情報はDP内部でヒントとして使用）===
+    # === Viterbi DP アーキテクチャ ===
+    # 論文§12.2: [音声パス] CNN弦確率 + [人間工学パス] 選好マップ → emission統合
+    # [記号パス] Transformer V3 は Viterbi 1パス目の結果を文脈として使用するため、
+    # DP後に呼び出す（Transformerの入力に弦・フレット文脈が必要）
     groups = _group_simultaneous(notes, threshold=0.01)
 
     # フレーズに分割 (0.5秒以上の休符で区切る)
@@ -974,32 +992,44 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
-    # --- V3 Transformer 2パス目 ---
-    # 1パス目のViterbi結果を文脈として、Transformerで弦予測を実行
-    # 低確信度のノートのみ再割り当て（高確信度はViterbi結果を維持）
+    # --- 論文§12.2 [記号パス]: 2パスViterbi ---
+    # 1パス目: CNN + 人間工学パスのみでViterbi DP実行（上記で完了）
+    # TransformerはViterbi 1パス目の弦・フレット結果を文脈として使用するため、
+    # DP後に確率を注入し、2パス目のViterbi DPで全3パスを統合する。
     result = _predict_string_transformer(result, tuning)
-    tfm_reassigned = 0
-    for note in result:
-        tfm_probs = note.get('transformer_string_probs')
-        if not tfm_probs:
-            continue
-        # CNN確率がある場合はCNNを優先（音声情報のほうが信頼性が高い）
-        if note.get('cnn_string_probs'):
-            continue
-        # Transformer確信度が高い場合のみ再割り当て
-        best_s = max(tfm_probs, key=tfm_probs.get)
-        best_prob = tfm_probs[best_s]
-        current_s = note.get('string', 0)
-        if best_prob > 0.5 and best_s != current_s:
-            # 物理的に弾けるか確認
-            positions = get_possible_positions(note.get('pitch', 60), tuning, max_fret)
-            pos_map = {s: f for s, f in positions}
-            if best_s in pos_map:
-                note['string'] = best_s
-                note['fret'] = pos_map[best_s]
-                tfm_reassigned += 1
-    if tfm_reassigned > 0:
-        print(f"[string_assigner] V3 Transformer再割り当て: {tfm_reassigned}音")
+    has_tfm = any(note.get('transformer_string_probs') for note in result)
+    if has_tfm:
+        tfm_count = sum(1 for n in result if n.get('transformer_string_probs'))
+        print(f"[string_assigner] Transformer V3: {tfm_count}音に弦確率注入 → 2パス目Viterbi DP開始")
+        # 2パス目: Transformer確率もemissionに統合してViterbi DP再実行
+        groups2 = _group_simultaneous(result, threshold=0.01)
+        phrases2 = []
+        current_phrase2 = [groups2[0]]
+        for gi in range(1, len(groups2)):
+            prev_time = current_phrase2[-1][0].get("start", 0)
+            cur_time = groups2[gi][0].get("start", 0)
+            if cur_time - prev_time > 0.5:
+                phrases2.append(current_phrase2)
+                current_phrase2 = []
+            current_phrase2.append(groups2[gi])
+        if current_phrase2:
+            phrases2.append(current_phrase2)
+        
+        result2 = []
+        for phrase in phrases2:
+            if not phrase:
+                continue
+            first_note = phrase[0][0]
+            initial_position = first_note.get("fret", 0)
+            phrase_result = _viterbi_single_notes(
+                phrase, tuning, max_fret, initial_position
+            )
+            result2.extend(phrase_result)
+        
+        # 2パス目の結果で置き換え
+        result = result2
+        result = _minimax_postprocess(result, tuning, max_fret)
+        print(f"[string_assigner] 2パスViterbi完了: 全3パス(CNN+Transformer+人間工学)統合")
 
     # コードポジション連動後処理: 無効化
     # クラシックギターではメロディがハイポジションでもアルペジオは開放弦で弾くため

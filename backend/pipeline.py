@@ -10,6 +10,7 @@ pipeline.py — SoloTab 解析パイプライン
 """
 
 import json
+import os
 import time
 import sys
 import numpy as np
@@ -144,7 +145,9 @@ def _run_demucs_separation(wav_path: Path, session_dir: Path, report) -> tuple:
 def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  tuning_name: str = "standard",
                  title: Optional[str] = None,
-                 progress_cb: Optional[Callable] = None):
+                 progress_cb: Optional[Callable] = None,
+                 skip_demucs: bool = False,
+                 fast_moe: bool = True):
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
@@ -175,8 +178,34 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     downbeats = beat_result.get("downbeats", [])
     report("beats", f"完了: {len(beats)} beats, BPM={bpm}, 拍子={time_signature} ({time.time()-t0:.1f}s)")
 
+    # --- ビートグリッド整合性チェック ---
+    # madmomがBPMとは異なる粒度のパルスを検出する場合がある
+    # (例: 89 BPM報告だがビート配列は132 BPM間隔)
+    # BPMから期待される4分音符間隔と、実際のビート間隔を比較し、
+    # 乖離が大きい場合はBPMベースで等間隔ビートグリッドを再構築する
+    if len(beats) >= 4 and bpm > 0:
+        expected_interval = 60.0 / bpm
+        actual_intervals = [beats[i+1] - beats[i] for i in range(min(20, len(beats)-1))]
+        actual_avg = sum(actual_intervals) / len(actual_intervals)
+        ratio = expected_interval / actual_avg if actual_avg > 0 else 1.0
+
+        if ratio > 1.3 or ratio < 0.7:
+            # ビート間隔がBPMと乖離 → BPMベースで再構築
+            first_beat = beats[0]
+            last_beat = beats[-1]
+            num_true_beats = int(round((last_beat - first_beat) / expected_interval)) + 1
+            new_beats = [first_beat + i * expected_interval for i in range(num_true_beats)]
+            new_beats = [b for b in new_beats if b <= last_beat + expected_interval * 0.5]
+            report("beats", f"ビートグリッド補正: {len(beats)}→{len(new_beats)} beats "
+                   f"(検出間隔={actual_avg:.3f}s → BPM基準={expected_interval:.3f}s, ratio={ratio:.2f})")
+            beats = new_beats
+            downbeats = [beats[i] for i in range(0, len(beats), 3 if time_signature == "3/4" else 4)]
+
     with open(session_dir / "beats.json", "w", encoding="utf-8") as f:
-        json.dump(_to_native(beat_result), f, ensure_ascii=False)
+        json.dump(_to_native({
+            "beats": beats, "bpm": bpm,
+            "time_signature": time_signature, "downbeats": downbeats,
+        }), f, ensure_ascii=False)
 
     # --- Step 1.5: Key Detection ---
     detected_key = None
@@ -216,10 +245,14 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- Step 1.7: Demucs ギタートラック分離 ---
     guitar_wav = str(wav_path)
     is_solo_guitar = False
-    try:
-        guitar_wav, is_solo_guitar = _run_demucs_separation(wav_path, session_dir, report)
-    except Exception as e:
-        report("demucs", f"分離スキップ (元音声を使用): {e}")
+    if skip_demucs:
+        is_solo_guitar = True
+        report("demucs", "スキップ（ソロギターモード）")
+    else:
+        try:
+            guitar_wav, is_solo_guitar = _run_demucs_separation(wav_path, session_dir, report)
+        except Exception as e:
+            report("demucs", f"分離スキップ (元音声を使用): {e}")
 
     # --- Step 2: 音声前処理 (Domain Adaptation) ---
     if is_solo_guitar:
@@ -256,9 +289,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=6,       # 35モデルでの緩い検出（noise_gateで後段調整）
-            onset_threshold=0.3,
-            vote_prob_threshold=0.3
+            vote_threshold=15,      # Recall寄りバランス: デフォルト21→15 (43%合議)
+            onset_threshold=0.5,    # ベンチマーク最適値
+            vote_prob_threshold=0.4, # ベンチマーク最適値
+            fast_mode=False,        # 35モデルフルモード (F1=0.8916)
         )
         report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
@@ -267,10 +301,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- 3b: Basic Pitch ---
     bp_notes_list = []
     try:
-        from basic_pitch.inference import predict as bp_predict
-        report("notes", "Basic Pitch推論中 (高Recall候補検出)...")
+        from basic_pitch.inference import predict as bp_predict, Model as BPModel
+        import basic_pitch
+        # TF 2.20とbasic-pitch 0.4.0のSavedModel非互換を回避:
+        # ONNXモデル(nmp.onnx)を明示的に指定してTFバイパス
+        onnx_model_path = os.path.join(
+            os.path.dirname(basic_pitch.__file__),
+            'saved_models', 'icassp_2022', 'nmp.onnx'
+        )
+        if os.path.exists(onnx_model_path):
+            bp_model = BPModel(onnx_model_path)
+            report("notes", "Basic Pitch推論中 (ONNXバックエンド)...")
+        else:
+            bp_model = None
+            report("notes", "Basic Pitch推論中 (デフォルトバックエンド)...")
         t0 = time.time()
-        _, midi_data, _ = bp_predict(str(transcription_wav))
+        _, midi_data, _ = bp_predict(str(transcription_wav), model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH)
         for inst in midi_data.instruments:
             for note in inst.notes:
                 bp_notes_list.append({
@@ -288,7 +334,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     MOE_SOLO_MIN_VOTE = 4    # MoE独自ノート追加に必要な最小合意数
 
     if bp_notes_list and moe_notes_list:
-        # 融合D: BPとMoEの一致ノート + MoE高確信独自ノートも追加
+        # 融合: BPとMoEの一致ノート + MoE高確信独自ノートも追加
         fused_notes = []
         used_moe = set()
         for bp_n in bp_notes_list:
@@ -298,18 +344,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 onset_diff = abs(bp_n["start"] - moe_n["start"])
                 pitch_diff = abs(bp_n["pitch"] - moe_n["pitch"])
                 if onset_diff < MATCH_ONSET_TOL and pitch_diff <= MATCH_PITCH_TOL:
-                    fused_notes.append(moe_n)  # MoEのフレット情報を保持
+                    # 両方で検出 → 高信頼: velocityをブースト
+                    boosted = dict(moe_n)
+                    boosted["velocity"] = min(1.0, float(moe_n.get("velocity", 0.8)) * 1.2)
+                    fused_notes.append(boosted)
                     used_moe.add(j)
                     break
 
         # MoE独自ノート: BPが拾えなかったがMoEが高確信で検出したノートも追加
-        # これにより速いパッセージの取りこぼしを補う
+        # 閾値を厳しく (0.75) して偽陽性を削減
         moe_only_added = 0
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
                 vel = float(moe_n.get("velocity", 0))
-                if vel >= 0.65:  # Modal版と統一
-                    fused_notes.append(moe_n)
+                if vel >= 0.75:
+                    # MoE独自はvelocityをやや下げて不確実性をマーキング
+                    downgraded = dict(moe_n)
+                    downgraded["velocity"] = vel * 0.85
+                    fused_notes.append(downgraded)
                     moe_only_added += 1
 
         # 時間順にソート
@@ -346,6 +398,33 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             "notes": notes, "total_count": len(notes), "tuning": tuning_name,
             "method": method, "model_stats": model_stats,
         }), f, ensure_ascii=False, indent=2)
+
+    # --- Step 2.35: ビートグリッド位相調整（ノート情報ベース） ---
+    # 最初のベース音（最低音域）に最も近いビートをdownbeat（小節1拍目）にする
+    beats_per_bar = 3 if time_signature == "3/4" else 4
+    if len(notes) > 10 and len(beats) > beats_per_bar * 2:
+        all_pitches = sorted(set(int(n.get("pitch", 60)) for n in notes))
+        bass_threshold = all_pitches[max(1, len(all_pitches) // 10)]
+        bass_onsets = sorted([float(n["start"]) for n in notes if int(n.get("pitch", 60)) <= bass_threshold])
+        
+        if len(bass_onsets) >= 2:
+            first_bass = bass_onsets[0]
+            # first_bassに最も近いビートを探す
+            dists = [abs(b - first_bass) for b in beats]
+            snap_idx = dists.index(min(dists))
+            
+            # snap_idxをdownbeat（小節頭）にする → それ以前のビートを除去
+            if snap_idx > 0:
+                report("beats", f"ビート位相調整: first_bass={first_bass:.3f}s, "
+                       f"nearest_beat[{snap_idx}]={beats[snap_idx]:.3f}s, "
+                       f"trimming {snap_idx} beats")
+                beats = beats[snap_idx:]
+                downbeats = [beats[i] for i in range(0, len(beats), beats_per_bar)]
+                with open(session_dir / "beats.json", "w", encoding="utf-8") as f:
+                    json.dump(_to_native({
+                        "beats": beats, "bpm": bpm,
+                        "time_signature": time_signature, "downbeats": downbeats,
+                    }), f, ensure_ascii=False, indent=2)
 
     # --- Step 2.4: コード検出 ---
     chords = []
@@ -409,12 +488,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     try:
         from music_theory import detect_rhythm_pattern, detect_key_signature
         rhythm_info = detect_rhythm_pattern(notes, beats)
-        detected_key_sig = detect_key_signature(notes)
+        # MIDIベースのキー推定: オーディオベースの確信度が高い場合は上書きしない
+        # オーディオキー検出 (crepe/librosa) > MIDIノート分布推定
+        midi_key = detect_key_signature(notes)
+        if key_confidence < 0.6 or detected_key is None:
+            detected_key_sig = midi_key
+        else:
+            # オーディオ検出が高確信度 → そちらを優先
+            # ただし相対調（EmとD等）の場合はオーディオ側を採用
+            detected_key_sig = detected_key
+            if midi_key != detected_key:
+                print(f"[theory] キー競合: audio={detected_key}(conf={key_confidence:.2f}) vs midi={midi_key} → audio採用")
         
         # 3/4拍子のアルペジオ3連符パターン補正
         # ロマンス等: onset fraction分析では検出できないが、
         # 1拍あたり3音のパターンが支配的なら3連符と判定
-        if time_signature == "3/4" and rhythm_info["subdivision"] == "straight":
+        if time_signature == "3/4" and rhythm_info["subdivision"] in ("straight", "mixed"):
             import numpy as np
             beats_arr = np.array(beats)
             notes_per_beat = []
@@ -426,7 +515,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             if notes_per_beat:
                 avg_npb = np.mean(notes_per_beat)
                 three_ratio = sum(1 for c in notes_per_beat if c == 3) / len(notes_per_beat)
-                two_or_three = sum(1 for c in notes_per_beat if c in [2, 3]) / len(notes_per_beat)
+                two_or_three = sum(1 for c in notes_per_beat if 2 <= c <= 4) / len(notes_per_beat)
+                print(f"[theory] 3/4 arpeggio check: avg_npb={avg_npb:.1f}, 2-4_ratio={two_or_three:.2f}, beats_checked={len(notes_per_beat)}")
                 if avg_npb >= 2.0 and two_or_three >= 0.7:
                     rhythm_info["subdivision"] = "triplet"
                     rhythm_info["triplet_ratio"] = three_ratio
@@ -467,19 +557,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"運指最適化スキップ（元出力をそのまま使用）: {e}")
 
     # --- Step: LSTM運指リファインメント ---
-    # Viterbi DPの弦割り当て結果をBidirectional LSTMで精製。
-    # 前後の音の文脈（ピッチ、IOI、CNN確率）を考慮して弦を再予測。
-    try:
-        from fingering_model import predict_strings as lstm_predict_strings
-        report("assign", "LSTM運指リファインメント中...")
-        t0_lstm = time.time()
-        notes = lstm_predict_strings(notes, tuning=dp_tuning)
-        report("assign", f"LSTM運指リファインメント完了 ({time.time()-t0_lstm:.1f}s)")
-    except Exception as e:
-        report("assign", f"LSTMリファインメントスキップ: {e}")
+    # 無効化: Viterbi DPのみの方がfret 12偏重が発生せず
+    # TAB表示が正常になることを確認済み (2026-05-11)
+    # 再有効化する場合はLSTMの学習データを見直す必要あり
+    # try:
+    #     from fingering_model import predict_strings as lstm_predict_strings
+    #     report("assign", "LSTM運指リファインメント中...")
+    #     t0_lstm = time.time()
+    #     notes = lstm_predict_strings(notes, tuning=dp_tuning)
+    #     report("assign", f"LSTM運指リファインメント完了 ({time.time()-t0_lstm:.1f}s)")
+    # except Exception as e:
+    #     report("assign", f"LSTMリファインメントスキップ: {e}")
 
     # --- フレットクランプ: 異常に高いフレット値を修正 ---
-    MAX_FRET = 12
+    # guitar_cost_functions.MAX_FRET (=15) と統一
+    # Viterbiが15fまでで最適化したパスを12fでクランプすると遷移コストの整合性が壊れる
+    from guitar_cost_functions import MAX_FRET
     clamp_count = 0
     for n in notes:
         if n.get("fret", 0) > MAX_FRET:
@@ -497,6 +590,41 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
 
+    # --- 後処理1: ノート重複除去 ---
+    # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.08秒）で重複検出される場合
+    notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+    DEDUP_WINDOW = 0.08  # 秒
+    dedup_count = 0
+    i = 0
+    while i < len(notes) - 1:
+        n1 = notes[i]
+        n2 = notes[i + 1]
+        if (int(n1.get("pitch", 0)) == int(n2.get("pitch", 0)) and
+            abs(float(n1.get("start", 0)) - float(n2.get("start", 0))) < DEDUP_WINDOW):
+            # velocity の低い方を除去
+            if float(n1.get("velocity", 0)) >= float(n2.get("velocity", 0)):
+                notes.pop(i + 1)
+            else:
+                notes.pop(i)
+            dedup_count += 1
+        else:
+            i += 1
+
+    # Pass 2 は無効化: CRNNの0.2秒間隔重複はtriplet-eighth(0.224秒)と区別できないため、
+    # タイムウィンドウベースの除去は正当な音を消すリスクが高い。
+    # 代わりにtab_renderer.pyのtriplet再割り当てで同一位置のノートを統合する。
+
+    if dedup_count > 0:
+        report("assign", f"ノート重複除去: {dedup_count}ノート統合")
+
+    # --- 後処理2: キー制約フィルタ ---
+    # 無効化: キー制約フィルタはピッチ検出結果を破壊する可能性があるため無効化
+    # Em楽曲がDキーで補正される問題を根本的に回避
+    # MoEのピッチ検出精度が十分高い場合、スケール外の音は
+    # 装飾音・経過音の可能性が高く、「最近隣補正」は適切でない
+    key_fix_count = 0
+    print(f"[DEBUG] key_filter: DISABLED (detected_key_sig={detected_key_sig}, key_confidence={key_confidence})", flush=True)
+
     # Save assigned notes
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
         json.dump(_to_native(notes), f, ensure_ascii=False, indent=2)
@@ -506,6 +634,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     t0 = time.time()
 
     title = title or session_dir.name
+    # GP5 binary format requires Latin-1 compatible title
+    try:
+        title.encode('latin-1')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        import re
+        title = re.sub(r'[^\x20-\x7E]', '', title).strip() or session_dir.name
 
     # GP5生成 (AlphaTab ネイティブ形式 — メイン出力)
     try:
@@ -518,7 +652,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             time_signature=time_signature,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
-            noise_gate=0.15,
+            noise_gate=0.20,
         )
         gp5_path = session_dir / "tab.gp5"
         with open(gp5_path, "wb") as f:
@@ -564,7 +698,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         if not Path(MUSESCORE_EXE).exists():
             raise FileNotFoundError(f"MuseScore not found: {MUSESCORE_EXE}")
         sp.run(
-            [MUSESCORE_EXE, "-o", str(pdf_path), str(musicxml_path)],
+            [MUSESCORE_EXE, "-o", str(pdf_path), str(gp5_path)],
             capture_output=True, text=True, timeout=120,
             encoding="utf-8", errors="replace"
         )

@@ -25,19 +25,19 @@ import numpy as np
 
 MAX_FRET = 15  # アコースティックギターの実用フレット範囲
 
-# --- 重みパラメータ ---
-WEIGHTS = {
+# --- 重みパラメータ (デフォルト値) ---
+_DEFAULT_WEIGHTS = {
     # 位置コスト
-    "w_fret_height":          0.05,   # フレット高コスト (PDL最適化: 0.8→0.05 中フレット許容)
-    "w_high_fret_extra":      4.5,    # 9f超追加コスト (PDL最適化: 3.0→4.5 極端なハイポジ回避)
+    "w_fret_height":          0.05,   # フレット高コスト
+    "w_high_fret_extra":      4.5,    # 9f超追加コスト
     "w_low_string_high_fret": 1.5,    # 低弦(4-6弦)ハイフレット倍率
-    "w_sweet_spot_bonus":    -1.0,    # sweet spot (0-9f) ボーナス (PDL最適化: -1.5→-1.0)
+    "w_sweet_spot_bonus":    -1.0,    # sweet spot (0-9f) ボーナス
 
     # 遷移コスト（ポジション連続性を強く重視）
     "w_movement":            15.0,    # ポジション移動コスト (フレット差に比例)
     "w_position_shift":      50.0,    # ポジション跨ぎ追加コスト (4f超の移動)
     "w_string_switch":        2.0,    # 弦切り替えコスト (弦距離に比例)
-    "w_same_string_repeat":   5.5,    # ⑧ 右手PIMA: 同弦連打ペナルティ (PDL最適化: 5.0→5.5)
+    "w_same_string_repeat":   5.5,    # ⑧ 右手PIMA: 同弦連打ペナルティ
 
     # 人間工学コスト
     "w_fret_span":          100.0,    # 和音フレットスパンコスト
@@ -46,8 +46,8 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,    # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
 
     # 音色コスト
-    "w_open_string_bonus":   -5.0,    # 開放弦ボーナス（開放弦を適切に活用）
-    "w_open_match_bonus":   -15.0,    # 開放弦でしか出せない音のボーナス
+    "w_open_string_bonus":  -15.0,    # 開放弦ボーナス（開放弦を強く優遇）
+    "w_open_match_bonus":   -25.0,    # 開放弦でしか出せない音のボーナス
     "w_barre_bonus":         -5.0,    # バレーコードボーナス (per extra string)
 
     # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
@@ -56,11 +56,129 @@ WEIGHTS = {
     "w_bass_wrong_string":  25.0,    # ベース音が高弦(1-3弦)にいるペナルティ
     # 人間運指選好 (IDMT human fingering)
     "w_human_pref_bonus":   -15.0,   # 人間が好むポジションへのボーナス
+
+    # 法則3: ピッチ近接性弦保持 (3半音境界ルール)
+    # <3半音 → 同弦維持ボーナス, ≥3半音 → 隣接弦遷移を許容
+    "w_pitch_proximity_same_string":  -8.0,   # <3半音で同弦維持ボーナス
+    "w_pitch_proximity_adj_string":   -3.0,   # ≥3半音で隣接弦遷移ボーナス
 }
+
+
+def _load_pdl_weights() -> dict:
+    """
+    PDL(Path Difference Learning)最適化重みをロード。
+    optimized_weights.json が存在すれば、該当キーのみ上書きする。
+    
+    注意: PDLはTheory pathのみの最適化(65%)。3アプローチ統合環境では
+    一部のキー（開放弦ボーナス等）はTheory pathの差別化要因として
+    デフォルト値を維持する。
+    """
+    weights = dict(_DEFAULT_WEIGHTS)
+    pdl_path = os.path.join(os.path.dirname(__file__), 'optimized_weights.json')
+    # 3アプローチ統合で保護するキー（Theory pathの差別化に重要）
+    _PROTECTED_KEYS = {"w_open_string_bonus", "w_open_match_bonus", 
+                       "w_human_pref_bonus", "w_bass_low_string", "w_melody_high_string"}
+    if os.path.exists(pdl_path):
+        try:
+            with open(pdl_path, 'r', encoding='utf-8') as f:
+                pdl_data = json.load(f)
+            pdl_weights = pdl_data.get('weights', {})
+            merged, skipped = 0, 0
+            for key, val in pdl_weights.items():
+                if key in _PROTECTED_KEYS:
+                    skipped += 1
+                    continue
+                if key in weights:
+                    weights[key] = val
+                    merged += 1
+            acc = pdl_data.get('string_accuracy', 0)
+            print(f"[guitar_cost] PDL重み適用: {merged}個上書き, {skipped}個保護 (PDL精度={acc:.4f})")
+        except Exception as e:
+            print(f"[guitar_cost] PDL重みロード失敗: {e}")
+    return weights
+
+
+WEIGHTS = _load_pdl_weights()
 
 # --- ポジション定義 ---
 # ギタリストは「ポジション」単位で指板を認識する
 POSITION_WIDTH = 4  # 1ポジションのフレット幅（人差指〜小指）
+
+# --- §4.1 Bio Viterbi: 生体力学的制約 ---
+# 指の最大スパン (論文 Table §4.1)
+_BIO_MAX_SPAN = {
+    (1, 2): 4,   # 人差し指-中指: 3-4フレット
+    (1, 3): 5,   # 人差し指-薬指: 4-5フレット
+    (1, 4): 6,   # 人差し指-小指: 4-6フレット
+    (2, 3): 3,   # 中指-薬指: 2-3フレット
+    (2, 4): 4,   # 中指-小指: 3-4フレット
+    (3, 4): 3,   # 薬指-小指: 2-3フレット
+}
+
+
+def get_finger_candidates(f: int) -> List[int]:
+    """
+    §4.2: フレットfに対して可能な指を返す。
+    指: 0=なし(開放弦), 1=人差し, 2=中, 3=薬, 4=小指
+    """
+    if f == 0:
+        return [0]  # 開放弦: 指なし
+    fingers = []
+    for finger in range(1, 5):
+        # このフレットをこの指で押さえるとポジションは position = f - (finger - 1)
+        position = f - (finger - 1)
+        if position >= 1:
+            fingers.append(finger)
+    return fingers if fingers else [1]
+
+
+def _bio_finger_transition_cost(finger: int, prev_finger: int,
+                                 f: int, prev_f: int,
+                                 s: int, prev_s: int) -> float:
+    """
+    §4.2: 生体力学的指遷移コスト。
+    
+    制約:
+    1. 指の順序制約: fret(人差し指) ≤ fret(中指) ≤ fret(薬指) ≤ fret(小指)
+    2. スパン制限: 指ペアごとの最大フレット幅
+    3. 同一指の異フレット連打: 不自然な動き
+    4. 腱結合(enslaving): 薬指の動きは中指・小指に不随意的に影響
+    """
+    cost = 0.0
+    
+    # 開放弦は指制約なし
+    if finger == 0 or prev_finger == 0:
+        return 0.0
+    
+    # 1. 指の順序制約 (絶対制約)
+    # 同一弦上で、高いフレットに低い番号の指 → 指交差 → 大ペナルティ
+    if s == prev_s:
+        if f > prev_f and finger < prev_finger:
+            cost += 30.0  # 指交差ペナルティ
+        elif f < prev_f and finger > prev_finger:
+            cost += 30.0  # 逆方向の指交差
+    
+    # 2. 同一指の異フレット連打 → 物理的に指を移動する必要がある
+    if finger == prev_finger and f != prev_f:
+        cost += 15.0
+    
+    # 3. スパン制約
+    if finger != prev_finger and f > 0 and prev_f > 0:
+        span = abs(f - prev_f)
+        pair = (min(finger, prev_finger), max(finger, prev_finger))
+        max_span = _BIO_MAX_SPAN.get(pair, 6)
+        if span > max_span:
+            cost += (span - max_span) * 8.0
+    
+    # 4. 腱結合(enslaving): 薬指(3)使用時、中指(2)・小指(4)のスパンに制約
+    if finger == 3 or prev_finger == 3:
+        other = prev_finger if finger == 3 else finger
+        if other in (2, 4):
+            span = abs(f - prev_f)
+            if span > 2:
+                cost += (span - 2) * 5.0  # 腱結合による追加制約
+    
+    return cost
 
 
 # =============================================================================
@@ -171,7 +289,8 @@ def _position_cost(s: int, f: int, pitch: int = None) -> float:
 
 def _transition_cost(s: int, f: int,
                      prev_s: int, prev_f: int,
-                     dt: float = 0.5) -> float:
+                     dt: float = 0.5,
+                     pitch: int = None, prev_pitch: int = None) -> float:
     """
     遷移コスト: 前のポジションから今のポジションへの移動コスト。
     ポジション移動量 + 弦切り替え距離 + 生体力学的制約に基づく。
@@ -180,6 +299,10 @@ def _transition_cost(s: int, f: int,
     - ポジション移動は手全体の移動としてモデル化
     - 速いパッセージでの大きな移動は物理的に困難
     - 同弦上のフレット順序 = 指順序（暗黙的指割り当て）
+
+    法則3: ピッチ近接性弦保持 (3半音境界ルール)
+    - <3半音: 同弦維持が優勢 (96.6%→63.0%→18.7%)
+    - ≥3半音: 隣接弦遷移が優勢 (80.1%→96.0%)
     """
     cost = 0.0
 
@@ -216,6 +339,19 @@ def _transition_cost(s: int, f: int,
     else:
         # ⑧ 右手PIMA制約: 同じ弦の連打は右手の同指連打になり困難
         cost += WEIGHTS["w_same_string_repeat"]
+
+    # --- 法則3: ピッチ近接性弦保持 (3半音境界ルール) ---
+    # 810万ノートの統計: <3半音→同弦96.6~63%, ≥3半音→隣接弦80~96%
+    if pitch is not None and prev_pitch is not None:
+        interval = abs(pitch - prev_pitch)
+        if interval < 3:
+            # <3半音: 同弦維持を強くボーナス
+            if s == prev_s:
+                cost += WEIGHTS["w_pitch_proximity_same_string"]  # 負=ボーナス
+        else:
+            # ≥3半音: 隣接弦遷移をボーナス
+            if string_dist == 1:
+                cost += WEIGHTS["w_pitch_proximity_adj_string"]  # 負=ボーナス
 
     return cost
 

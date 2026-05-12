@@ -13,7 +13,7 @@ export default function SoloTabApp() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
-  const [noiseGate, setNoiseGate] = useState(0.15);
+  const [noiseGate, setNoiseGate] = useState(0.20);
   const [loopA, setLoopA] = useState(null);
   const [loopB, setLoopB] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -24,6 +24,7 @@ export default function SoloTabApp() {
   const [capo, setCapo] = useState(0);
   const [history, setHistory] = useState([]);
   const [toast, setToast] = useState(null);
+  const [soloGuitar, setSoloGuitar] = useState(true);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
@@ -31,7 +32,7 @@ export default function SoloTabApp() {
   const audioRef = useRef(null);
   const sseRef = useRef(null);
   const fileInputRef = useRef(null);
-  const alphaTabApiRef = useRef(null);
+  // alphaTabApiRef removed (AlphaTab排除済み)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -208,6 +209,8 @@ export default function SoloTabApp() {
     setStepsDone(0);
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("skip_demucs", soloGuitar);
+    formData.append("fast_moe", "true");
     try {
       const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
@@ -449,6 +452,16 @@ export default function SoloTabApp() {
               </button>
             </div>
 
+            {/* Solo Guitar Mode Toggle */}
+            <label className="solo-toggle" onClick={(e) => e.stopPropagation()} style={{
+              display: 'flex', alignItems: 'center', gap: 8, margin: '12px auto 0',
+              cursor: 'pointer', fontSize: '0.85rem', color: 'var(--st-text-dim)',
+              userSelect: 'none', width: 'fit-content',
+            }}>
+              <input type="checkbox" checked={soloGuitar} onChange={(e) => setSoloGuitar(e.target.checked)}
+                style={{ accentColor: 'var(--st-accent)', width: 16, height: 16 }} />
+              <span>🎸 ソロギターモード <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>(Demucs分離スキップ・高速)</span></span>
+            </label>
 
 
             {status === STATUS.FAILED && (
@@ -733,12 +746,6 @@ export default function SoloTabApp() {
                 key={retuneKey}
                 sessionId={session.id}
                 apiBase={API_BASE}
-                currentTime={currentTime}
-                isPlaying={isPlaying}
-                onSeek={handleSeek}
-                transpose={transpose}
-                capo={capo}
-                onApiReady={(api) => { alphaTabApiRef.current = api; }}
               />
             </div>
           </>

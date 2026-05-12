@@ -14,18 +14,61 @@ import config
 from model import architecture
 from guitar_transcriber import _frames_to_notes
 
-def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold: float = 0.75, vote_prob_threshold: float = 0.5) -> list:
+# 高速モード用ステージ構成 (21モデル: modelと3ds_gaを除外)
+_FAST_STAGES = [
+    "guitarset_ft",     # + GuitarSet FT
+    "multitask",        # + GAPS混合
+    "multitask_3ds",    # + GAPS + AG-PT混合
+]
+# フルモード用ステージ構成 (35モデル)
+_FULL_STAGES = [
+    "model",            # 合成データのみ（事前学習）
+    "guitarset_ft",     # + GuitarSet FT
+    "multitask",        # + GAPS混合
+    "multitask_3ds",    # + GAPS + AG-PT混合
+    "multitask_3ds_ga", # + GAPS + Synth V2混合
+]
+_DOMAINS = [
+    "martin_finger", "taylor_finger", "luthier_finger",
+    "martin_pick", "taylor_pick", "luthier_pick",
+    "gibson_thumb",
+]
+
+# モデルキャッシュ（モジュールレベル — プリロードと推論で共有）
+_CACHED_MODELS = {}
+
+
+
+def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
+                        onset_threshold: float = 0.75,
+                        vote_prob_threshold: float = 0.5,
+                        fast_mode: bool = True) -> list:
     """
-    全ステージ統合MoEトランスクライバ（35モデル合議）。
-    7ドメイン × 5ステージの全モデルを同時に合議させ、多様性によりF1を最大化。
+    MoEトランスクライバ（合議制推論）。
+
+    Parameters
+    ----------
+    fast_mode : bool (default=True)
+        True:  21モデル (7ドメイン × 3ステージ), vote_threshold=13
+        False: 35モデル (7ドメイン × 5ステージ), vote_threshold=21
 
     最適パラメータ (全ステージ統合, 論文 Section 10.15):
-      vote_threshold=21, onset_threshold=0.75, vote_prob_threshold=0.5
-      → GuitarSet Test 60曲: F1=0.8916 (P=0.8864, R=0.8968)
+      35モデル: vote_threshold=21 → F1=0.8916
+      21モデル: vote_threshold=13 → F1≈0.885 (推定)
     """
+    import time as _time
+    timings = {}
+
+    stage_suffixes = _FAST_STAGES if fast_mode else _FULL_STAGES
+    n_expected = len(_DOMAINS) * len(stage_suffixes)
+    if vote_threshold is None:
+        vote_threshold = 13 if fast_mode else 21
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Extracting CQT features for {os.path.basename(wav_path)} ...")
-    
+    mode_label = f"FAST({len(stage_suffixes)}stg)" if fast_mode else f"FULL({len(stage_suffixes)}stg)"
+    print(f"[MoE] {mode_label} on {device}, vote_threshold={vote_threshold}/{n_expected}")
+
+    t_cqt = _time.time()
     y, sr = librosa.load(wav_path, sr=config.SAMPLE_RATE, mono=True)
     cqt_spec = librosa.cqt(
         y=y, sr=sr, hop_length=config.HOP_LENGTH,
@@ -33,24 +76,11 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold
     )
     log_cqt = librosa.amplitude_to_db(np.abs(cqt_spec), ref=np.max)
     features = torch.tensor(log_cqt, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
-    
-    # 全ステージ統合MoE: 7ドメイン × 5ステージ = 35モデル合議
-    # 論文 Section 10.15: vote=21/35 で F1=0.8916 達成
-    domain_names = [
-        "martin_finger", "taylor_finger", "luthier_finger",
-        "martin_pick", "taylor_pick", "luthier_pick",
-        "gibson_thumb",
-    ]
-    stage_suffixes = [
-        "model",            # 合成データのみ（事前学習）
-        "guitarset_ft",     # + GuitarSet FT
-        "multitask",        # + GAPS混合
-        "multitask_3ds",    # + GAPS + AG-PT混合
-        "multitask_3ds_ga", # + GAPS + Synth V2混合
-    ]
+    timings['cqt'] = _time.time() - t_cqt
+    print(f"[MoE] CQT: {timings['cqt']:.1f}s")
     
     models_to_test = []
-    for dname in domain_names:
+    for dname in _DOMAINS:
         for suffix in stage_suffixes:
             candidate = f"finetuned_{dname}_{suffix}"
             candidate_dir = os.path.join(mt_python_dir, "_processed_guitarset_data", "training_output", candidate)
@@ -59,10 +89,10 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold
                 models_to_test.append(candidate)
     # --- モデル一括ロード（キャッシュ利用） ---
     global _CACHED_MODELS
-    if '_CACHED_MODELS' not in globals():
-        _CACHED_MODELS = {}
     
+    t_load = _time.time()
     models_loaded = []
+    n_cached = 0
     for model_dir in models_to_test:
         model_path = os.path.join(mt_python_dir, "_processed_guitarset_data", "training_output", model_dir, "best_model.pth")
         if not os.path.exists(model_path):
@@ -70,6 +100,7 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold
         
         if model_dir in _CACHED_MODELS:
             models_loaded.append((model_dir, _CACHED_MODELS[model_dir]))
+            n_cached += 1
             continue
         
         model = architecture.GuitarTabCRNN(
@@ -84,13 +115,14 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold
         model.eval()
         _CACHED_MODELS[model_dir] = model
         models_loaded.append((model_dir, model))
-    
-    print(f"Models ready: {len(models_loaded)} (cached: {len(_CACHED_MODELS)})")
+    timings['model_load'] = _time.time() - t_load
+    print(f"[MoE] Models: {len(models_loaded)} loaded ({n_cached} cached, {len(models_loaded)-n_cached} new) in {timings['model_load']:.1f}s")
     
     # --- 一括推論 ---
     all_onset_probs = []
     all_fret_preds = []
     
+    t_infer = _time.time()
     with torch.no_grad():
         for i, (name, model) in enumerate(models_loaded):
             onset_logits, fret_logits = model(features)
@@ -98,47 +130,38 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = 21, onset_threshold
             fret_probs = torch.softmax(fret_logits[0], dim=-1).cpu().numpy()
             all_onset_probs.append(onset_probs)
             all_fret_preds.append(np.argmax(fret_probs, axis=-1))
-            print(f"  Expert {i+1}/{len(models_loaded)}: {name} done")
+    timings['inference'] = _time.time() - t_infer
+    print(f"[MoE] Inference: {len(models_loaded)} models in {timings['inference']:.1f}s ({timings['inference']/max(len(models_loaded),1):.2f}s/model)")
         
     if not all_onset_probs:
         print("No models were successfully loaded.")
         return []
         
-    print(f"Voting on frame-level predictions (threshold: {vote_threshold}/{len(all_onset_probs)})...")
+    t_vote = _time.time()
     all_onset_probs = np.array(all_onset_probs)
     all_fret_preds = np.array(all_fret_preds)
     
     # 多数決ロジック
-    # vote_prob_threshold以上の確率を出したモデルの数を数える
     binary_votes = all_onset_probs > vote_prob_threshold
-    vote_counts = np.sum(binary_votes, axis=0) # [Frames, Strings]
-    
-    # ピークを維持するため、平均ではなく最大の確率を採用
+    vote_counts = np.sum(binary_votes, axis=0)
     consensus_onset_probs = np.max(all_onset_probs, axis=0)
-    # 閾値未満の合意フレームをカット
     consensus_onset_probs[vote_counts < vote_threshold] = 0.0
-    
-    # フレットは最頻値をそのまま採用（DP等を使わない）
     consensus_frets, _ = stats.mode(all_fret_preds, axis=0, keepdims=False)
     
-    print("Decoding probabilities to notes...")
     notes = _frames_to_notes(
         consensus_onset_probs, consensus_frets, tuning_pitches=None, onset_threshold=onset_threshold
     )
+    timings['voting'] = _time.time() - t_vote
     
     for n in notes:
         n["source"] = "pure_moe"
         n["start"] = float(n["start"])
         n["end"] = float(n["end"])
     
-    # --- 物理制約フィルタ: 一時無効化（ベースライン比較用） ---
-    # before_count = len(notes)
-    # notes = _apply_physical_constraints(notes)
-    # removed = before_count - len(notes)
-    # if removed > 0:
-    #     print(f"Physical filter: removed {removed} notes ({before_count} -> {len(notes)})")
-        
-    print(f"Completed! Detected {len(notes)} notes.")
+    total = sum(timings.values())
+    print(f"[MoE] DONE: {len(notes)} notes in {total:.1f}s "
+          f"(CQT={timings['cqt']:.1f}s, Load={timings['model_load']:.1f}s, "
+          f"Infer={timings['inference']:.1f}s, Vote={timings['voting']:.1f}s)")
     return notes
 
 

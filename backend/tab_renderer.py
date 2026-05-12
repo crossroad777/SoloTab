@@ -390,7 +390,7 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
     
     entries: List[dict] = []
 
-    for note in sorted_notes:
+    for note_idx, note in enumerate(sorted_notes):
         t = float(note["start"])
         
         # Find the beat that is strictly before or exactly at t
@@ -431,9 +431,41 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
         beat_pos = bar * (beats_per_bar * divisions) + beat_in_bar * divisions + sub_divs
         beat_interval = (float(beats_arr[1]) - float(beats_arr[0])) if len(beats_arr) > 1 else 0.5
 
-        # --- ノートの実際の持続時間を秒→divisions変換 ---
-        note_end = float(note.get("end", t + beat_interval))
-        actual_dur_sec = max(0.01, note_end - t)
+        # --- 知覚的音長推定（心理音響学ベース） ---
+        # 人間の脳は2つの入力から音の長さを判定する：
+        #   1. 次のonsetまでの間隔（前方マスキング効果）
+        #   2. サステイン（音の物理的減衰）
+        # 次のonsetが近い（統合窓内）→ onset間隔が支配
+        # 次のonsetが遠い/ない → サステインが支配
+
+        # 心理音響学の定数（研究文献の平均値）
+        INTEGRATION_WINDOW = 0.300   # 広域時間統合窓: 100-300ms → 上限300ms
+        MIN_AUDIBLE_DURATION = 0.030 # 最小可聴持続時間: 30-70ms → 下限30ms
+
+        note_end_crnn = float(note.get("end", t + beat_interval))
+        crnn_dur = max(MIN_AUDIBLE_DURATION, note_end_crnn - t)
+
+        # 次のノートのonset時刻を探す（同時発音はスキップ）
+        onset_dur = None
+        for k in range(note_idx + 1, len(sorted_notes)):
+            next_t = float(sorted_notes[k]["start"])
+            if next_t > t + 0.01:  # 同時発音はスキップ
+                onset_dur = next_t - t
+                break
+
+        # 知覚的音長の推定
+        if onset_dur is None:
+            # 最後の音 → サステインのみ（ケース2）
+            actual_dur_sec = crnn_dur
+        elif onset_dur <= INTEGRATION_WINDOW:
+            # 次のonsetが統合窓内 → onset間隔が支配（ケース1: 前方マスキング）
+            actual_dur_sec = onset_dur
+        else:
+            # 次のonsetが遠い → サステインとonset間隔の短い方（ケース3）
+            actual_dur_sec = min(onset_dur, crnn_dur)
+
+        actual_dur_sec = max(MIN_AUDIBLE_DURATION, actual_dur_sec)
+
         # 秒→divisions: 1拍 = beat_interval秒 = divisions (12) divs
         actual_dur_divs = max(1, int(round(actual_dur_sec / beat_interval * divisions)))
 
@@ -449,6 +481,114 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
             "velocity": note.get("velocity", 0.5),
             "start_time": t,
         })
+
+    # --- tripletモード: 小節内メロディノートを時間順に3個ずつ拍に割り当て ---
+    # frac位置ベースのbeat_num判定は境界でズレるため、
+    # 小節内の全メロディノートを時間順にソートし、3個ずつ拍(beat)に配分する
+    # ベース音(pitch<=52)はVoice2で別処理されるため、ここではスキップ
+    is_triplet = (rhythm_info or {}).get('subdivision') == 'triplet'
+    split_pitch = 52  # gp_renderer.pyのsplit_pitchと統一
+    if is_triplet and entries:
+        from collections import defaultdict
+        # 小節ごとにメロディノートをグループ化
+        bar_groups = defaultdict(list)
+        for i, e in enumerate(entries):
+            if int(e.get('pitch', 60)) <= split_pitch:
+                continue  # ベース音はスキップ
+            bar_groups[e['bar']].append(i)
+
+        # 各小節内で時間順にソートし、3個ずつ拍に配分
+        triplet_subs = [0, 4, 8]
+        max_melody_per_bar = beats_per_bar * 3  # 3/4拍子 → 9
+        remove_indices = set()
+        for bar, indices in bar_groups.items():
+            indices.sort(key=lambda i: entries[i]['start_time'])
+
+            # Step 0: 統合窓ベースの同一ピッチ除去（心理音響学）
+            # 人間の広域時間統合窓(300ms)内の同一ピッチは1つの音として知覚される。
+            # ただしリズム上の最小音価より小さい窓を使用（正当な繰り返しを保護）。
+            beat_interval_sec = (float(beats_arr[1]) - float(beats_arr[0])) if len(beats_arr) > 1 else 0.5
+            min_rhythmic_unit = beat_interval_sec / 3  # triplet-eighth
+            # 統合窓 = 最小音価の60% — 正当な音の間隔未満で、ゴースト再アタックを捕捉
+            INTEGRATION_WINDOW_DEDUP = min(0.300, min_rhythmic_unit * 0.6)
+            cleaned = []
+            for idx in indices:
+                if cleaned:
+                    prev_idx = cleaned[-1]
+                    prev_pitch = int(entries[prev_idx].get('pitch', 0))
+                    curr_pitch = int(entries[idx].get('pitch', 0))
+                    time_diff = entries[idx]['start_time'] - entries[prev_idx]['start_time']
+                    if prev_pitch == curr_pitch and time_diff < INTEGRATION_WINDOW_DEDUP:
+                        # 統合窓内の同一ピッチ → 1音として知覚 → 低velocity側を除去
+                        if float(entries[idx].get('velocity', 0)) > float(entries[prev_idx].get('velocity', 0)):
+                            remove_indices.add(prev_idx)
+                            cleaned[-1] = idx
+                        else:
+                            remove_indices.add(idx)
+                        continue
+                cleaned.append(idx)
+            indices = cleaned
+
+            # Step 1: 超過分を除去 — 同一ピッチ連続を優先除去
+            # アルペジオでは直前と同じ音の連打は誤検出の可能性が高い
+            if len(indices) > max_melody_per_bar:
+                # まず同一ピッチ連続ペアを特定し、低velocity側を除去
+                to_remove_priority = []
+                for j in range(1, len(indices)):
+                    prev_p = int(entries[indices[j-1]].get('pitch', 0))
+                    curr_p = int(entries[indices[j]].get('pitch', 0))
+                    if prev_p == curr_p:
+                        # 低velocity側を除去候補に
+                        prev_v = float(entries[indices[j-1]].get('velocity', 0.5))
+                        curr_v = float(entries[indices[j]].get('velocity', 0.5))
+                        if curr_v <= prev_v:
+                            to_remove_priority.append(indices[j])
+                        else:
+                            to_remove_priority.append(indices[j-1])
+
+                excess = len(indices) - max_melody_per_bar
+                # 同一ピッチ連続から優先的に除去
+                removed = 0
+                for idx in to_remove_priority:
+                    if removed >= excess:
+                        break
+                    if idx not in remove_indices:
+                        remove_indices.add(idx)
+                        removed += 1
+
+                # まだ超過なら低velocity順で除去
+                if removed < excess:
+                    remaining_indices = [i for i in indices if i not in remove_indices]
+                    by_vel = sorted(remaining_indices, key=lambda i: float(entries[i].get('velocity', 0.5)))
+                    for k in range(excess - removed):
+                        if k < len(by_vel):
+                            remove_indices.add(by_vel[k])
+
+                indices = [i for i in indices if i not in remove_indices]
+                indices.sort(key=lambda i: entries[i]['start_time'])
+
+            for pos_idx, entry_idx in enumerate(indices):
+                beat_num = pos_idx // 3  # 0,1,2番目→beat0, 3,4,5→beat1, 6,7,8→beat2
+                sub_idx = pos_idx % 3    # 拍内の位置: 0→0, 1→4, 2→8
+                if beat_num >= beats_per_bar:
+                    beat_num = beats_per_bar - 1
+                    sub_idx = 2  # 溢れたノートは最後の拍の最後に
+                new_sub = triplet_subs[sub_idx]
+                new_beat_pos_in_bar = beat_num * divisions + new_sub
+                new_beat_pos_abs = bar * (beats_per_bar * divisions) + new_beat_pos_in_bar
+                entries[entry_idx]['beat_pos_in_bar'] = new_beat_pos_in_bar
+                entries[entry_idx]['beat_pos_absolute'] = new_beat_pos_abs
+
+        # 除去対象のエントリを削除
+        if remove_indices:
+            entries = [e for i, e in enumerate(entries) if i not in remove_indices]
+
+        # --- パターン補完（現在無効化） ---
+        # 弦割り当て精度が不十分なため、補完音が誤った弦/フレットになる。
+        # 正しい8音 > 間違った9音。
+        # CRNNの弦割り当て精度が向上した段階で再有効化を検討。
+        # 実装は git 履歴を参照。
+
 
     # beat_pos: _group_by_time が参照するキーを設定
     for e in entries:

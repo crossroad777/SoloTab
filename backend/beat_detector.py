@@ -116,9 +116,20 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
     bpm = _cross_validate_bpm(bpm, wav_path, beats)
 
     # --- 拍子推定 (3/4 vs 4/4) ---
-    time_signature, downbeats = _detect_time_signature(
+    time_signature, downbeats, downbeat_phase = _detect_time_signature(
         wav_path, beats, bpm, activations
     )
+
+    # --- ビートグリッドの位相調整 ---
+    # madmomのbeats配列の先頭がdownbeat（1拍目）とは限らない。
+    # downbeat_phaseを使って、最初のdownbeat以前のビートを削除する。
+    if downbeat_phase > 0 and downbeat_phase < len(beats):
+        print(f"[beat_detector] Phase alignment: trimming {downbeat_phase} beats "
+              f"before first downbeat (beat[0]={beats[0]:.3f}s -> beat[{downbeat_phase}]={beats[downbeat_phase]:.3f}s)")
+        beats = beats[downbeat_phase:]
+        # downbeatsもbeatsと整合させる
+        beats_per_bar = 3 if time_signature == "3/4" else 4
+        downbeats = beats[::beats_per_bar].tolist()
 
     # --- 3/4拍子のBPM補正 ---
     # クロスバリデーション後もまだ高い場合のみ適用
@@ -296,35 +307,41 @@ def _detect_time_signature(
     2. librosa の onset strength のアクセントパターンから推定
     3. ビート間隔の周期性から推定
 
-    Returns: (time_signature, downbeats)
+    Returns: (time_signature, downbeats, downbeat_phase)
+        downbeat_phase: beatsリストの何番目が最初のdownbeatかを示すインデックス
+                        0 = 先頭がdownbeat, 1 = 2番目がdownbeat, ...
     """
     downbeats = []
 
     # --- 方法1: madmom downbeat tracker ---
     if _HAS_MADMOM_DOWNBEAT:
         try:
-            ts, dbeats = _detect_ts_madmom_downbeat(wav_path)
+            ts, dbeats, phase = _detect_ts_madmom_downbeat(wav_path, beats)
             if ts is not None:
-                return ts, dbeats
+                return ts, dbeats, phase
         except Exception as e:
             print(f"[beat_detector] Downbeat detection failed: {e}")
 
     # --- 方法2: onset strength のアクセントパターン ---
     try:
-        ts, dbeats = _detect_ts_accent_pattern(wav_path, beats, bpm)
+        ts, dbeats, phase = _detect_ts_accent_pattern(wav_path, beats, bpm)
         if ts is not None:
-            return ts, dbeats
+            return ts, dbeats, phase
     except Exception as e:
         print(f"[beat_detector] Accent pattern detection failed: {e}")
 
     # --- デフォルト: 4/4 ---
     if len(beats) > 0:
         downbeats = beats[::4].tolist()
-    return "4/4", downbeats
+    return "4/4", downbeats, 0
 
 
-def _detect_ts_madmom_downbeat(wav_path: str) -> tuple:
-    """madmom の DBNDownBeatTrackingProcessor で拍子推定"""
+def _detect_ts_madmom_downbeat(wav_path: str, rnn_beats: np.ndarray = None) -> tuple:
+    """madmom の DBNDownBeatTrackingProcessor で拍子推定 + downbeat位相検出
+    
+    Returns: (time_signature, downbeats, downbeat_phase)
+        downbeat_phase: rnn_beatsリストの何番目が最初のdownbeatに最も近いか
+    """
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         warnings.filterwarnings("ignore", message="dtype.*align")
@@ -367,31 +384,52 @@ def _detect_ts_madmom_downbeat(wav_path: str) -> tuple:
             continue
 
     if not results:
-        return None, []
+        return None, [], 0
 
     # 両方の結果がある場合、より適切な方を選択
+    chosen_bpb = None
     if 3 in results and 4 in results:
         bpm3 = results[3]["bpm"]
         bpm4 = results[4]["bpm"]
 
-        # 3/4拍子のBPMがギターの一般的なテンポ範囲に近い場合を優先
-        # 典型的なアルペジオ曲: 60-120 BPM
         score3 = _bpm_naturalness_score(bpm3)
         score4 = _bpm_naturalness_score(bpm4)
 
         print(f"[beat_detector] 3/4: BPM={bpm3:.1f} score={score3:.2f}")
         print(f"[beat_detector] 4/4: BPM={bpm4:.1f} score={score4:.2f}")
 
-        if score3 > score4:
-            return "3/4", results[3]["downbeats"]
-        else:
-            return "4/4", results[4]["downbeats"]
+        chosen_bpb = 3 if score3 > score4 else 4
     elif 3 in results:
-        return "3/4", results[3]["downbeats"]
+        chosen_bpb = 3
     elif 4 in results:
-        return "4/4", results[4]["downbeats"]
+        chosen_bpb = 4
 
-    return None, []
+    if chosen_bpb is None:
+        return None, [], 0
+
+    ts = f"{chosen_bpb}/4"
+    dbeats = results[chosen_bpb]["downbeats"]
+
+    # --- downbeat位相の計算 ---
+    # rnn_beatsの中で、最初のdownbeat位置に最も近いビートのインデックスを求める
+    phase = 0
+    if rnn_beats is not None and len(rnn_beats) > 0 and len(dbeats) > 0:
+        first_downbeat = dbeats[0]
+        # rnn_beatsから最も近いビートを探す
+        diffs = np.abs(rnn_beats - first_downbeat)
+        nearest_idx = int(np.argmin(diffs))
+        # ビート間隔の半分以内なら位相として採用
+        if len(rnn_beats) > 1:
+            beat_interval = float(np.median(np.diff(rnn_beats)))
+            if diffs[nearest_idx] < beat_interval * 0.5:
+                phase = nearest_idx % chosen_bpb
+                if phase > 0:
+                    print(f"[beat_detector] Downbeat phase detected: "
+                          f"first downbeat={first_downbeat:.3f}s, "
+                          f"nearest beat[{nearest_idx}]={rnn_beats[nearest_idx]:.3f}s, "
+                          f"phase={phase}/{chosen_bpb}")
+
+    return ts, dbeats, phase
 
 
 def _detect_ts_accent_pattern(
@@ -454,12 +492,53 @@ def _detect_ts_accent_pattern(
           f"4/4={combined_4:.3f} (bpm~{bpm_if_4:.0f})")
 
     if combined_3 >= combined_4:  # 同点以上で3/4を優先（アルペジオ曲は3/4が多い）
-        # 3/4確定: ダウンビートは3ビートごと
-        downbeats = beats[::3].tolist()
-        return "3/4", downbeats
+        chosen_bpb = 3
     else:
-        downbeats = beats[::4].tolist()
-        return "4/4", downbeats
+        chosen_bpb = 4
+
+    # --- 位相検出 ---
+    # 各位相（0, 1, ..., bpb-1）でonset strengthの平均を比較し、
+    # 最も強い位相をdownbeat（1拍目）とする
+    # 全帯域 + 低音域（ベース音帯域）を組み合わせて判定
+    
+    # 低音域のonset strength（ギターのベース音帯域 ~40-250Hz）
+    try:
+        S_low = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128, fmax=250)
+        onset_low = librosa.onset.onset_strength(S=librosa.power_to_db(S_low), sr=sr)
+        times_low = librosa.times_like(onset_low, sr=sr)
+        
+        # 各ビートでの低音onset strength
+        bass_strengths = []
+        for bt in beats:
+            idx = np.argmin(np.abs(times_low - bt))
+            bass_strengths.append(onset_low[idx] if idx < len(onset_low) else 0)
+        bass_strengths = np.array(bass_strengths)
+        if bass_strengths.max() > 0:
+            bass_strengths = bass_strengths / bass_strengths.max()
+    except Exception:
+        bass_strengths = beat_strengths  # フォールバック
+    
+    best_phase = 0
+    best_score = -1.0
+    for phase in range(chosen_bpb):
+        # 全帯域のonset strength
+        full_str = beat_strengths[phase::chosen_bpb]
+        full_avg = float(np.mean(full_str)) if len(full_str) > 0 else 0
+        # 低音域のonset strength
+        bass_str = bass_strengths[phase::chosen_bpb]
+        bass_avg = float(np.mean(bass_str)) if len(bass_str) > 0 else 0
+        # 組み合わせスコア（低音域を重視: 60%低音 + 40%全帯域）
+        combined = bass_avg * 0.6 + full_avg * 0.4
+        if combined > best_score:
+            best_score = combined
+            best_phase = phase
+
+    if best_phase > 0:
+        print(f"[beat_detector] Downbeat phase from accent+bass: phase={best_phase}/{chosen_bpb} "
+              f"(score={best_score:.3f})")
+
+    downbeats = beats[best_phase::chosen_bpb].tolist()
+    return f"{chosen_bpb}/4", downbeats, best_phase
 
 
 def _compute_accent_score(beat_strengths: np.ndarray, beats_per_bar: int) -> float:
