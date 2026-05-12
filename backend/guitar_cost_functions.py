@@ -25,54 +25,54 @@ import numpy as np
 
 MAX_FRET = 15  # アコースティックギターの実用フレット範囲
 
-# --- 重みパラメータ (デフォルト値) ---
+# --- 重みパラメータ (Optuna最適化済み: GuitarSet 10曲, 70.4% 弦一致率) ---
 _DEFAULT_WEIGHTS = {
     # 位置コスト
-    "w_fret_height":          0.05,   # フレット高コスト
-    "w_high_fret_extra":      4.5,    # 9f超追加コスト
-    "w_low_string_high_fret": 1.5,    # 低弦(4-6弦)ハイフレット倍率
-    "w_sweet_spot_bonus":    -1.0,    # sweet spot (0-9f) ボーナス
+    "w_fret_height":          0.69,    # フレット高コスト (Optuna: 0.6905)
+    "w_high_fret_extra":      2.05,    # 9f超追加コスト (Optuna: 2.0494)
+    "w_low_string_high_fret": 1.5,     # 低弦(4-6弦)ハイフレット倍率
+    "w_sweet_spot_bonus":    -3.9,     # sweet spot (0-9f) ボーナス (Optuna: -3.8934)
 
     # 遷移コスト（ポジション連続性を強く重視）
-    "w_movement":            15.0,    # ポジション移動コスト (フレット差に比例)
-    "w_position_shift":      50.0,    # ポジション跨ぎ追加コスト (4f超の移動)
-    "w_string_switch":        2.0,    # 弦切り替えコスト (弦距離に比例)
-    "w_same_string_repeat":   5.5,    # ⑧ 右手PIMA: 同弦連打ペナルティ
+    "w_movement":            24.9,     # ポジション移動コスト (Optuna: 24.9193)
+    "w_position_shift":      29.0,     # ポジション跨ぎ追加コスト (Optuna: 28.953)
+    "w_string_switch":        3.4,     # 弦切り替えコスト (Optuna: 3.3627)
+    "w_same_string_repeat":   5.5,     # ⑧ 右手PIMA: 同弦連打ペナルティ (Optuna: 5.496)
 
     # 人間工学コスト
-    "w_fret_span":          100.0,    # 和音フレットスパンコスト
-    "w_unplayable":       10000.0,    # 物理的に弾けない配置
-    "w_adjacent_stretch":    30.0,    # ⑨ 隣接弦ストレッチペナルティ (3f超)
-    "w_too_many_fingers":  5000.0,    # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
+    "w_fret_span":          100.0,     # 和音フレットスパンコスト
+    "w_unplayable":       10000.0,     # 物理的に弾けない配置
+    "w_adjacent_stretch":    30.0,     # ⑨ 隣接弦ストレッチペナルティ (3f超)
+    "w_too_many_fingers":  5000.0,     # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
 
     # 音色コスト
-    "w_open_string_bonus":  -15.0,    # 開放弦ボーナス（開放弦を強く優遇）
-    "w_open_match_bonus":   -25.0,    # 開放弦でしか出せない音のボーナス
-    "w_barre_bonus":         -5.0,    # バレーコードボーナス (per extra string)
+    "w_open_string_bonus":   -9.7,     # 開放弦ボーナス (Optuna: -9.7349)
+    "w_open_match_bonus":   -21.0,     # 開放弦でしか出せない音のボーナス (Optuna: -20.970)
+    "w_barre_bonus":         -5.0,     # バレーコードボーナス (per extra string)
 
     # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
-    "w_bass_low_string":   -20.0,    # ベース音(最低ピッチ)が低弦(4-6弦)ボーナス
-    "w_melody_high_string":-15.0,    # メロディ音(最高ピッチ)が高弦(1-3弦)ボーナス
-    "w_bass_wrong_string":  25.0,    # ベース音が高弦(1-3弦)にいるペナルティ
+    "w_bass_low_string":   -20.0,     # ベース音(最低ピッチ)が低弦(4-6弦)ボーナス
+    "w_melody_high_string":-15.0,     # メロディ音(最高ピッチ)が高弦(1-3弦)ボーナス
+    "w_bass_wrong_string":  25.0,     # ベース音が高弦(1-3弦)にいるペナルティ
     # 人間運指選好 (IDMT human fingering)
-    "w_human_pref_bonus":   -15.0,   # 人間が好むポジションへのボーナス
+    "w_human_pref_bonus":   -15.0,    # 人間が好むポジションへのボーナス
 
     # 法則3: ピッチ近接性弦保持 (3半音境界ルール)
     # <3半音 → 同弦維持ボーナス, ≥3半音 → 隣接弦遷移を許容
     "w_pitch_proximity_same_string":  -8.0,   # <3半音で同弦維持ボーナス
     "w_pitch_proximity_adj_string":   -3.0,   # ≥3半音で隣接弦遷移ボーナス
 
-    # ⑪ 右手PIMA制約 (Skarha 2018 "IP for Optimal Right Hand Guitar Fingerings")
-    "w_pima_natural_bonus":   -10.0,  # R3: 自然位置ボーナス (i→3弦, m→2弦, a→1弦)
-    "w_pima_thumb_bass":      -12.0,  # R2: 親指=ベース弦(4-6弦)ボーナス
-    "w_pima_thumb_wrong":      20.0,  # R2: 親指がメロディ弦(1-3弦)にいるペナルティ
-    "w_pima_crossing":         15.0,  # R4: 右手の逆交差ペナルティ
-    "w_pima_ama_avoid":         8.0,  # R5: a-m-a交替回避ペナルティ
-    "w_pima_same_finger":      12.0,  # R1: 同指連打禁止ペナルティ
+    # ⑪ 右手PIMA制約 (Skarha 2018, Optuna最適化済み)
+    "w_pima_natural_bonus":   -9.3,    # R3: 自然位置ボーナス (Optuna: -9.2523)
+    "w_pima_thumb_bass":     -15.0,    # R2: 親指=ベース弦ボーナス (Optuna: -15.043)
+    "w_pima_thumb_wrong":     31.9,    # R2: 親指がメロディ弦ペナルティ (Optuna: 31.906)
+    "w_pima_crossing":        22.4,    # R4: 右手の逆交差ペナルティ (Optuna: 22.422)
+    "w_pima_ama_avoid":        8.0,    # R5: a-m-a交替回避ペナルティ
+    "w_pima_same_finger":     10.5,    # R1: 同指連打禁止ペナルティ (Optuna: 10.478)
 
-    # ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004)
-    "w_radicioni_stretch":     20.0,  # ポジション依存ストレッチコスト
-    "w_radicioni_independence": 5.0,  # 指の独立性制約（薬指-小指は弱い）
+    # ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004, Optuna最適化済み)
+    "w_radicioni_stretch":     21.2,   # ポジション依存ストレッチ (Optuna: 21.159)
+    "w_radicioni_independence": 2.6,   # 指の独立性制約 (Optuna: 2.578)
 }
 
 

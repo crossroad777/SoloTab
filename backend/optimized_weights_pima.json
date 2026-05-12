@@ -1,0 +1,24 @@
+{
+  "baseline_accuracy": 0.6463878326996197,
+  "best_accuracy": 0.7041825095057034,
+  "best_params": {
+    "w_open_string_bonus": -9.734894274413909,
+    "w_open_match_bonus": -20.969756542044575,
+    "w_fret_height": 0.6905227347489629,
+    "w_high_fret_extra": 2.0493793045190754,
+    "w_movement": 24.91927977463969,
+    "w_position_shift": 28.952952856362455,
+    "w_string_switch": 3.362702195727216,
+    "w_same_string_repeat": 5.495904795088805,
+    "w_sweet_spot_bonus": -3.8934262374642037,
+    "w_pima_natural_bonus": -9.252346001596887,
+    "w_pima_thumb_bass": -15.042800646332477,
+    "w_pima_thumb_wrong": 31.906100303581894,
+    "w_pima_crossing": 22.42204570980164,
+    "w_pima_same_finger": 10.477699622619113,
+    "w_radicioni_stretch": 21.159493451864833,
+    "w_radicioni_independence": 2.5780316752700694
+  },
+  "n_songs": 10,
+  "n_notes": 1315
+}

@@ -130,6 +130,15 @@ def run_optimization(songs, n_trials: int = 100):
             'w_string_switch': trial.suggest_float('w_string_switch', 0.5, 10.0),
             'w_same_string_repeat': trial.suggest_float('w_same_string_repeat', 1.0, 15.0),
             'w_sweet_spot_bonus': trial.suggest_float('w_sweet_spot_bonus', -5.0, 0.0),
+            # PIMA constraints (Skarha 2018)
+            'w_pima_natural_bonus': trial.suggest_float('w_pima_natural_bonus', -20.0, 0.0),
+            'w_pima_thumb_bass': trial.suggest_float('w_pima_thumb_bass', -25.0, 0.0),
+            'w_pima_thumb_wrong': trial.suggest_float('w_pima_thumb_wrong', 5.0, 40.0),
+            'w_pima_crossing': trial.suggest_float('w_pima_crossing', 5.0, 30.0),
+            'w_pima_same_finger': trial.suggest_float('w_pima_same_finger', 3.0, 25.0),
+            # Radicioni CSP
+            'w_radicioni_stretch': trial.suggest_float('w_radicioni_stretch', 5.0, 40.0),
+            'w_radicioni_independence': trial.suggest_float('w_radicioni_independence', 1.0, 15.0),
         }
         result = evaluate_assignment(songs, params)
         return result['string_accuracy']
