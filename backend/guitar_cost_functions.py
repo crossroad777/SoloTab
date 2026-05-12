@@ -492,7 +492,13 @@ def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 15) ->
         if pattern in _PIMA_AMA_PATTERNS:
             # a-m-a detected: try to reassign middle note
             pitch = notes[i].get('pitch', 0)
-            positions = get_possible_positions(pitch, tuning, max_fret)
+            # Inline position computation to avoid circular import
+            positions = []
+            for ti, open_pitch in enumerate(tuning):
+                fret = pitch - open_pitch
+                if 0 <= fret <= max_fret:
+                    string_num = 6 - ti
+                    positions.append((string_num, fret))
 
             # Find an alternative string that breaks the pattern
             current_fret = notes[i].get('fret', 0)
