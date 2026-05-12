@@ -61,6 +61,18 @@ _DEFAULT_WEIGHTS = {
     # <3半音 → 同弦維持ボーナス, ≥3半音 → 隣接弦遷移を許容
     "w_pitch_proximity_same_string":  -8.0,   # <3半音で同弦維持ボーナス
     "w_pitch_proximity_adj_string":   -3.0,   # ≥3半音で隣接弦遷移ボーナス
+
+    # ⑪ 右手PIMA制約 (Skarha 2018 "IP for Optimal Right Hand Guitar Fingerings")
+    "w_pima_natural_bonus":   -10.0,  # R3: 自然位置ボーナス (i→3弦, m→2弦, a→1弦)
+    "w_pima_thumb_bass":      -12.0,  # R2: 親指=ベース弦(4-6弦)ボーナス
+    "w_pima_thumb_wrong":      20.0,  # R2: 親指がメロディ弦(1-3弦)にいるペナルティ
+    "w_pima_crossing":         15.0,  # R4: 右手の逆交差ペナルティ
+    "w_pima_ama_avoid":         8.0,  # R5: a-m-a交替回避ペナルティ
+    "w_pima_same_finger":      12.0,  # R1: 同指連打禁止ペナルティ
+
+    # ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004)
+    "w_radicioni_stretch":     20.0,  # ポジション依存ストレッチコスト
+    "w_radicioni_independence": 5.0,  # 指の独立性制約（薬指-小指は弱い）
 }
 
 
@@ -352,6 +364,128 @@ def _transition_cost(s: int, f: int,
             # ≥3半音: 隣接弦遷移をボーナス
             if string_dist == 1:
                 cost += WEIGHTS["w_pitch_proximity_adj_string"]  # 負=ボーナス
+
+    # --- ⑪ 右手PIMA制約 (Skarha 2018) ---
+    # アルペジオ文脈で右手の自然な指使いを誘導
+    # 弦番号: 1=1弦(E4), 2=2弦(B3), 3=3弦(G3), 4-6=ベース弦
+    cost += _pima_transition_cost(s, prev_s)
+
+    # --- ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004) ---
+    cost += _radicioni_independence_cost(f, prev_f, s, prev_s)
+
+    return cost
+
+
+# =============================================================================
+# ⑪ 右手PIMA制約 (Skarha 2018 "IP for Optimal Right Hand Guitar Fingerings")
+# =============================================================================
+# クラシックギターの右手指割り当て:
+#   p (pulgar/thumb)  → ベース弦 (4-6弦)
+#   i (indice/index)  → 3弦 (自然位置)
+#   m (medio/middle)  → 2弦 (自然位置)
+#   a (anular/ring)   → 1弦 (自然位置)
+#
+# 5つの制約:
+#   R1: 同指連打禁止 (同弦連打 → w_same_string_repeat で既に対応)
+#   R2: 親指はベース弦専用
+#   R3: ima は高弦の自然位置を好む
+#   R4: 逆交差禁止 (低弦→高弦で i→m→a の順序)
+#   R5: a-m-a 交替は避ける (腱結合で困難)
+
+# PIMA自然位置マッピング (弦番号 → 推奨PIMA指)
+_PIMA_NATURAL = {
+    1: 'a',  # 1弦 → 薬指
+    2: 'm',  # 2弦 → 中指
+    3: 'i',  # 3弦 → 人差し指
+    4: 'p',  # 4弦 → 親指
+    5: 'p',  # 5弦 → 親指
+    6: 'p',  # 6弦 → 親指
+}
+
+# PIMA指の順序 (低い番号 = 低い弦)
+_PIMA_ORDER = {'p': 0, 'i': 1, 'm': 2, 'a': 3}
+
+
+def _pima_transition_cost(s: int, prev_s: int) -> float:
+    """
+    右手PIMA遷移コスト (Skarha 2018)。
+    弦の遷移パターンから右手の指使いを推定し、
+    不自然な指使いにペナルティを課す。
+
+    前提: 弦番号から暗黙的にPIMA指を推定。
+    1弦=a, 2弦=m, 3弦=i, 4-6弦=p
+    """
+    cost = 0.0
+    finger = _PIMA_NATURAL.get(s, 'p')
+    prev_finger = _PIMA_NATURAL.get(prev_s, 'p')
+
+    # R2: 親指=ベース制約
+    # メロディ弦(1-3弦)にいるのに低ピッチ → 親指で弾くべきなのに弾けない
+    if s >= 4:  # ベース弦
+        cost += WEIGHTS["w_pima_thumb_bass"]  # 負=ボーナス
+    elif prev_s >= 4 and s <= 3:
+        # ベース→メロディの自然な遷移 (p→ima) → ボーナス
+        cost += WEIGHTS["w_pima_natural_bonus"] * 0.5
+
+    # R3: 自然位置ボーナス
+    # 弦が自然位置に一致する場合にボーナス
+    if s in (1, 2, 3):
+        cost += WEIGHTS["w_pima_natural_bonus"] * 0.3  # 高弦にいること自体がボーナス
+
+    # R4: 逆交差禁止
+    # 低弦→高弦(数値が減る方向)で、PIMA順序が逆になるケース
+    if s != prev_s and s <= 3 and prev_s <= 3:
+        curr_order = _PIMA_ORDER.get(finger, 0)
+        prev_order = _PIMA_ORDER.get(prev_finger, 0)
+        # 弦が上がる(番号減る)のに指順序が下がる → 逆交差
+        if s < prev_s and curr_order < prev_order:
+            cost += WEIGHTS["w_pima_crossing"]
+        elif s > prev_s and curr_order > prev_order:
+            cost += WEIGHTS["w_pima_crossing"]
+
+    # R1: 同指連打 (同弦連打は既にw_same_string_repeatで対応)
+    # ここでは異弦だが同じPIMA指になるケースを追加
+    if finger == prev_finger and s != prev_s:
+        cost += WEIGHTS["w_pima_same_finger"]
+
+    return cost
+
+
+# =============================================================================
+# ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004)
+# =============================================================================
+
+def _radicioni_independence_cost(f: int, prev_f: int, s: int, prev_s: int) -> float:
+    """
+    Radicioni & Lombardo (2004) のCSP生体力学モデルから着想。
+    ポジション依存の指独立性: ローポジションではフレット間隔が広く
+    指のストレッチがより困難。ハイポジションでは逆に容易。
+
+    また、薬指と小指の独立性が低い（腱結合 = enslaving）ことを
+    ポジションコストに反映。
+    """
+    cost = 0.0
+
+    if f == 0 or prev_f == 0:
+        return 0.0
+
+    fret_diff = abs(f - prev_f)
+    avg_fret = (f + prev_f) / 2
+
+    # ポジション依存ストレッチ: ローポジションは物理的に広い
+    if fret_diff > 2:
+        # ローポジション(1-3f): フレット間隔=約36mm
+        # ハイポジション(12f+): フレット間隔=約18mm
+        # → ローポジションのストレッチはハイポジの2倍困難
+        position_factor = max(0.5, 1.5 - avg_fret * 0.08)  # 1f=1.42, 12f=0.54
+        cost += (fret_diff - 2) * WEIGHTS["w_radicioni_stretch"] * position_factor
+
+    # 指の独立性制約: 薬指(3弦)と小指(4弦付近)の組み合わせは制御困難
+    # 弦3と弦4の連続は薬指-小指の独立動作を要求
+    if abs(s - prev_s) == 1 and min(s, prev_s) >= 3:
+        # 高弦同士(3-4弦)は指の独立性が低い
+        if fret_diff > 1:
+            cost += WEIGHTS["w_radicioni_independence"] * fret_diff
 
     return cost
 
