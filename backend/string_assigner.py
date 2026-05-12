@@ -22,6 +22,7 @@ from guitar_cost_functions import (
     _position_cost, _transition_cost, _timbre_cost,
     _ergonomic_cost_chord, _get_max_span,
     get_finger_candidates, _bio_finger_transition_cost,
+    pima_r5_postprocess,
 )
 
 # 音楽理論
@@ -992,6 +993,9 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
+    # PIMA R5後処理: a-m-a交替パターンの回避 (Skarha 2018)
+    result = pima_r5_postprocess(result, tuning, max_fret)
+
     # --- 論文§12.2 [記号パス]: 2パスViterbi ---
     # 1パス目: CNN + 人間工学パスのみでViterbi DP実行（上記で完了）
     # TransformerはViterbi 1パス目の弦・フレット結果を文脈として使用するため、
@@ -1029,6 +1033,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         # 2パス目の結果で置き換え
         result = result2
         result = _minimax_postprocess(result, tuning, max_fret)
+        result = pima_r5_postprocess(result, tuning, max_fret)
         print(f"[string_assigner] 2パスViterbi完了: 全3パス(CNN+Transformer+人間工学)統合")
 
     # コードポジション連動後処理: 無効化

@@ -451,6 +451,81 @@ def _pima_transition_cost(s: int, prev_s: int) -> float:
     return cost
 
 
+# R5 a-m-a回避 (3音文脈) — Viterbi後処理用
+# Skarha: 薬指-中指-薬指(a-m-a, 弦1→2→1)の交替は腱結合で困難
+_PIMA_AMA_PATTERNS = [
+    (1, 2, 1),  # a-m-a: 弦1→2→1
+    (2, 3, 2),  # m-i-m: 弦2→3→2 (同様に困難)
+]
+
+
+def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 15) -> list:
+    """
+    R5 a-m-a回避: Viterbi後処理。
+    3連続ノートで a-m-a パターン(弦1→2→1等)が検出された場合、
+    中央のノートの弦を変更可能なら変更する。
+
+    Parameters
+    ----------
+    notes : 弦割り当て済みノートリスト
+    tuning : チューニング
+    max_fret : 最大フレット
+
+    Returns
+    -------
+    notes : R5制約を適用したノートリスト
+    """
+    if len(notes) < 3:
+        return notes
+
+    if tuning is None:
+        from solotab_utils import STANDARD_TUNING
+        tuning = STANDARD_TUNING
+
+    fixes = 0
+    for i in range(1, len(notes) - 1):
+        s_prev = notes[i - 1].get('string', 0)
+        s_curr = notes[i].get('string', 0)
+        s_next = notes[i + 1].get('string', 0)
+
+        pattern = (s_prev, s_curr, s_next)
+        if pattern in _PIMA_AMA_PATTERNS:
+            # a-m-a detected: try to reassign middle note
+            pitch = notes[i].get('pitch', 0)
+            positions = get_possible_positions(pitch, tuning, max_fret)
+
+            # Find an alternative string that breaks the pattern
+            current_fret = notes[i].get('fret', 0)
+            best_alt = None
+            best_cost = float('inf')
+
+            for alt_s, alt_f in positions:
+                if alt_s == s_curr:
+                    continue  # Same string, skip
+                # Check if this breaks the a-m-a pattern
+                new_pattern = (s_prev, alt_s, s_next)
+                if new_pattern in _PIMA_AMA_PATTERNS:
+                    continue  # Still an a-m-a pattern
+
+                # Evaluate cost of this alternative
+                cost = abs(alt_f - current_fret) * 5.0  # Fret distance penalty
+                if alt_f == 0:
+                    cost -= 5.0  # Open string bonus
+                if cost < best_cost:
+                    best_cost = cost
+                    best_alt = (alt_s, alt_f)
+
+            if best_alt and best_cost < 30.0:  # Only apply if cost is reasonable
+                notes[i]['string'] = best_alt[0]
+                notes[i]['fret'] = best_alt[1]
+                fixes += 1
+
+    if fixes > 0:
+        print(f"[PIMA R5] a-m-a avoidance: {fixes} notes reassigned")
+
+    return notes
+
+
 # =============================================================================
 # ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004)
 # =============================================================================
