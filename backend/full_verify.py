@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-path = r'D:\Music\romance_e2e.gp5'
+path = r'D:\Music\nextchord-solotab\uploads\romance_e2e_test\tab.gp5'
 song = gp.parse(path)
 t = song.tracks[0]
 total_measures = len(t.measures)
