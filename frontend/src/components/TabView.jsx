@@ -3,9 +3,10 @@ import React, { useEffect, useRef, useState } from "react";
 // import ScoreToolbar from "./ScoreToolbar";
 
 /**
- * TabView — AlphaTab TAB 譜表示
- * - カスタムBeatMapでtick→座標マッピング
- * - カスタム青カーソルバー + オートスクロール
+ * TabView — AlphaTab TAB 譜表示 + GP5ダウンロード
+ * - AlphaTab組み込みカーソルをtickPositionで駆動（音声同期）
+ * - beats.json → tick変換テーブルで非線形テンポにも対応
+ * - ノートクリック編集UI
  */
 const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady }) => {
     const containerRef = useRef(null);
