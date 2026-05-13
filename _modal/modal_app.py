@@ -1,7 +1,9 @@
 """
-SoloTab V2.2 — Modal デプロイメント
+SoloTab V2.3 — Modal デプロイメント
 ====================================
-フルパイプライン: librosa ビート検出 + Pure MoE 推論 + テクニック検出 + MusicXML 生成
+フルパイプライン: pipeline.py 完全同期
+  madmom ビート検出 + Pure MoE (vote_threshold=15) + PIMA/Radicioni運指
+  + Viterbi DP + テクニック検出 + GP5/MusicXML 生成
 
 使い方:
   python -m modal deploy _modal/modal_app.py
@@ -27,7 +29,7 @@ _EXPERTS = [
 
 solotab_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "libsndfile1", "fonts-noto-cjk")
+    .apt_install("ffmpeg", "libsndfile1", "fonts-noto-cjk", "git")
     .pip_install(
         "torch==2.5.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
@@ -44,6 +46,13 @@ solotab_image = (
         "midiutil",
         "reportlab",
         "basic-pitch",
+        "cython",
+        "pyguitarpro",
+    )
+    .pip_install(
+        # madmom 0.16.1 PyPI fails on Python 3.11 (setup.py egg_info error).
+        # Install from GitHub source with build deps already present.
+        "madmom @ git+https://github.com/CPJKU/madmom.git",
     )
     .add_local_dir(
         r"D:\Music\nextchord-solotab\backend",
@@ -58,6 +67,7 @@ solotab_image = (
         r"D:\Music\nextchord-solotab\music-transcription\python\model",
         remote_path="/app/music-transcription/python/model",
         copy=True,
+        ignore=lambda p: "__pycache__" in str(p) or str(p).endswith(".pyc"),
     )
     .add_local_file(
         r"D:\Music\nextchord-solotab\music-transcription\python\config.py",
@@ -182,170 +192,82 @@ def solotab_api():
         tuning: str; capo: Optional[int]=0; noise_gate: Optional[float]=0.30
 
     def _run_bg(sid):
-        """BP+MoE融合パイプライン (BasicPitch高Recall + MoE弦情報 + Viterbi DP + テクニック検出)"""
+        """pipeline.run_pipeline に完全委譲（ローカルと同一ロジック）"""
         s = sessions[sid]
         sd = Path(s["session_dir"])
         wav = Path(s["wav_path"])
         try:
             s["status"] = SS.PROCESSING; save(sid, commit=False)
 
-            # === Step 0: ビート検出 ===
-            s["progress"] = "ビート検出中..."; s["steps_done"] = 0; save(sid, commit=False)
-            from beat_detector import detect_beats
-            beat_result = detect_beats(str(wav))
-            beats_list = beat_result["beats"]
-            bpm = beat_result["bpm"]
-            time_sig = beat_result.get("time_signature", "4/4")
-            (sd/"beats.json").write_text(json.dumps(beat_result, ensure_ascii=False), encoding="utf-8")
+            # progress_cb でセッション状態を更新
+            step_map = {
+                "beats": (0, "ビート検出中..."),
+                "key": (0, None),
+                "capo": (0, None),
+                "demucs": (0, None),
+                "preprocess": (0, None),
+                "notes": (1, "ノート検出中 (MoE+BP)..."),
+                "technique": (2, None),
+                "technique_pm": (2, None),
+                "theory": (3, "音楽理論解析中..."),
+                "assign": (2, "弦・フレット最適化中..."),
+                "musicxml": (3, "TAB譜生成中..."),
+                "pdf": (4, None),
+            }
+            def progress_cb(step, msg):
+                info = step_map.get(step, (None, None))
+                if info[1]:
+                    s["progress"] = info[1]
+                if info[0] is not None:
+                    s["steps_done"] = info[0]
+                # commit は重いので省略、save のみ
+                save(sid, commit=False)
 
-            # === Step 1: MoE推論 + BasicPitch推論 + 融合 ===
-            s["progress"] = "ノート検出中 (MoE+BP)..."; s["steps_done"] = 1; save(sid, commit=False)
+            from pipeline import run_pipeline
 
-            # MoE推論
-            from pure_moe_transcriber import transcribe_pure_moe
-            moe_notes = transcribe_pure_moe(str(wav), vote_threshold=2, onset_threshold=0.3, vote_prob_threshold=0.3)
-            print(f"MoE: {len(moe_notes)} notes")
-
-            # BasicPitch推論
-            bp_notes = []
-            try:
-                from basic_pitch.inference import predict as bp_predict
-                _, midi_data, _ = bp_predict(str(wav))
-                for inst in midi_data.instruments:
-                    for note in inst.notes:
-                        bp_notes.append({
-                            "start": float(note.start),
-                            "end": float(note.end),
-                            "pitch": int(note.pitch),
-                            "velocity": round(note.velocity / 127.0, 4),
-                        })
-                print(f"BasicPitch: {len(bp_notes)} notes")
-            except Exception as e:
-                print(f"BasicPitch failed, MoE only: {e}")
-
-            # 融合: BP∩MoE + MoE高確信 + BP独自
-            MATCH_ONSET_TOL = 0.10
-            MATCH_PITCH_TOL = 1
-
-            if bp_notes and moe_notes:
-                fused = []
-                used_moe = set()
-                used_bp = set()
-
-                # 1. BP∩MoE: 両方が検出（MoEの弦情報を使用）
-                for i, bp_n in enumerate(bp_notes):
-                    for j, moe_n in enumerate(moe_notes):
-                        if j in used_moe:
-                            continue
-                        if (abs(bp_n["start"] - moe_n["start"]) < MATCH_ONSET_TOL
-                                and abs(bp_n["pitch"] - moe_n["pitch"]) <= MATCH_PITCH_TOL):
-                            fused.append(moe_n)
-                            used_moe.add(j)
-                            used_bp.add(i)
-                            break
-
-                # 2. MoE独自: 高確信ノート
-                for j, moe_n in enumerate(moe_notes):
-                    if j not in used_moe:
-                        if float(moe_n.get("velocity", 0)) >= 0.65:
-                            fused.append(moe_n)
-
-                # 3. BP独自: MoEが拾えなかった音（ベース音・和音補完）
-                #    確信度フィルタ: velocity低いBP独自ノートは除外（音が多すぎ防止）
-                for i, bp_n in enumerate(bp_notes):
-                    if i not in used_bp:
-                        if float(bp_n.get("velocity", 0)) >= 0.70:
-                            fused.append(bp_n)
-
-                notes = sorted(fused, key=lambda n: (n["start"], n["pitch"]))
-                n_matched = len(used_moe)
-                n_moe_solo = sum(1 for j in range(len(moe_notes)) if j not in used_moe and float(moe_notes[j].get("velocity",0))>=0.75)
-                n_bp_solo = len(bp_notes) - len(used_bp)
-                print(f"融合: BP∩MoE={n_matched}, MoE独自={n_moe_solo}, BP独自={n_bp_solo} → total={len(notes)}")
-            elif moe_notes:
-                notes = moe_notes
-            elif bp_notes:
-                notes = bp_notes
-            else:
-                notes = []
-
-            # === Step 2: Viterbi DP 弦・フレット最適化 + テクニック検出 ===
-            s["progress"] = "弦・フレット最適化中..."; s["steps_done"] = 2; save(sid, commit=False)
-            try:
-                from string_assigner import assign_strings_dp
-                tuning = TUNINGS.get(s.get("tuning", "standard"), TUNINGS["standard"])
-                notes = assign_strings_dp(notes, tuning=tuning)
-                print(f"Viterbi DP: {len(notes)} notes assigned")
-            except Exception as e:
-                print(f"String assignment failed (using raw): {e}")
-                import traceback; traceback.print_exc()
-
-            # テクニック検出（Viterbi DP後の正確な弦割り当てで実行）
-            # 先に調号を推定してテクニック判定に使用
-            _key_sig = "C"
-            try:
-                from music_theory import detect_key_signature
-                _key_sig = detect_key_signature(notes)
-            except Exception:
-                pass
-
-            try:
-                from technique_detector import detect_techniques, add_techniques_to_musicxml_notes
-                notes = detect_techniques(notes, bpm=bpm, key_signature=_key_sig)
-                notes = add_techniques_to_musicxml_notes(notes)
-                tech_count = sum(1 for n in notes if n.get("technique") and n["technique"] != "normal")
-                tech_types = {}
-                for n in notes:
-                    t = n.get("technique", "normal")
-                    tech_types[t] = tech_types.get(t, 0) + 1
-                print(f"Techniques detected: {tech_count} — {tech_types}")
-            except Exception as e:
-                print(f"Technique detection skipped: {e}")
-
-            (sd/"notes_assigned.json").write_text(json.dumps(_to_native(notes), ensure_ascii=False, indent=2), encoding="utf-8")
-
-            # === Step 3: 音楽理論解析 + TAB譜生成 ===
-            s["progress"] = "音楽理論解析中..."; s["steps_done"] = 3
-            from tab_renderer import notes_to_tab_musicxml
-            from music_theory import apply_music_theory, detect_rhythm_pattern, detect_key_signature, assign_dynamics_to_bars
-            tuning = TUNINGS.get(s.get("tuning","standard"), TUNINGS["standard"])
+            # タイトル整形
             title = s.get("filename", sid)
             ext = os.path.splitext(title)[1]
-            if ext.lower() in {".mp3",".wav",".m4a",".flac",".ogg"}: title = title[:-len(ext)]
-
-            # --- 音楽理論解析 ---
+            if ext.lower() in {".mp3",".wav",".m4a",".flac",".ogg"}:
+                title = title[:-len(ext)]
+            # GP5 binary format requires Latin-1 compatible title
             try:
-                rhythm_info = detect_rhythm_pattern(notes, beats_list)
-                key_sig = detect_key_signature(notes)
-                print(f"Music theory: rhythm={rhythm_info['subdivision']} "
-                      f"(triplet_ratio={rhythm_info['triplet_ratio']:.2f}), "
-                      f"key={key_sig}")
-            except Exception as e:
-                print(f"Music theory analysis failed: {e}")
-                rhythm_info = {"subdivision": "straight", "triplet_ratio": 0.0}
-                key_sig = "C"
+                title.encode('latin-1')
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                import re
+                title = re.sub(r'[^\x20-\x7E]', '', title).strip() or sid
 
-            xml_content, tech_map = notes_to_tab_musicxml(
-                notes, beats=beats_list, bpm=bpm, title=title,
-                tuning=tuning, time_signature=time_sig,
-                rhythm_info=rhythm_info, key_signature=key_sig
+            result = run_pipeline(
+                session_id=sid,
+                session_dir=sd,
+                wav_path=wav,
+                tuning_name=s.get("tuning", "standard"),
+                title=title,
+                progress_cb=progress_cb,
+                skip_demucs=True,  # Modal: Demucs省略（メモリ節約）
             )
-            (sd/"tab.musicxml").write_text(xml_content, encoding="utf-8")
-            (sd/"techniques.json").write_text(json.dumps(_to_native(tech_map)), encoding="utf-8")
-            print(f"MusicXML written: {len(xml_content)} chars")
 
-            # ファイルをVolume上で可視化（ステータス変更前にcommit）
+            # Volume にファイルをコミット（ステータス変更前に）
             try:
                 session_vol.commit()
             except Exception:
                 pass
             print(f"Session {sid} files committed")
 
-            # ステータスを最後にcompletedに変更（SSEがこれを検知した時点でファイルは既に可視）
-            s.update({"status":SS.COMPLETED,"total_notes":len(notes),"bpm":bpm,
-                      "time_signature":time_sig,"progress":"解析完了","steps_done":4})
+            # ステータスを最後に completed に変更
+            s.update({
+                "status": SS.COMPLETED,
+                "total_notes": result.get("total_notes", 0),
+                "bpm": result.get("bpm", 120),
+                "time_signature": result.get("time_signature", "4/4"),
+                "key": result.get("key"),
+                "capo": result.get("capo", 0),
+                "suggested_tuning": result.get("suggested_tuning"),
+                "progress": "解析完了",
+                "steps_done": 4,
+            })
             save(sid)
-            print(f"Session {sid} completed")
+            print(f"Session {sid} completed: {result.get('total_notes',0)} notes")
         except Exception as e:
             import traceback; traceback.print_exc()
             s.update({"status":SS.FAILED,"error":str(e),"progress":"エラー"})
@@ -444,18 +366,38 @@ def solotab_api():
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"}
         )
 
+    @fa.get("/result/{sid}/gp5")
+    async def gp5(sid:str):
+        """Guitar Pro 5 ファイルをダウンロード"""
+        s = load_session(sid)
+        if s is None: raise HTTPException(404,"Not found")
+        sd=Path(s["session_dir"])
+        gp5_path=sd/"tab.gp5"
+        if not gp5_path.exists():
+            try: session_vol.reload()
+            except Exception: pass
+            if not gp5_path.exists(): raise HTTPException(404,"GP5 not generated")
+        from urllib.parse import quote
+        raw_name = s.get("filename","tab").rsplit(".",1)[0] + ".gp5"
+        safe_name = quote(raw_name)
+        return FileResponse(gp5_path, filename="tab.gp5", media_type="application/octet-stream",
+                            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"})
+
     @fa.get("/result/{sid}/pdf")
     async def pdf(sid:str):
         s = load_session(sid)
         if s is None: raise HTTPException(404,"Not found")
         sd=Path(s["session_dir"])
-        xp=sd/"tab.musicxml"
-        if not xp.exists(): raise HTTPException(404,"MusicXML not generated")
+        # PDF: GP5 → MuseScore 変換（優先） → MusicXML fallback
         pp=sd/"tab.pdf"
-        from pdf_renderer import musicxml_to_pdf
-        title = s.get("filename","tab").rsplit(".",1)[0]
-        musicxml_to_pdf(str(xp), str(pp), title=title)
+        if not pp.exists():
+            xp=sd/"tab.musicxml"
+            if not xp.exists(): raise HTTPException(404,"MusicXML not generated")
+            from pdf_renderer import musicxml_to_pdf
+            title = s.get("filename","tab").rsplit(".",1)[0]
+            musicxml_to_pdf(str(xp), str(pp), title=title)
         from urllib.parse import quote
+        title = s.get("filename","tab").rsplit(".",1)[0]
         safe_name = quote(title + ".pdf")
         return FileResponse(pp, filename="tab.pdf", media_type="application/pdf",
                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"})
@@ -869,7 +811,8 @@ def solotab_api():
             p = os.path.join(model_dir, e, "best_model.pth")
             models_found.append({"name":e,"exists":os.path.exists(p),"size_mb":round(os.path.getsize(p)/1024/1024,1) if os.path.exists(p) else 0})
         vol_sessions = len(list(UPLOAD_DIR.iterdir())) if UPLOAD_DIR.exists() else 0
-        return {"status":"healthy","app":"SoloTab (Modal)","version":"2.3.0","models":models_found,
-                "sessions_on_volume": vol_sessions, "sessions_in_memory": len(sessions)}
+        return {"status":"healthy","app":"SoloTab (Modal)","version":"2.4.0","models":models_found,
+                "sessions_on_volume": vol_sessions, "sessions_in_memory": len(sessions),
+                "pipeline_sync": "full (PIMA+Radicioni+GP5+vote15+beatgrid)"}
 
     return fa
