@@ -746,6 +746,10 @@ export default function SoloTabApp() {
                 key={retuneKey}
                 sessionId={session.id}
                 apiBase={API_BASE}
+                currentTime={currentTime}
+                isPlaying={isPlaying}
+                transpose={transpose}
+                capo={capo}
               />
             </div>
           </>
