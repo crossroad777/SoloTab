@@ -3,19 +3,20 @@ import React, { useEffect, useRef, useState } from "react";
 // import ScoreToolbar from "./ScoreToolbar";
 
 /**
- * TabView — AlphaTab TAB 譜表示 + GP5ダウンロード
- * - AlphaTab組み込みカーソルをtickPositionで駆動（音声同期）
- * - beats.json → tick変換テーブルで非線形テンポにも対応
- * - ノートクリック編集UI
+ * TabView — AlphaTab TAB 譜表示
+ * - カスタムBeatMapでtick→座標マッピング
+ * - カスタム青カーソルバー + オートスクロール
  */
 const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady }) => {
     const containerRef = useRef(null);
     const wrapperRef = useRef(null);
+    const cursorRef = useRef(null);
     const apiRef = useRef(null);
+    const beatMapRef = useRef([]);
+    const boundsReadyRef = useRef(false);
     const timeRef = useRef(0);
     const playingRef = useRef(false);
     const initKeyRef = useRef(null);
-    const tickMapRef = useRef(null); // {beats:[], bpm:number, ticksPerBeat:960}
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -40,34 +41,119 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     }, [currentTime, isPlaying]);
 
     // ============================================================
-    // Time→Tick変換: beats.jsonの実時刻をAlphaTabのtick位置に変換
+    // BeatMap: 小節単位 — beats.jsonの実時刻 + AlphaTab bar座標
     // ============================================================
-    const TICKS_PER_BEAT = 960; // AlphaTab標準
+    const beatsDataRef = useRef([]); // beats.json の beat timestamps(秒)
 
-    const timeToTick = (audioSec) => {
-        const tm = tickMapRef.current;
-        if (!tm || !tm.beats || tm.beats.length === 0) {
-            // フォールバック: 線形変換
-            return Math.max(0, audioSec * (tm?.bpm || 120) / 60 * TICKS_PER_BEAT);
+    const buildBeatMap = (api) => {
+        if (!api.score || !api.renderer?.boundsLookup) {
+            console.log(`[TabView] BeatMap: score=${!!api.score}, boundsLookup=${!!api.renderer?.boundsLookup}`);
+            return false;
         }
-        const beats = tm.beats;
-        // audioSecがどの拍間にあるか二分探索
-        if (audioSec <= beats[0]) return 0;
-        if (audioSec >= beats[beats.length - 1]) {
-            return (beats.length - 1) * TICKS_PER_BEAT;
+        const lookup = api.renderer.boundsLookup;
+        // AlphaTab 1.x: staffSystems / staveGroups — バージョンにより名前が異なる
+        const systems = lookup.staffSystems || lookup.staveGroups;
+        if (!systems || systems.length === 0) {
+            // boundsLookupの全プロパティ名をログ出力してデバッグ
+            const keys = Object.keys(lookup).filter(k => typeof lookup[k] !== 'function');
+            console.warn(`[TabView] BeatMap: no staffSystems/staveGroups. Available keys:`, keys);
+            return false;
         }
-        let lo = 0, hi = beats.length - 2;
+        const beats = beatsDataRef.current;
+
+        // AlphaTabから小節の座標を取得
+        // Y/高さはスタッフシステム（1段）の境界を使用し、X/幅は個別小節から取得
+        // → エフェクト記号(let ring, vibrato等)による小節ごとのY変動を排除
+        const barCoords = [];
+        let barCounterFallback = 0;
+        for (const system of systems) {
+            const sgBars = system.bars || system.masterBars;
+            if (!sgBars) continue;
+            const sysVb = system.visualBounds;
+            for (const sgBar of sgBars) {
+                const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounterFallback;
+                barCounterFallback++;
+                const barVb = sgBar.visualBounds;
+                if (barVb == null || barVb.x == null) continue;
+                barCoords.push({
+                    barIndex,
+                    vb: {
+                        x: barVb.x,
+                        y: sysVb ? sysVb.y : barVb.y,
+                        w: barVb.w,
+                        h: sysVb ? sysVb.h : barVb.h,
+                    },
+                });
+            }
+        }
+        barCoords.sort((a, b) => a.barIndex - b.barIndex);
+        if (barCoords.length === 0) {
+            console.warn(`[TabView] BeatMap: barCoords empty. systems=${systems.length}`);
+            return false;
+        }
+
+        // 拍子を取得
+        const masterBars = api.score.masterBars;
+        const getBeatsPerBar = (idx) => {
+            let arr = [];
+            const forEach = (list, cb) => {
+                if (Array.isArray(list)) list.forEach(cb);
+                else if (list?.items) list.items.forEach(cb);
+                else if (list?.forEach) list.forEach(cb);
+            };
+            if (masterBars) forEach(masterBars, mb => arr.push(mb));
+            return idx < arr.length ? (arr[idx].timeSignatureNumerator || 4) : 4;
+        };
+
+        // beats.jsonのタイムスタンプを使って各小節の開始/終了時刻を計算
+        const map = [];
+        let beatIdx = 0;
+        for (const bc of barCoords) {
+            const bpb = getBeatsPerBar(bc.barIndex);
+            const startMs = beatIdx < beats.length ? beats[beatIdx] * 1000 : null;
+            const endBeatIdx = beatIdx + bpb;
+            const endMs = endBeatIdx < beats.length ? beats[endBeatIdx] * 1000 : null;
+
+            if (startMs == null) break;
+
+            map.push({
+                startMs,
+                endMs: endMs ?? (startMs + bpb * 600), // fallback
+                vb: bc.vb,
+            });
+            beatIdx += bpb;
+        }
+
+        if (map.length === 0) {
+            // beats.jsonがない場合はテンポから計算（フォールバック）
+            const bpm = api.score.tempo || 120;
+            let accMs = 0;
+            for (const bc of barCoords) {
+                const bpb = getBeatsPerBar(bc.barIndex);
+                const durMs = bpb * (60000 / bpm);
+                map.push({ startMs: accMs, endMs: accMs + durMs, vb: bc.vb });
+                accMs += durMs;
+            }
+        }
+
+        beatMapRef.current = map;
+        console.log(`[TabView] BarMap: ${map.length} bars, first=${(map[0].startMs / 1000).toFixed(2)}s`);
+        return true;
+    };
+
+    const findBeat = (audioMs) => {
+        const map = beatMapRef.current;
+        if (!map || !map.length) return null;
+        if (audioMs < map[0].startMs) return map[0];
+        if (audioMs >= map[map.length - 1].startMs) return map[map.length - 1];
+        let lo = 0, hi = map.length - 1;
         while (lo <= hi) {
             const mid = (lo + hi) >> 1;
-            if (audioSec >= beats[mid] && audioSec < beats[mid + 1]) {
-                // 拍内を線形補間
-                const frac = (audioSec - beats[mid]) / (beats[mid + 1] - beats[mid]);
-                return (mid + frac) * TICKS_PER_BEAT;
-            }
-            if (audioSec < beats[mid]) hi = mid - 1;
+            if (audioMs >= map[mid].startMs && audioMs < map[mid].endMs) return map[mid];
+            if (audioMs < map[mid].startMs) hi = mid - 1;
             else lo = mid + 1;
         }
-        return lo * TICKS_PER_BEAT;
+        return lo > 0 ? map[lo - 1] : map[0];
     };
 
     // ============================================================
@@ -81,7 +167,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         initKeyRef.current = key;
 
         let destroyed = false;
-        tickMapRef.current = null;
+        boundsReadyRef.current = false;
+        beatMapRef.current = [];
 
         // Destroy old API
         if (apiRef.current) {
@@ -130,11 +217,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     const beatRes = await fetch(`${apiBase}/result/${sessionId}/beats`);
                     if (beatRes.ok) {
                         const beatData = await beatRes.json();
-                        tickMapRef.current = {
-                            beats: beatData.beats || [],
-                            bpm: beatData.bpm || 120,
-                        };
-                        console.log(`[TabView] TickMap: ${tickMapRef.current.beats.length} beats, ${tickMapRef.current.bpm} BPM`);
+                        beatsDataRef.current = beatData.beats || [];
+                        console.log(`[TabView] Loaded ${beatsDataRef.current.length} beats for cursor sync`);
                     }
                 } catch { /* ignore */ }
 
@@ -178,7 +262,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     settings.display.resources.titleFont = new window.alphaTab.model.Font("Arial", 16, 1);
                 }
 
-                // === Player + 組み込みカーソル有効化 ===
+                // === Player: boundsLookup生成に必要なので有効化、カーソルは無効 ===
                 settings.player.enablePlayer = true;
                 settings.player.enableCursor = true;
                 settings.player.scrollMode = 0;
@@ -221,8 +305,47 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (!found) return;
 
                     const rect = containerRef.current.getBoundingClientRect();
-                    const px = (evt?.pageX || evt?.clientX || 200) - rect.left;
-                    const py = (evt?.pageY || evt?.clientY || 200) - rect.top + containerRef.current.scrollTop;
+                    let px, py;
+                    if (evt && (evt.pageX || evt.clientX)) {
+                        px = (evt.pageX || evt.clientX) - rect.left;
+                        py = (evt.pageY || evt.clientY) - rect.top + containerRef.current.scrollTop;
+                    } else {
+                        // AlphaTab 1.3.0: evt is undefined, use boundsLookup for note position
+                        const bl = api.renderer?.boundsLookup;
+                        let noteBounds = null;
+                        if (bl) {
+                            try {
+                                // Try to find note bounds through boundsLookup
+                                const groups = bl.staffSystems || bl.staveGroups || [];
+                                outer: for (const sys of groups) {
+                                    const bars = sys.bars || sys.masterBars || [];
+                                    for (const bar of bars) {
+                                        const barBounds = bar.bars || [];
+                                        for (const bb of barBounds) {
+                                            const beats = bb.beats || [];
+                                            for (const beatBounds of beats) {
+                                                const notes = beatBounds.notes || [];
+                                                for (const nb of notes) {
+                                                    if (nb.note === note) {
+                                                        noteBounds = nb.noteHeadBounds || beatBounds.visualBounds;
+                                                        break outer;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch { /* ignore */ }
+                        }
+                        if (noteBounds) {
+                            px = noteBounds.x + noteBounds.w / 2;
+                            py = noteBounds.y;
+                        } else {
+                            // Last resort: center of visible area
+                            px = rect.width / 2;
+                            py = containerRef.current.scrollTop + rect.height / 3;
+                        }
+                    }
 
                     setEditNote({ noteIndex: noteIdx, fret: note.fret, string: note.string, x: px, y: py, alphaNote: note });
                     setEditInput(String(note.fret));
@@ -230,7 +353,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 });
 
                 api.renderStarted.on(() => setLoading(true));
-                api.renderFinished.on(() => {
+                api.postRenderFinished.on(() => {
                     if (destroyed) return;
                     setLoading(false);
 
@@ -240,8 +363,18 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         api.score.artist = 'SoloTab';
                     }
 
+                    // Build BeatMap with retries
+                    const tryBuild = (attempt) => {
+                        if (destroyed || boundsReadyRef.current) return;
+                        const ok = buildBeatMap(api);
+                        boundsReadyRef.current = ok;
+                        if (ok) console.log("[TabView] BeatMap ready");
+                        else if (attempt < 4) {
+                            setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
+                        }
+                    };
+                    tryBuild(0);
                     if (containerRef.current) containerRef.current.scrollTop = 0;
-                    console.log(`[TabView] Render finished, cursor ready`);
                 });
                 api.error.on((e) => {
                     console.error("[AlphaTab Error]", e);
@@ -258,6 +391,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         init();
         return () => {
             destroyed = true;
+            boundsReadyRef.current = false;
             initKeyRef.current = null;
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,21 +408,53 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     }, []);
 
     // ============================================================
-    // Sync loop: AlphaTab組み込みカーソルをtickPositionで駆動
+    // Sync loop: cursor + auto-scroll
     // ============================================================
     useEffect(() => {
         let animId;
-        let lastTick = -1;
+        let lastScrollMs = 0;
+        let wasPlaying = false;
 
         const sync = () => {
-            const api = apiRef.current;
-            if (api && tickMapRef.current) {
-                const sec = timeRef.current;
-                const tick = timeToTick(sec);
-                // 変化が小さいときはスキップ（負荷軽減）
-                if (Math.abs(tick - lastTick) > 10) {
-                    lastTick = tick;
-                    try { api.tickPosition = tick; } catch { /* ignore */ }
+            const cursor = cursorRef.current;
+            const container = containerRef.current;
+            const ms = Math.max(0, timeRef.current * 1000);
+            const nowPlaying = playingRef.current;
+
+            if (nowPlaying && !wasPlaying && container && ms < 1000) {
+                container.scrollTo({ top: 0, behavior: "instant" });
+            }
+            wasPlaying = nowPlaying;
+
+            if (cursor && boundsReadyRef.current) {
+                const beat = findBeat(ms);
+                if (beat) {
+                    const { x, y, w, h } = beat.vb;
+                    // 小節内の進行割合を計算してプレイヘッドを補間
+                    const duration = beat.endMs - beat.startMs;
+                    const fraction = duration > 0
+                        ? Math.max(0, Math.min(1, (ms - beat.startMs) / duration))
+                        : 0;
+                    const headX = x + fraction * w;
+                    cursor.style.display = "block";
+                    cursor.style.left = `${headX}px`;
+                    cursor.style.top = `${y}px`;
+                    cursor.style.width = "3px";
+                    cursor.style.height = `${h}px`;
+
+                    if (nowPlaying && container && autoScrollRef.current) {
+                        const now = Date.now();
+                        if (now - lastScrollMs > 400) {
+                            const cursorScreenY = y - container.scrollTop;
+                            const viewH = container.clientHeight;
+                            if (cursorScreenY < 0 || cursorScreenY > viewH * 0.55) {
+                                container.scrollTo({ top: Math.max(0, y - viewH * 0.3), behavior: "smooth" });
+                                lastScrollMs = now;
+                            }
+                        }
+                    }
+                } else {
+                    cursor.style.display = "none";
                 }
             }
             animId = requestAnimationFrame(sync);
@@ -338,9 +504,22 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 </div>
             )}
 
-            {/* Score container */}
+            {/* Score container — position:relative for cursor positioning */}
             <div style={{ position: "relative", padding: 0, margin: 0 }}>
-                {/* AlphaTab renders into this div (組み込みカーソル使用) */}
+                {/* Custom cursor (blue bar) */}
+                <div
+                    ref={cursorRef}
+                    style={{
+                        position: "absolute", display: "none", pointerEvents: "none",
+                        zIndex: 30, top: 0, left: 0,
+                        width: 3,
+                        background: "rgba(59,130,246,0.85)",
+                        borderRadius: 2,
+                        boxShadow: "0 0 8px rgba(59,130,246,0.5), 0 0 2px rgba(59,130,246,0.8)",
+                        willChange: "left, top",
+                    }}
+                />
+                {/* AlphaTab renders into this div */}
                 <div ref={wrapperRef} className="alpha-tab-wrapper" style={{ width: "100%", minHeight: "100vh" }} />
 
                 {/* ノート編集ポップアップ */}
