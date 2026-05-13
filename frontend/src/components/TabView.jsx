@@ -81,8 +81,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         initKeyRef.current = key;
 
         let destroyed = false;
-        boundsReadyRef.current = false;
-        beatMapRef.current = [];
+        tickMapRef.current = null;
 
         // Destroy old API
         if (apiRef.current) {
@@ -259,7 +258,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         init();
         return () => {
             destroyed = true;
-            boundsReadyRef.current = false;
             initKeyRef.current = null;
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
