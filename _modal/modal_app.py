@@ -376,7 +376,42 @@ def solotab_api():
         if not gp5_path.exists():
             try: session_vol.reload()
             except Exception: pass
-            if not gp5_path.exists(): raise HTTPException(404,"GP5 not generated")
+        if not gp5_path.exists():
+            # 旧セッション: notes_assigned.json から GP5 をオンデマンド生成
+            na_path = sd / "notes_assigned.json"
+            if not na_path.exists():
+                raise HTTPException(404, "GP5 not generated (no notes data)")
+            try:
+                from gp_renderer import notes_to_gp5
+                from music_theory import detect_rhythm_pattern, detect_key_signature
+                notes_data = json.loads(na_path.read_text(encoding="utf-8"))
+                bp = sd / "beats.json"
+                beats_ = []; bpm_r = s.get("bpm", 120); ts_ = s.get("time_signature", "4/4")
+                if bp.exists():
+                    bd = json.loads(bp.read_text(encoding="utf-8"))
+                    beats_ = bd.get("beats", []); bpm_r = bd.get("bpm", bpm_r); ts_ = bd.get("time_signature", ts_)
+                tuning = TUNINGS.get(s.get("tuning", "standard"), TUNINGS["standard"])
+                title = s.get("filename", sid).rsplit(".", 1)[0]
+                try: title.encode('latin-1')
+                except: title = __import__('re').sub(r'[^\x20-\x7E]', '', title).strip() or sid
+                rhythm_info = {"subdivision": "straight", "triplet_ratio": 0.0}
+                key_sig = "C"
+                try:
+                    rhythm_info = detect_rhythm_pattern(notes_data, beats_)
+                    key_sig = detect_key_signature(notes_data)
+                except: pass
+                gp5_bytes = notes_to_gp5(
+                    notes_data, beats=beats_, bpm=bpm_r, title=title,
+                    tuning=tuning, time_signature=ts_,
+                    rhythm_info=rhythm_info, key_signature=key_sig,
+                )
+                gp5_path.write_bytes(gp5_bytes)
+                try: session_vol.commit()
+                except: pass
+                print(f"GP5 auto-generated for session {sid}: {len(gp5_bytes)} bytes")
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                raise HTTPException(500, f"GP5 generation failed: {e}")
         from urllib.parse import quote
         raw_name = s.get("filename","tab").rsplit(".",1)[0] + ".gp5"
         safe_name = quote(raw_name)
