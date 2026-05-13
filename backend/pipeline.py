@@ -289,10 +289,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=15,      # Recall寄りバランス: デフォルト21→15 (43%合議)
+            vote_threshold=None,    # 自動: 利用可能モデル数 × 43% (35→15, 21→9, 7→3)
             onset_threshold=0.5,    # ベンチマーク最適値
             vote_prob_threshold=0.4, # ベンチマーク最適値
-            fast_mode=False,        # 35モデルフルモード (F1=0.8916)
+            fast_mode=False,        # フルモード（利用可能なモデルを全て使用）
         )
         report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:

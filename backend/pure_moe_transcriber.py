@@ -62,7 +62,7 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
     stage_suffixes = _FAST_STAGES if fast_mode else _FULL_STAGES
     n_expected = len(_DOMAINS) * len(stage_suffixes)
     if vote_threshold is None:
-        vote_threshold = 13 if fast_mode else 21
+        vote_threshold = max(2, round(n_expected * 0.43))  # 43%合議 (35→15, 21→9, 7→3)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     mode_label = f"FAST({len(stage_suffixes)}stg)" if fast_mode else f"FULL({len(stage_suffixes)}stg)"
@@ -116,7 +116,15 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
         _CACHED_MODELS[model_dir] = model
         models_loaded.append((model_dir, model))
     timings['model_load'] = _time.time() - t_load
-    print(f"[MoE] Models: {len(models_loaded)} loaded ({n_cached} cached, {len(models_loaded)-n_cached} new) in {timings['model_load']:.1f}s")
+    n_actual = len(models_loaded)
+    print(f"[MoE] Models: {n_actual} loaded ({n_cached} cached, {n_actual-n_cached} new) in {timings['model_load']:.1f}s")
+    
+    # vote_threshold を実際のモデル数に合わせて再調整
+    # (Modal環境では35モデル中7モデルしか存在しない場合がある)
+    if n_actual < n_expected and vote_threshold > n_actual:
+        old_vt = vote_threshold
+        vote_threshold = max(2, round(n_actual * 0.43))
+        print(f"[MoE] vote_threshold auto-adjusted: {old_vt} → {vote_threshold} (only {n_actual}/{n_expected} models available)")
     
     # --- 一括推論 ---
     all_onset_probs = []
