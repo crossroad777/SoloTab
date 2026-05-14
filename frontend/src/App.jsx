@@ -638,7 +638,7 @@ export default function SoloTabApp() {
                   style={{ fontSize: 11, padding: '4px 8px' }}>
                   <Printer size={12} style={{ marginRight: 2 }} />PDF
                 </button>
-                <button className="home-btn" title="Guitar Pro 5"
+                <button className="home-btn" title="Guitar Pro用 (.gp5) &#10;Guitar Pro / MuseScore で開けます"
                   onClick={async () => {
                     try {
                       const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
@@ -654,10 +654,10 @@ export default function SoloTabApp() {
                       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
                     } catch(e) { _showToast("GP5: " + e.message); }
                   }}
-                  style={{ fontSize: 11, padding: '4px 8px' }}>
-                  <Download size={12} style={{ marginRight: 2 }} />GP5
+                  style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#f59e0b', fontWeight: 700 }}>
+                  <Download size={11} style={{ marginRight: 2 }} />Guitar Pro
                 </button>
-                <button className="home-btn" title="MusicXML"
+                <button className="home-btn" title="MusicXML (.musicxml) &#10;MuseScore / Finale で開けます"
                   onClick={async () => {
                     try {
                       const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
@@ -673,10 +673,10 @@ export default function SoloTabApp() {
                       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
                     } catch(e) { _showToast("MusicXML: " + e.message); }
                   }}
-                  style={{ fontSize: 11, padding: '4px 8px' }}>
-                  <Download size={12} style={{ marginRight: 2 }} />XML
+                  style={{ fontSize: 10, padding: '4px 8px' }}>
+                  <Download size={11} style={{ marginRight: 2 }} />MusicXML
                 </button>
-                <button className="home-btn" title="TuxGuitar用 GP4ダウンロード"
+                <button className="home-btn" title="TuxGuitar用 (.gp4) &#10;TuxGuitar（無料）で開けます"
                   onClick={async () => {
                     try {
                       const res = await fetch(`${API_BASE}/result/${session.id}/gp4`);
@@ -690,11 +690,11 @@ export default function SoloTabApp() {
                       document.body.appendChild(a);
                       a.click();
                       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                      _showToast("TuxGuitar用GP4をダウンロードしました");
+                      _showToast("TuxGuitar用 .gp4 をダウンロードしました");
                     } catch(e) { _showToast("GP4: " + e.message); }
                   }}
-                  style={{ fontSize: 11, padding: '4px 8px', color: '#10b981' }}>
-                  🎸 TuxGuitar
+                  style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#10b981', fontWeight: 700 }}>
+                  <Download size={11} style={{ marginRight: 2 }} />TuxGuitar
                 </button>
               </div>
             </div>
