@@ -635,10 +635,25 @@ export default function SoloTabApp() {
                   style={{ fontSize: 11, padding: '4px 8px' }}>
                   <Download size={12} style={{ marginRight: 2 }} />XML
                 </button>
-                <button className="home-btn" title="TuxGuitar（無料）でGP5を開いて編集できます"
-                  onClick={() => window.open('https://sourceforge.net/projects/tuxguitar/', '_blank')}
+                <button className="home-btn" title="GP5をダウンロード → TuxGuitar（無料）で開いて編集"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
+                      if (!res.ok) throw new Error("取得失敗");
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}_TuxGuitar.gp5`;
+                      a.style.display = 'none';
+                      document.body.appendChild(a);
+                      a.click();
+                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                      _showToast("TuxGuitar用GP5をダウンロードしました");
+                    } catch(e) { _showToast("GP5: " + e.message); }
+                  }}
                   style={{ fontSize: 11, padding: '4px 8px', color: '#10b981' }}>
-                  🎸 TuxGuitar
+                  🎸 TuxGuitar用
                 </button>
               </div>
             </div>
