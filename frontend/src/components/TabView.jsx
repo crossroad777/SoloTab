@@ -474,16 +474,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 const beat = findBeat(ms);
                 if (beat) {
                     const { x, y, w, h } = beat.vb;
-                    const duration = beat.endMs - beat.startMs;
-                    const fraction = duration > 0
-                        ? Math.max(0, Math.min(1, (ms - beat.startMs) / duration))
-                        : 0;
-                    const headX = x + fraction * w;
 
+                    // 小節全体をハイライト（小節ごとに移動）
                     cursor.style.display = "block";
-                    cursor.style.left = `${headX - 105}px`;
+                    cursor.style.left = `${x}px`;
                     cursor.style.top = `${y}px`;
-                    cursor.style.width = "210px";
+                    cursor.style.width = `${w}px`;
                     cursor.style.height = `${h}px`;
 
                     if (container && autoScrollRef.current) {
@@ -556,10 +552,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     style={{
                         position: "absolute", display: "none", pointerEvents: "none",
                         zIndex: 30, top: 0, left: 0,
-                        width: 210,
-                        background: "rgba(59,130,246,0.12)",
+                        background: "rgba(59,130,246,0.10)",
                         borderRadius: 4,
                         boxShadow: "none",
+                        transition: "left 0.15s ease, top 0.05s ease, width 0.15s ease",
                         willChange: "left, top",
                     }}
                 />

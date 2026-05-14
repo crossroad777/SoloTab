@@ -366,7 +366,8 @@ export default function SoloTabApp() {
       } else {
         _showToast(`チューニングを${TUNING_OPTIONS.find(t => t.value === tuningToUse)?.label || tuningToUse}に変更しました`);
       }
-    } catch {
+    } catch (err) {
+      console.error('[handleRetune] failed:', err);
       _showToast("変更に失敗しました");
     } finally {
       setRetuning(false);
