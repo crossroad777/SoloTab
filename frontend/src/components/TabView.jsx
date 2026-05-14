@@ -87,7 +87,19 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             }
         }
         barCoords.sort((a, b) => a.barIndex - b.barIndex);
-        if (barCoords.length === 0) {
+        // Deduplicate: ScoreTab mode has 2 staves (notation + TAB) per bar
+        // → same barIndex appears twice. Keep only the first (wider coverage).
+        const seen = new Set();
+        const uniqueBarCoords = [];
+        for (const bc of barCoords) {
+            if (!seen.has(bc.barIndex)) {
+                seen.add(bc.barIndex);
+                uniqueBarCoords.push(bc);
+            }
+        }
+        const finalBarCoords = uniqueBarCoords;
+        console.log(`[TabView] barCoords: ${barCoords.length} raw → ${finalBarCoords.length} deduplicated`);
+        if (finalBarCoords.length === 0) {
             console.warn(`[TabView] BeatMap: barCoords empty. systems=${systems.length}`);
             return false;
         }
@@ -108,7 +120,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         // beats.jsonのタイムスタンプを使って各小節の開始/終了時刻を計算
         const map = [];
         let beatIdx = 0;
-        for (const bc of barCoords) {
+        for (const bc of finalBarCoords) {
             const bpb = getBeatsPerBar(bc.barIndex);
             const startMs = beatIdx < beats.length ? beats[beatIdx] * 1000 : null;
             const endBeatIdx = beatIdx + bpb;
@@ -128,7 +140,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             // beats.jsonがない場合はテンポから計算（フォールバック）
             const bpm = api.score.tempo || 120;
             let accMs = 0;
-            for (const bc of barCoords) {
+            for (const bc of finalBarCoords) {
                 const bpb = getBeatsPerBar(bc.barIndex);
                 const durMs = bpb * (60000 / bpm);
                 map.push({ startMs: accMs, endMs: accMs + durMs, vb: bc.vb });
