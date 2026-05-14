@@ -635,6 +635,46 @@ async def get_gp4(session_id: str):
     )
 
 
+@app.post("/result/{session_id}/open-tuxguitar")
+async def open_tuxguitar(session_id: str):
+    """GP4を生成してTuxGuitar（OSのデフォルトアプリ）で開く"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    gp5_path = session_dir / "tab.gp5"
+    gp4_path = session_dir / "tab.gp4"
+
+    # GP4がなければGP5から変換
+    if not gp4_path.exists() and gp5_path.exists():
+        try:
+            import guitarpro as gp
+            song = gp.parse(str(gp5_path))
+            gp.write(song, str(gp4_path))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"GP4変換失敗: {e}")
+
+    if not gp4_path.exists():
+        raise HTTPException(status_code=404, detail="GP4ファイルが見つかりません")
+
+    # OSのデフォルトアプリで開く (Windows: os.startfile)
+    import os, platform
+    try:
+        abs_path = str(gp4_path.resolve())
+        if platform.system() == "Windows":
+            os.startfile(abs_path)
+        elif platform.system() == "Darwin":
+            import subprocess
+            subprocess.Popen(["open", abs_path])
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", abs_path])
+        print(f"[open-tuxguitar] Opened: {abs_path}")
+        return {"status": "ok", "path": abs_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"起動失敗: {e}")
+
+
 @app.get("/result/{session_id}/pdf")
 async def get_pdf(session_id: str):
     """MusicXMLからTAB譜PDFを生成してダウンロードさせる"""

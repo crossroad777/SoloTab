@@ -676,25 +676,19 @@ export default function SoloTabApp() {
                   style={{ fontSize: 10, padding: '4px 8px' }}>
                   <Download size={11} style={{ marginRight: 2 }} />MusicXML
                 </button>
-                <button className="home-btn" title="TuxGuitar用 (.gp4) &#10;TuxGuitar（無料）で開けます"
+                <button className="home-btn" title="TuxGuitarで開く"
                   onClick={async () => {
                     try {
-                      const res = await fetch(`${API_BASE}/result/${session.id}/gp4`);
-                      if (!res.ok) throw new Error("取得失敗");
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp4`;
-                      a.style.display = 'none';
-                      document.body.appendChild(a);
-                      a.click();
-                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                      _showToast("TuxGuitar用 .gp4 をダウンロードしました");
-                    } catch(e) { _showToast("GP4: " + e.message); }
+                      const res = await fetch(`${API_BASE}/result/${session.id}/open-tuxguitar`, { method: 'POST' });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.detail || "起動失敗");
+                      }
+                      _showToast("TuxGuitarを起動しました");
+                    } catch(e) { _showToast("TuxGuitar: " + e.message); }
                   }}
                   style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#10b981', fontWeight: 700 }}>
-                  <Download size={11} style={{ marginRight: 2 }} />TuxGuitar
+                  🎸 TuxGuitar
                 </button>
               </div>
             </div>
