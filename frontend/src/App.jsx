@@ -32,6 +32,9 @@ export default function SoloTabApp() {
   const audioRef = useRef(null);
   const sseRef = useRef(null);
   const fileInputRef = useRef(null);
+  const scrollTimerRef = useRef(null);
+  const scrollStartRef = useRef(null);
+  const [scrollOnly, setScrollOnly] = useState(false);
   // alphaTabApiRef removed (AlphaTab排除済み)
 
   useEffect(() => {
@@ -277,12 +280,47 @@ export default function SoloTabApp() {
   };
 
   const togglePlay = () => {
+    // スクロールのみモード中は先に停止
+    if (scrollOnly) { stopScrollOnly(); }
     if (!audioRef.current || !session?.audioUrl) return;
     if (isPlaying) { audioRef.current.pause(); setIsPlaying(false); }
     else { audioRef.current.play(); setIsPlaying(true); }
   };
 
+  // スクロールのみモード: 音なしでBPMベースで自動スクロール
+  const toggleScrollOnly = () => {
+    if (scrollOnly) {
+      stopScrollOnly();
+    } else {
+      // 音声再生中なら停止
+      if (isPlaying && audioRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
+      setScrollOnly(true);
+      const startWall = performance.now();
+      const startTime = currentTime;
+      scrollStartRef.current = { startWall, startTime };
+      const spd = speed;
+      const tick = () => {
+        const elapsed = (performance.now() - startWall) / 1000 * spd;
+        setCurrentTime(startTime + elapsed);
+        scrollTimerRef.current = requestAnimationFrame(tick);
+      };
+      scrollTimerRef.current = requestAnimationFrame(tick);
+    }
+  };
+
+  const stopScrollOnly = () => {
+    setScrollOnly(false);
+    if (scrollTimerRef.current) {
+      cancelAnimationFrame(scrollTimerRef.current);
+      scrollTimerRef.current = null;
+    }
+  };
+
   const goHome = () => {
+    stopScrollOnly();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     setIsPlaying(false);
     setCurrentTime(0);
@@ -686,6 +724,13 @@ export default function SoloTabApp() {
                 >
                   {isPlaying ? <Pause size={24} fill="currentColor" color="#000" /> : <Play size={24} fill="currentColor" color="#000" style={{ marginLeft: 3 }} />}
                 </button>
+                <button 
+                  onClick={toggleScrollOnly}
+                  style={{ background: scrollOnly ? '#f59e0b' : '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title={scrollOnly ? "スクロール停止" : "スクロールのみ（音なし）"}
+                >
+                  <span style={{ fontSize: '18px' }}>{scrollOnly ? '⏸' : '📜'}</span>
+                </button>
               </div>
 
               {/* Central Timeline (Time + Draggable Progress) */}
@@ -771,7 +816,7 @@ export default function SoloTabApp() {
                 sessionId={session.id}
                 apiBase={API_BASE}
                 currentTime={currentTime}
-                isPlaying={isPlaying}
+                isPlaying={isPlaying || scrollOnly}
                 transpose={transpose}
                 capo={capo}
               />
