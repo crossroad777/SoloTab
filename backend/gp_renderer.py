@@ -337,13 +337,16 @@ def _parse_time_sig(ts: str) -> tuple[int, int]:
 def _filter_noise(notes, gate):
     if gate <= 0:
         return notes.copy()
-    filtered = []
-    for n in notes:
-        v = float(n.get("velocity", 0.5))
-        if v > 1.0:
-            v /= 127.0
-        if v >= gate:
-            filtered.append(n)
+    if not notes:
+        return []
+    # パーセンタイルベース: gate=0.5 → velocity下位50%をカット
+    vels = sorted(set(float(n.get("velocity", 0.5)) for n in notes))
+    if len(vels) <= 1:
+        return notes.copy()
+    cutoff_idx = int(len(vels) * gate)
+    cutoff_idx = min(cutoff_idx, len(vels) - 1)
+    threshold = vels[cutoff_idx]
+    filtered = [n for n in notes if float(n.get("velocity", 0.5)) >= threshold]
     return filtered if filtered else [max(notes, key=lambda x: float(x.get("velocity", 0)))]
 
 

@@ -388,14 +388,14 @@ def _run_pipeline_bg(session_id: str):
     wav_path = Path(session["wav_path"])
     tuning_name = session.get("tuning", "standard")
 
-    # パイプライン内部ステップ → フロントエンド4ステップのマッピング
+    # パイプライン内部ステップ → フロントエンド5ステップのマッピング
     STEP_MAP = {
-        "beats": 0, "key": 0, "capo": 0,
-        "demucs": 1, "preprocess": 1,
-        "notes": 1, "spectral": 1,
-        "filter": 2, "assign": 2, "note_filter": 2, "quantize": 2,
-        "technique": 2, "technique_pm": 2, "tuning_detect": 2, "chords": 2,
-        "musicxml": 3,
+        "beats": 1, "key": 1, "capo": 1,
+        "demucs": 2, "preprocess": 2,
+        "notes": 2, "spectral": 2,
+        "filter": 3, "assign": 3, "note_filter": 3, "quantize": 3,
+        "technique": 3, "technique_pm": 3, "tuning_detect": 3, "chords": 3,
+        "musicxml": 4,
     }
 
     def progress_cb(step: str, msg: str):
@@ -595,6 +595,46 @@ async def get_gp5(session_id: str):
     )
 
 
+@app.get("/result/{session_id}/gp4")
+async def get_gp4(session_id: str):
+    """GP4ファイルを返す（TuxGuitar互換用）"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    gp5_path = session_dir / "tab.gp5"
+    gp4_path = session_dir / "tab.gp4"
+
+    if not gp4_path.exists() and gp5_path.exists():
+        try:
+            import guitarpro as gp
+            song = gp.parse(str(gp5_path))
+            gp.write(song, str(gp4_path))
+            print(f"[get_gp4] Converted GP5 -> GP4: {gp4_path}")
+        except Exception as e:
+            print(f"[get_gp4] Conversion failed: {e}")
+            import traceback; traceback.print_exc()
+
+    if not gp4_path.exists():
+        raise HTTPException(status_code=404, detail="GP4 not generated")
+
+    filename = s.get("filename", session_id)
+    if "." in filename:
+        filename = filename.rsplit(".", 1)[0]
+    from urllib.parse import quote
+    safe_filename = f"{filename}.gp4"
+    try:
+        safe_filename.encode("latin-1")
+        cd = f'attachment; filename="{safe_filename}"'
+    except UnicodeEncodeError:
+        cd = f"attachment; filename*=UTF-8''{quote(safe_filename)}"
+    return FileResponse(
+        str(gp4_path),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": cd},
+    )
+
+
 @app.get("/result/{session_id}/pdf")
 async def get_pdf(session_id: str):
     """MusicXMLからTAB譜PDFを生成してダウンロードさせる"""
@@ -703,6 +743,13 @@ def _regenerate_musicxml(session_id: str, notes: list,
         )
         with open(session_dir / "tab.gp5", "wb") as f:
             f.write(gp5_bytes)
+        # GP4 (TuxGuitar用) も同時生成
+        try:
+            import guitarpro as _gp
+            _song = _gp.parse(str(session_dir / "tab.gp5"))
+            _gp.write(_song, str(session_dir / "tab.gp4"))
+        except Exception:
+            pass
     except Exception as e:
         print(f"[_regenerate] GP5 generation failed: {e}")
 

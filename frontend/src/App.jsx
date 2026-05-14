@@ -217,6 +217,8 @@ export default function SoloTabApp() {
       const data = await res.json();
       setSession({ id: data.session_id, fileName: file.name, audioUrl: `${API_BASE}${data.audio_url}` });
       setStatus(STATUS.PROCESSING);
+      setStepsDone(1); // アップロード完了 = 20%
+      setProgressMsg("ビート検出中...");
       startStatusStream(data.session_id);
     } catch (err) {
       setStatus(STATUS.FAILED);
@@ -379,6 +381,7 @@ export default function SoloTabApp() {
 
   // Processing step definitions
   const STEPS = [
+    { key: 'upload', label: 'アップロード完了', icon: '📁' },
     { key: 'beats', label: 'ビート検出', icon: '🥁' },
     { key: 'notes', label: 'ノート検出', icon: '🎵' },
     { key: 'strings', label: '弦・フレット推定', icon: '🎸' },
@@ -635,25 +638,25 @@ export default function SoloTabApp() {
                   style={{ fontSize: 11, padding: '4px 8px' }}>
                   <Download size={12} style={{ marginRight: 2 }} />XML
                 </button>
-                <button className="home-btn" title="GP5をダウンロード → TuxGuitar（無料）で開いて編集"
+                <button className="home-btn" title="TuxGuitar用 GP4ダウンロード"
                   onClick={async () => {
                     try {
-                      const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
+                      const res = await fetch(`${API_BASE}/result/${session.id}/gp4`);
                       if (!res.ok) throw new Error("取得失敗");
                       const blob = await res.blob();
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}_TuxGuitar.gp5`;
+                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp4`;
                       a.style.display = 'none';
                       document.body.appendChild(a);
                       a.click();
                       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                      _showToast("TuxGuitar用GP5をダウンロードしました");
-                    } catch(e) { _showToast("GP5: " + e.message); }
+                      _showToast("TuxGuitar用GP4をダウンロードしました");
+                    } catch(e) { _showToast("GP4: " + e.message); }
                   }}
                   style={{ fontSize: 11, padding: '4px 8px', color: '#10b981' }}>
-                  🎸 TuxGuitar用
+                  🎸 TuxGuitar
                 </button>
               </div>
             </div>
