@@ -51,20 +51,16 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             return false;
         }
         const lookup = api.renderer.boundsLookup;
-        // AlphaTab 1.x: staffSystems / staveGroups — バージョンにより名前が異なる
         const systems = lookup.staffSystems || lookup.staveGroups;
         if (!systems || systems.length === 0) {
-            // boundsLookupの全プロパティ名をログ出力してデバッグ
             const keys = Object.keys(lookup).filter(k => typeof lookup[k] !== 'function');
             console.warn(`[TabView] BeatMap: no staffSystems/staveGroups. Available keys:`, keys);
             return false;
         }
         const beats = beatsDataRef.current;
 
-        // AlphaTabから小節の座標を取得
-        // Y/高さはスタッフシステム（1段）の境界を使用し、X/幅は個別小節から取得
-        // → エフェクト記号(let ring, vibrato等)による小節ごとのY変動を排除
-        const barCoords = [];
+        // ビートレベルの座標を取得（各音符位置）
+        const beatCoords = [];
         let barCounterFallback = 0;
         for (const system of systems) {
             const sgBars = system.bars || system.masterBars;
@@ -73,36 +69,70 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             for (const sgBar of sgBars) {
                 const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounterFallback;
                 barCounterFallback++;
+                // ビートレベルのバウンディング取得
+                const barBeats = sgBar.beats || [];
+                if (barBeats.length > 0) {
+                    for (const beatBounds of barBeats) {
+                        const bvb = beatBounds.visualBounds || beatBounds.bounds;
+                        if (!bvb || bvb.x == null) continue;
+                        beatCoords.push({
+                            barIndex,
+                            vb: {
+                                x: bvb.x,
+                                y: sysVb ? sysVb.y : bvb.y,
+                                w: bvb.w,
+                                h: sysVb ? sysVb.h : bvb.h,
+                            },
+                        });
+                    }
+                } else {
+                    // ビートがない場合は小節全体をフォールバック
+                    const barVb = sgBar.visualBounds;
+                    if (barVb && barVb.x != null) {
+                        beatCoords.push({
+                            barIndex,
+                            vb: {
+                                x: barVb.x,
+                                y: sysVb ? sysVb.y : barVb.y,
+                                w: barVb.w,
+                                h: sysVb ? sysVb.h : barVb.h,
+                            },
+                        });
+                    }
+                }
+            }
+        }
+
+        // バー座標（フォールバック用）も構築
+        const barCoords = [];
+        barCounterFallback = 0;
+        const seenBars = new Set();
+        for (const system of systems) {
+            const sgBars = system.bars || system.masterBars;
+            if (!sgBars) continue;
+            const sysVb = system.visualBounds;
+            for (const sgBar of sgBars) {
+                const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounterFallback;
+                barCounterFallback++;
+                if (seenBars.has(barIndex)) continue;
+                seenBars.add(barIndex);
                 const barVb = sgBar.visualBounds;
-                if (barVb == null || barVb.x == null) continue;
-                barCoords.push({
-                    barIndex,
-                    vb: {
-                        x: barVb.x,
-                        y: sysVb ? sysVb.y : barVb.y,
-                        w: barVb.w,
-                        h: sysVb ? sysVb.h : barVb.h,
-                    },
-                });
+                if (barVb && barVb.x != null) {
+                    barCoords.push({
+                        barIndex,
+                        vb: {
+                            x: barVb.x,
+                            y: sysVb ? sysVb.y : barVb.y,
+                            w: barVb.w,
+                            h: sysVb ? sysVb.h : barVb.h,
+                        },
+                    });
+                }
             }
         }
         barCoords.sort((a, b) => a.barIndex - b.barIndex);
-        // Deduplicate: ScoreTab mode has 2 staves (notation + TAB) per bar
-        // → same barIndex appears twice. Keep only the first (wider coverage).
-        const seen = new Set();
-        const uniqueBarCoords = [];
-        for (const bc of barCoords) {
-            if (!seen.has(bc.barIndex)) {
-                seen.add(bc.barIndex);
-                uniqueBarCoords.push(bc);
-            }
-        }
-        const finalBarCoords = uniqueBarCoords;
-        console.log(`[TabView] barCoords: ${barCoords.length} raw → ${finalBarCoords.length} deduplicated`);
-        if (finalBarCoords.length === 0) {
-            console.warn(`[TabView] BeatMap: barCoords empty. systems=${systems.length}`);
-            return false;
-        }
+
+        console.log(`[TabView] beatCoords: ${beatCoords.length}, barCoords: ${barCoords.length}`);
 
         // 拍子を取得
         const masterBars = api.score.masterBars;
@@ -117,30 +147,39 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             return idx < arr.length ? (arr[idx].timeSignatureNumerator || 4) : 4;
         };
 
-        // beats.jsonのタイムスタンプを使って各小節の開始/終了時刻を計算
+        // ビートレベルのマップが十分あればビート単位カーソル
+        if (beatCoords.length > barCoords.length * 1.5) {
+            // beats.jsonのタイムスタンプと1:1マッピング
+            const map = [];
+            for (let i = 0; i < Math.min(beatCoords.length, beats.length); i++) {
+                const startMs = beats[i] * 1000;
+                const endMs = i + 1 < beats.length ? beats[i + 1] * 1000 : startMs + 600;
+                map.push({ startMs, endMs, vb: beatCoords[i].vb });
+            }
+            if (map.length > 0) {
+                beatMapRef.current = map;
+                console.log(`[TabView] BeatMap (beat-level): ${map.length} entries`);
+                return true;
+            }
+        }
+
+        // フォールバック: 小節単位
         const map = [];
         let beatIdx = 0;
-        for (const bc of finalBarCoords) {
+        for (const bc of barCoords) {
             const bpb = getBeatsPerBar(bc.barIndex);
             const startMs = beatIdx < beats.length ? beats[beatIdx] * 1000 : null;
             const endBeatIdx = beatIdx + bpb;
             const endMs = endBeatIdx < beats.length ? beats[endBeatIdx] * 1000 : null;
-
             if (startMs == null) break;
-
-            map.push({
-                startMs,
-                endMs: endMs ?? (startMs + bpb * 600), // fallback
-                vb: bc.vb,
-            });
+            map.push({ startMs, endMs: endMs ?? (startMs + bpb * 600), vb: bc.vb });
             beatIdx += bpb;
         }
 
         if (map.length === 0) {
-            // beats.jsonがない場合はテンポから計算（フォールバック）
             const bpm = api.score.tempo || 120;
             let accMs = 0;
-            for (const bc of finalBarCoords) {
+            for (const bc of barCoords) {
                 const bpb = getBeatsPerBar(bc.barIndex);
                 const durMs = bpb * (60000 / bpm);
                 map.push({ startMs: accMs, endMs: accMs + durMs, vb: bc.vb });
@@ -149,7 +188,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         }
 
         beatMapRef.current = map;
-        console.log(`[TabView] BarMap: ${map.length} bars, first=${(map[0].startMs / 1000).toFixed(2)}s`);
+        console.log(`[TabView] BeatMap (bar-level fallback): ${map.length} entries`);
         return true;
     };
 
