@@ -825,7 +825,6 @@ async def retune(session_id: str, request: RetuneRequest):
 
 
 class NoteEditRequest(BaseModel):
-    noteIndex: int
     fret: Optional[int] = None
     string: Optional[int] = None
     delete: Optional[bool] = False

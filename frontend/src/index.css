@@ -1008,3 +1008,14 @@ h6 {
     display: block !important;
   }
 }
+
+/* ── AlphaTab title/subtitle hiding ───── */
+/* GP5 Latin-1 encoding corrupts Japanese titles;
+   the clean title is shown in the app toolbar instead */
+.alpha-tab-wrapper .at-score-title,
+.alpha-tab-wrapper .at-score-subtitle,
+.alpha-tab-wrapper .at-score-artist,
+.alpha-tab-wrapper .at-score-words,
+.alpha-tab-wrapper .at-score-music {
+  display: none !important;
+}

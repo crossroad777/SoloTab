@@ -279,6 +279,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 settings.notation.rhythmMode = 0;
                 settings.notation.fingeringMode = 0;
 
+                // === タイトル非表示（GP5のLatin-1エンコードで文字化けするため） ===
+                const NE = window.alphaTab.NotationElement;
+                if (NE) {
+                    settings.notation.elements.set(NE.ScoreTitle, false);
+                    settings.notation.elements.set(NE.ScoreSubTitle, false);
+                    settings.notation.elements.set(NE.ScoreArtist, false);
+                    settings.notation.elements.set(NE.ScoreWordsAndMusic, false);
+                }
+
                 if (settings.display.resources) {
                     settings.display.resources.titleFont = new window.alphaTab.model.Font("Arial", 16, 1);
                 }
@@ -435,8 +444,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         let animId;
         let lastScrollMs = 0;
         let wasPlaying = false;
-        let lastHeadX = 0;
-        let lastHeadY = 0;
 
         const sync = () => {
             const cursor = cursorRef.current;
@@ -444,13 +451,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             const ms = Math.max(0, timeRef.current * 1000);
             const nowPlaying = playingRef.current;
 
-            // 再生開始時にカーソル位置をリセット
-            if (nowPlaying && !wasPlaying) {
-                lastHeadX = 0;
-                lastHeadY = 0;
-                if (container && ms < 1000) {
-                    container.scrollTo({ top: 0, behavior: "instant" });
-                }
+            // 再生開始時にスクロールリセット
+            if (nowPlaying && !wasPlaying && container && ms < 1000) {
+                container.scrollTo({ top: 0, behavior: "instant" });
             }
             wasPlaying = nowPlaying;
 
@@ -469,15 +472,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     const fraction = duration > 0
                         ? Math.max(0, Math.min(1, (ms - beat.startMs) / duration))
                         : 0;
-                    let headX = x + fraction * w;
-
-                    // 巻き戻し防止: 同じ段(Y)なら前回位置より後退しない
-                    if (y === lastHeadY && headX < lastHeadX - 5) {
-                        // 小さな後退は無視（同じ小節内の誤差は許容）
-                        headX = lastHeadX;
-                    }
-                    lastHeadX = headX;
-                    lastHeadY = y;
+                    const headX = x + fraction * w;
 
                     cursor.style.display = "block";
                     cursor.style.left = `${headX}px`;
