@@ -477,7 +477,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     cursor.style.display = "block";
                     cursor.style.left = `${headX}px`;
                     cursor.style.top = `${y}px`;
-                    cursor.style.width = "3px";
+                    cursor.style.width = "14px";
                     cursor.style.height = `${h}px`;
 
                     if (container && autoScrollRef.current) {
@@ -550,10 +550,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     style={{
                         position: "absolute", display: "none", pointerEvents: "none",
                         zIndex: 30, top: 0, left: 0,
-                        width: 3,
-                        background: "rgba(59,130,246,0.85)",
-                        borderRadius: 2,
-                        boxShadow: "0 0 8px rgba(59,130,246,0.5), 0 0 2px rgba(59,130,246,0.8)",
+                        width: 14,
+                        background: "rgba(59,130,246,0.35)",
+                        borderRadius: 3,
+                        boxShadow: "0 0 12px rgba(59,130,246,0.3)",
                         willChange: "left, top",
                     }}
                 />
