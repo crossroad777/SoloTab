@@ -305,6 +305,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     onApiReady(api);
                 }
 
+                // タイトル上書き: 描画前にGP5の文字化けタイトルを消す
+                api.scoreLoaded.on((score) => {
+                    if (score) {
+                        score.title = songTitle || '';
+                        score.subTitle = '';
+                        score.artist = songTitle ? 'SoloTab' : '';
+                        score.words = '';
+                        score.music = '';
+                    }
+                });
+
                 // --- ノートクリック → 編集UI ---
                 api.noteMouseDown.on((note, evt) => {
                     if (!note || !containerRef.current) return;
@@ -387,11 +398,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (destroyed) return;
                     setLoading(false);
 
-                    // タイトル上書き（renderFinished時にapi.scoreが確実に存在）
-                    if (songTitle && api.score) {
-                        api.score.title = songTitle;
-                        api.score.artist = 'SoloTab';
-                    }
 
                     // Build BeatMap with retries
                     const tryBuild = (attempt) => {
@@ -475,9 +481,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     const headX = x + fraction * w;
 
                     cursor.style.display = "block";
-                    cursor.style.left = `${headX}px`;
+                    cursor.style.left = `${headX - 105}px`;
                     cursor.style.top = `${y}px`;
-                    cursor.style.width = "14px";
+                    cursor.style.width = "210px";
                     cursor.style.height = `${h}px`;
 
                     if (container && autoScrollRef.current) {
@@ -550,10 +556,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     style={{
                         position: "absolute", display: "none", pointerEvents: "none",
                         zIndex: 30, top: 0, left: 0,
-                        width: 14,
-                        background: "rgba(59,130,246,0.35)",
-                        borderRadius: 3,
-                        boxShadow: "0 0 12px rgba(59,130,246,0.3)",
+                        width: 210,
+                        background: "rgba(59,130,246,0.12)",
+                        borderRadius: 4,
+                        boxShadow: "none",
                         willChange: "left, top",
                     }}
                 />
