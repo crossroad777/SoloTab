@@ -45,6 +45,19 @@ with warnings.catch_warnings():
     except ImportError:
         print("[beat_detector] Warning: madmom not available")
 
+# プロセッサのキャッシュ（NNウェイト再ロード回避）
+_cached_beat_proc = None
+_cached_beat_tracker = None
+
+def _get_beat_processors():
+    global _cached_beat_proc, _cached_beat_tracker
+    if _cached_beat_proc is None and _HAS_MADMOM:
+        print("[beat_detector] Initializing RNNBeatProcessor (first call)...")
+        _cached_beat_proc = RNNBeatProcessor()
+        _cached_beat_tracker = DBNBeatTrackingProcessor(fps=100)
+        print("[beat_detector] Processor cached.")
+    return _cached_beat_proc, _cached_beat_tracker
+
 
 def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
     """
@@ -70,7 +83,7 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
     # --- 音声を最初60秒に制限（速度改善）---
     import soundfile as sf
     import tempfile
-    MAX_DURATION = 60  # 秒
+    MAX_DURATION = 30  # 秒 (30秒で十分なビートパターンが得られる)
     truncated_path = wav_path
     try:
         info = sf.info(wav_path)
@@ -87,8 +100,9 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         warnings.filterwarnings("ignore", message="dtype.*align")
-        beat_proc = _beat_proc or RNNBeatProcessor()
-        beat_tracker = _beat_tracker or DBNBeatTrackingProcessor(fps=100)
+        cached_proc, cached_tracker = _get_beat_processors()
+        beat_proc = _beat_proc or cached_proc
+        beat_tracker = _beat_tracker or cached_tracker
 
         activations = beat_proc(truncated_path)
         beats = beat_tracker(activations)
