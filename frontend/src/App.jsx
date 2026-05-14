@@ -635,6 +635,11 @@ export default function SoloTabApp() {
                   style={{ fontSize: 11, padding: '4px 8px' }}>
                   <Download size={12} style={{ marginRight: 2 }} />XML
                 </button>
+                <button className="home-btn" title="TuxGuitar（無料）でGP5を開いて編集できます"
+                  onClick={() => window.open('https://sourceforge.net/projects/tuxguitar/', '_blank')}
+                  style={{ fontSize: 11, padding: '4px 8px', color: '#10b981' }}>
+                  🎸 TuxGuitar
+                </button>
               </div>
             </div>
 

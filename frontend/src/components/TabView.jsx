@@ -307,12 +307,18 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 // タイトル上書き: 描画前にGP5の文字化けタイトルを消す
                 api.scoreLoaded.on((score) => {
-                    if (score) {
-                        score.title = songTitle || '';
-                        score.subTitle = '';
-                        score.artist = songTitle ? 'SoloTab' : '';
-                        score.words = '';
-                        score.music = '';
+                    try {
+                        const s = score?.score || score;
+                        if (s && s.title !== undefined) {
+                            console.log('[TabView] scoreLoaded: overriding title from', JSON.stringify(s.title), 'to', JSON.stringify(songTitle || ''));
+                            s.title = songTitle || '';
+                            s.subTitle = '';
+                            s.artist = songTitle ? 'SoloTab' : '';
+                            s.words = '';
+                            s.music = '';
+                        }
+                    } catch (e) {
+                        console.warn('[TabView] scoreLoaded title override failed:', e);
                     }
                 });
 

@@ -569,10 +569,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # except Exception as e:
     #     report("assign", f"LSTMリファインメントスキップ: {e}")
 
-    # --- フレットクランプ: 異常に高いフレット値を修正 ---
-    # guitar_cost_functions.MAX_FRET (=15) と統一
-    # Viterbiが15fまでで最適化したパスを12fでクランプすると遷移コストの整合性が壊れる
-    from guitar_cost_functions import MAX_FRET
+    # --- フレットクランプ: ハイポジション過多を抑制 ---
+    # Viterbiは15fまでで最適化するが、出力は12fまでにクランプ
+    MAX_FRET = 12
     clamp_count = 0
     for n in notes:
         if n.get("fret", 0) > MAX_FRET:
