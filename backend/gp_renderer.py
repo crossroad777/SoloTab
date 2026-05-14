@@ -339,15 +339,13 @@ def _filter_noise(notes, gate):
         return notes.copy()
     if not notes:
         return []
-    # パーセンタイルベース: gate=0.5 → velocity下位50%をカット
-    vels = sorted(set(float(n.get("velocity", 0.5)) for n in notes))
-    if len(vels) <= 1:
-        return notes.copy()
-    cutoff_idx = int(len(vels) * gate)
-    cutoff_idx = min(cutoff_idx, len(vels) - 1)
-    threshold = vels[cutoff_idx]
-    filtered = [n for n in notes if float(n.get("velocity", 0.5)) >= threshold]
-    return filtered if filtered else [max(notes, key=lambda x: float(x.get("velocity", 0)))]
+    # ノート数ベース: gate=0.5 → velocity下位50%のノートをカット
+    ranked = sorted(notes, key=lambda n: float(n.get("velocity", 0.5)))
+    cut_count = int(len(ranked) * gate)
+    if cut_count >= len(ranked):
+        cut_count = len(ranked) - 1  # 最低1ノート残す
+    filtered = ranked[cut_count:]
+    return filtered if filtered else [ranked[-1]]
 
 
 def _key_to_fifths(key: str) -> int:

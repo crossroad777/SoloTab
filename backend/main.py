@@ -903,12 +903,15 @@ async def retune(session_id: str, request: RetuneRequest):
     # Update session
     s["tuning"] = tuning_name
     s["capo"] = capo
-    s["total_notes"] = len(notes)
+    gate = request.noise_gate if request.noise_gate is not None else 0.20
+    from gp_renderer import _filter_noise
+    filtered_count = len(_filter_noise(notes, gate))
+    s["total_notes"] = filtered_count
     if request.noise_gate is not None:
         s["noise_gate"] = request.noise_gate
     save_session(session_id)
 
-    return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": len(notes)}
+    return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": filtered_count}
 
 
 class NoteEditRequest(BaseModel):
