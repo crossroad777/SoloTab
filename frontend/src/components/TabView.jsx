@@ -237,6 +237,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     break;
                                 }
                             }
+                            // Remove junk metadata patterns from filename
+                            songTitle = songTitle
+                                .replace(/\s*\(\d+k\)/gi, '')       // (128k)
+                                .replace(/\s*Tab譜.*$/i, '')         // Tab譜 楽譜 ...
+                                .replace(/\s*ギター\s*タブ.*$/i, '') // ギター タブ ...
+                                .replace(/\s*コードネーム付\s*/gi, '') // コードネーム付
+                                .replace(/\s*-\s*アコースティック.*$/i, '') // - アコースティック ...
+                                .replace(/\s*楽譜.*$/i, '')          // 楽譜...
+                                .trim();
                         }
                     }
                 } catch { /* ignore */ }
@@ -414,6 +423,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         let animId;
         let lastScrollMs = 0;
         let wasPlaying = false;
+        let lastHeadX = 0;
+        let lastHeadY = 0;
 
         const sync = () => {
             const cursor = cursorRef.current;
@@ -421,28 +432,48 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             const ms = Math.max(0, timeRef.current * 1000);
             const nowPlaying = playingRef.current;
 
-            if (nowPlaying && !wasPlaying && container && ms < 1000) {
-                container.scrollTo({ top: 0, behavior: "instant" });
+            // 再生開始時にカーソル位置をリセット
+            if (nowPlaying && !wasPlaying) {
+                lastHeadX = 0;
+                lastHeadY = 0;
+                if (container && ms < 1000) {
+                    container.scrollTo({ top: 0, behavior: "instant" });
+                }
             }
             wasPlaying = nowPlaying;
 
             if (cursor && boundsReadyRef.current) {
+                // 再生中のみカーソル表示
+                if (!nowPlaying) {
+                    cursor.style.display = "none";
+                    animId = requestAnimationFrame(sync);
+                    return;
+                }
+
                 const beat = findBeat(ms);
                 if (beat) {
                     const { x, y, w, h } = beat.vb;
-                    // 小節内の進行割合を計算してプレイヘッドを補間
                     const duration = beat.endMs - beat.startMs;
                     const fraction = duration > 0
                         ? Math.max(0, Math.min(1, (ms - beat.startMs) / duration))
                         : 0;
-                    const headX = x + fraction * w;
+                    let headX = x + fraction * w;
+
+                    // 巻き戻し防止: 同じ段(Y)なら前回位置より後退しない
+                    if (y === lastHeadY && headX < lastHeadX - 5) {
+                        // 小さな後退は無視（同じ小節内の誤差は許容）
+                        headX = lastHeadX;
+                    }
+                    lastHeadX = headX;
+                    lastHeadY = y;
+
                     cursor.style.display = "block";
                     cursor.style.left = `${headX}px`;
                     cursor.style.top = `${y}px`;
                     cursor.style.width = "3px";
                     cursor.style.height = `${h}px`;
 
-                    if (nowPlaying && container && autoScrollRef.current) {
+                    if (container && autoScrollRef.current) {
                         const now = Date.now();
                         if (now - lastScrollMs > 400) {
                             const cursorScreenY = y - container.scrollTop;

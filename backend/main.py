@@ -666,14 +666,33 @@ def _regenerate_musicxml(session_id: str, notes: list,
         time_sig = bd.get("time_signature", time_sig)
 
     title_raw = s.get("filename", session_id)
-    # GP5 binary format uses Latin-1 encoding internally;
-    # non-Latin-1 characters (e.g. Japanese) cause 'charmap' codec errors
+    # Remove audio extension first
+    import re as _re
+    for ext in ('.mp3','.wav','.m4a','.flac','.ogg','.opus','.webm','.mp4'):
+        if title_raw.lower().endswith(ext):
+            title_raw = title_raw[:-len(ext)]
+            break
+    # Clean: remove common junk metadata patterns from filename
+    # e.g. "(128k)", "ギター Tab譜 楽譜", "コードネーム付", etc.
+    _junk_patterns = [
+        r'\s*\(\d+k\)',                     # (128k)
+        r'\s*Tab譜.*$',                       # Tab譜 楽譜 ... trailing
+        r'\s*ギター\s*タブ.*$',               # ギター タブ ...
+        r'\s*コードネーム付\s*',              # コードネーム付
+        r'\s*-\s*アコースティック.*$',        # - アコースティック ...
+        r'\s*楽譜.*$',                        # 楽譜...
+    ]
+    title_clean = title_raw.strip()
+    for pat in _junk_patterns:
+        title_clean = _re.sub(pat, '', title_clean, flags=_re.IGNORECASE).strip()
+    if not title_clean:
+        title_clean = title_raw.strip()
+    # GP5 binary format uses Latin-1 encoding internally
     try:
-        title_raw.encode('latin-1')
-        title = title_raw
+        title_clean.encode('latin-1')
+        title = title_clean
     except (UnicodeEncodeError, UnicodeDecodeError):
-        import re as _re
-        title = _re.sub(r'[^\x20-\x7E]', '', title_raw).strip() or session_id
+        title = _re.sub(r'[^\x20-\x7E]', '', title_clean).strip() or session_id
     gate = noise_gate if noise_gate is not None else 0.20
 
     # --- GP5再生成 ---
@@ -703,6 +722,12 @@ def _regenerate_musicxml(session_id: str, notes: list,
 
     with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
         f.write(xml_content)
+
+    # Delete stale PDF so it gets regenerated on next request
+    pdf_path = session_dir / "tab.pdf"
+    if pdf_path.exists():
+        pdf_path.unlink()
+
     return xml_content, tech_map
 
 
@@ -840,7 +865,11 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
-    _regenerate_musicxml(session_id, notes)
+    try:
+        _regenerate_musicxml(session_id, notes)
+    except Exception as e:
+        print(f"[edit_note] Regeneration failed: {e}")
+        import traceback; traceback.print_exc()
 
     s["total_notes"] = len(notes)
     save_session(session_id)
