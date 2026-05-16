@@ -479,6 +479,7 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
             "fret": note.get("fret", 0),
             "technique": note.get("technique"),
             "velocity": note.get("velocity", 0.5),
+            "finger": note.get("finger"),
             "start_time": t,
         })
 

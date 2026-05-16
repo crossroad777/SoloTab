@@ -300,6 +300,13 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
             elif tech == "harmonic":
                 note.effect.harmonic = gp.NaturalHarmonic()
 
+            # 左手指番号 (finger_assigner.py で割り当て済み)
+            # GP5: 0=thumb, 1=index, 2=middle, 3=annular, 4=little
+            # SoloTab: 0=開放弦(指なし), 1-4=人差〜小指
+            finger = entry.get("finger")
+            if finger is not None and finger >= 1:
+                note.effect.leftHandFinger = gp.Fingering(finger)
+
             beat.notes.append(note)
 
         gp_beats.append(beat)
@@ -340,12 +347,25 @@ def _filter_noise(notes, gate):
     if not notes:
         return []
     # ノート数ベース: gate=0.5 → velocity下位50%のノートをカット
-    ranked = sorted(notes, key=lambda n: float(n.get("velocity", 0.5)))
-    cut_count = int(len(ranked) * gate)
-    if cut_count >= len(ranked):
-        cut_count = len(ranked) - 1  # 最低1ノート残す
-    filtered = ranked[cut_count:]
-    return filtered if filtered else [ranked[-1]]
+    # 重要: velocityが同一の場合、安定ソートにより時間順の先頭ノートが
+    # 常にカットされるバグを防止するため、同一velocity内では
+    # 時間的に均等分散してカットする
+    import random
+    cut_count = int(len(notes) * gate)
+    if cut_count >= len(notes):
+        cut_count = len(notes) - 1  # 最低1ノート残す
+    if cut_count <= 0:
+        return notes.copy()
+
+    # velocityでグループ化し、同一velocity内はシャッフルして偏りを防止
+    # (deterministic seed for reproducibility)
+    rng = random.Random(42)
+    indexed = list(enumerate(notes))
+    # velocity + ランダムキーでソート（同一velocity内を均等分散）
+    indexed.sort(key=lambda x: (float(x[1].get("velocity", 0.5)), rng.random()))
+    cut_indices = set(idx for idx, _ in indexed[:cut_count])
+    filtered = [n for i, n in enumerate(notes) if i not in cut_indices]
+    return filtered if filtered else [notes[0]]
 
 
 def _key_to_fifths(key: str) -> int:

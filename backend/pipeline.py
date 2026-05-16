@@ -289,9 +289,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=None,    # 自動: 利用可能モデル数 × 43% (35→15, 21→9, 7→3)
+            vote_threshold=21,      # ベンチマーク最適値 (F1=0.8916, 35モデル60%合議)
             onset_threshold=0.5,    # ベンチマーク最適値
-            vote_prob_threshold=0.4, # ベンチマーク最適値
+            vote_prob_threshold=0.5, # 偽陽性抑制 (0.4→0.5): G3共鳴音等の除去
             fast_mode=False,        # フルモード（利用可能なモデルを全て使用）
         )
         report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
@@ -589,6 +589,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
 
+    # --- Step: 左手指番号割り当て (finger_assigner.py) ---
+    try:
+        from finger_assigner import assign_fingers
+        t0_finger = time.time()
+        notes = assign_fingers(notes)
+        report("assign", f"指番号割り当て完了: {len(notes)} notes ({time.time()-t0_finger:.1f}s)")
+    except Exception as e:
+        report("assign", f"指番号割り当てスキップ: {e}")
+
     # --- 後処理1: ノート重複除去 ---
     # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.08秒）で重複検出される場合
     notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
@@ -615,6 +624,55 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     if dedup_count > 0:
         report("assign", f"ノート重複除去: {dedup_count}ノート統合")
+
+    # --- 後処理1.5: 共鳴音(sympathetic resonance)フィルタ ---
+    # ギターの開放弦(E2=40,A2=45,D3=50,G3=55,B3=59,E4=64)は
+    # 他の弦を弾いた時に共鳴で鳴ることがある。
+    # 特にG3(55)は3弦開放で、アルペジオ中に誤検出されやすい。
+    # 判定基準: 開放弦pitchのノートが、前後のノートより有意にvelocityが低い場合は共鳴音。
+    OPEN_PITCHES = {40, 45, 50, 55, 59, 64}  # standard tuning open strings
+    SYMPA_VEL_RATIO = 0.6   # 周囲の平均velocityの60%未満 → 共鳴音と判定
+    SYMPA_WINDOW = 0.3      # 前後0.3秒のノートを参照
+    sympa_removed = 0
+    if len(notes) > 10:
+        sympa_keep = []
+        for ni, n in enumerate(notes):
+            pitch = int(n.get('pitch', 0))
+            vel = float(n.get('velocity', 0.5))
+            if vel > 1.0:
+                vel /= 127.0
+            t = float(n.get('start', 0))
+
+            if pitch not in OPEN_PITCHES:
+                sympa_keep.append(n)
+                continue
+
+            # 周囲のノートのvelocity平均を計算
+            neighbors = []
+            for nj in range(max(0, ni - 5), min(len(notes), ni + 6)):
+                if nj == ni:
+                    continue
+                nt = float(notes[nj].get('start', 0))
+                if abs(nt - t) <= SYMPA_WINDOW:
+                    nv = float(notes[nj].get('velocity', 0.5))
+                    if nv > 1.0:
+                        nv /= 127.0
+                    neighbors.append(nv)
+
+            if not neighbors:
+                sympa_keep.append(n)
+                continue
+
+            avg_vel = sum(neighbors) / len(neighbors)
+            if vel < avg_vel * SYMPA_VEL_RATIO:
+                # 共鳴音と判定 → 除去
+                sympa_removed += 1
+            else:
+                sympa_keep.append(n)
+
+        if sympa_removed > 0:
+            notes = sympa_keep
+            report("assign", f"共鳴音フィルタ: {sympa_removed}ノート除去")
 
     # --- 後処理2: キー制約フィルタ ---
     # 無効化: キー制約フィルタはピッチ検出結果を破壊する可能性があるため無効化

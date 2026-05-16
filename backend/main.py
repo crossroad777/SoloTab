@@ -865,6 +865,86 @@ async def retune(session_id: str, request: RetuneRequest):
         capo = 0
     capo_tuning = [p + capo for p in tuning] if capo > 0 else tuning
 
+    # --- 共鳴音フィルタ (retune時にも適用) ---
+    # MoE出力分析結果:
+    # - 各拍は正確に3ノート (3連符アルペジオ)
+    # - パターン: [G3(55), melody, accomp(59)] が頻出
+    # - 正解: [melody, accomp, melody] の交互
+    # - G3は3弦開放の共鳴音で、melodyのタイムスロットに入り込んでいる
+    # 修正: 各拍の1音目がG3(55)で、同拍内に別のmelody音がある場合、
+    #       G3をその拍のmelody音で置換する
+    sympa_removed = 0
+    beats_path = session_dir / "beats.json"
+    if beats_path.exists() and len(notes) > 10:
+        import numpy as np
+        beats_data = json.load(open(beats_path, "r", encoding="utf-8"))
+        beats = beats_data if isinstance(beats_data, list) else beats_data.get("beats", [])
+        if len(beats) > 2:
+            beats_arr = np.array(beats)
+            
+            # 各ノートをビートに割り当て
+            note_beat_idx = []
+            for n in notes:
+                t = float(n.get('start', 0))
+                bi = int(np.searchsorted(beats_arr, t, side='right')) - 1
+                bi = max(0, min(bi, len(beats_arr) - 1))
+                note_beat_idx.append(bi)
+            
+            # ビートごとにノートをグループ化
+            from collections import defaultdict
+            beat_groups = defaultdict(list)
+            for ni, bi in enumerate(note_beat_idx):
+                beat_groups[bi].append(ni)
+            
+            # 各拍のmelody pitch(最高音 - bassを除く)を収集
+            beat_melody = {}
+            BASS_RANGE = {40, 43, 45, 47, 48, 50}  # E2-D3
+            for bi, indices in sorted(beat_groups.items()):
+                pitches = [int(notes[i].get('pitch', 0)) for i in indices]
+                non_bass = [p for p in pitches if p not in BASS_RANGE and p != 55]
+                if non_bass:
+                    beat_melody[bi] = max(non_bass)  # 最高音 = melody
+            
+            # G3(55)をmelody音で置換
+            remove_indices = set()
+            for bi, indices in sorted(beat_groups.items()):
+                g3_indices = [i for i in indices if int(notes[i].get('pitch', 0)) == 55]
+                if not g3_indices:
+                    continue
+                
+                # この拍のmelody音を取得(G3以外の最高音)
+                non_g3 = [int(notes[i].get('pitch', 0)) for i in indices 
+                          if int(notes[i].get('pitch', 0)) != 55 
+                          and int(notes[i].get('pitch', 0)) not in BASS_RANGE]
+                
+                if non_g3:
+                    # G3→melody pitchに単純置換
+                    # mel-acc-mel強制は非G3拍やbass拍を壊すため不採用
+                    melody_pitch = max(non_g3)
+                    for gi in g3_indices:
+                        notes[gi]['pitch'] = melody_pitch
+                        sympa_removed += 1
+                else:
+                    # この拍にmelody音がない → G3がmelodyの代わり
+                    # 前後の拍のmelodyを参照
+                    prev_mel = beat_melody.get(bi - 1)
+                    next_mel = beat_melody.get(bi + 1)
+                    replacement = prev_mel or next_mel
+                    if replacement:
+                        for gi in g3_indices:
+                            notes[gi]['pitch'] = replacement
+                            sympa_removed += 1
+                            print(f"[retune] G3→pitch={replacement} at t={notes[gi]['start']:.3f}")
+            
+            if remove_indices:
+                removed_count = len(remove_indices)
+                notes = [n for i, n in enumerate(notes) if i not in remove_indices]
+                sympa_removed += removed_count
+            
+            if sympa_removed > 0:
+                print(f"[retune] 共鳴音フィルタ: {sympa_removed}ノート修正/除去")
+
+
     # Re-run string assignment
     from string_assigner import assign_strings_dp
     notes = assign_strings_dp(notes, tuning=capo_tuning)
@@ -884,6 +964,13 @@ async def retune(session_id: str, request: RetuneRequest):
             if best_str is not None:
                 n["string"] = best_str
                 n["fret"] = best_fret
+
+    # 左手指番号割り当て
+    try:
+        from finger_assigner import assign_fingers
+        notes = assign_fingers(notes)
+    except Exception as e:
+        print(f"[retune] 指番号割り当てスキップ: {e}")
 
     # Save reassigned notes（オリジナルは保持、表示用のみ上書き）
     with open(assigned_path, "w", encoding="utf-8") as f:

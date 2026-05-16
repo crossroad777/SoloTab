@@ -46,8 +46,8 @@ _DEFAULT_WEIGHTS = {
     "w_too_many_fingers":  5000.0,     # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
 
     # 音色コスト
-    "w_open_string_bonus":   -7.2,     # 開放弦ボーナス (V2: -7.2066)
-    "w_open_match_bonus":   -14.4,     # 開放弦でしか出せない音のボーナス (V2: -14.4187)
+    "w_open_string_bonus":  -15.0,     # 開放弦ボーナス (強化: -7.2→-15.0 B3→S2:F0を優先)
+    "w_open_match_bonus":   -25.0,     # 開放弦でしか出せない音のボーナス (強化: -14.4→-25.0)
     "w_barre_bonus":         -5.0,     # バレーコードボーナス (per extra string)
 
     # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
