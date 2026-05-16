@@ -298,6 +298,25 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("notes", f"CRNN失敗: {e}")
 
     # --- 3a: MoEアンサンブル ---
+    # ナイロン弦/スチール弦自動検出 → vote_threshold適応
+    # 論文§12.6: ナイロン弦はRecall=0.6635と低い → vote_threshold緩和が必要
+    # 検証: hf_ratio(>4kHz) — ナイロン≤0.03, スチール≥0.077, 閾値0.05で完全分離
+    moe_vote_threshold = 21  # デフォルト: スチール弦最適値
+    try:
+        import librosa as _lr
+        _y, _sr = _lr.load(str(transcription_wav), sr=22050, duration=30)
+        _S = np.abs(_lr.stft(_y))
+        _freqs = _lr.fft_frequencies(sr=_sr)
+        _hf_ratio = float(np.sum(_S[_freqs > 4000, :]) / (np.sum(_S) + 1e-10))
+        is_nylon = _hf_ratio < 0.05
+        if is_nylon:
+            moe_vote_threshold = 15  # ナイロン弦: 合議緩和 (43%)
+            report("notes", f"弦種検出: ナイロン弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+        else:
+            report("notes", f"弦種検出: スチール弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+    except Exception as e:
+        report("notes", f"弦種検出スキップ: {e}")
+
     moe_notes_list = []
     try:
         from pure_moe_transcriber import transcribe_pure_moe
@@ -305,7 +324,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         t0 = time.time()
         moe_notes_list = transcribe_pure_moe(
             str(transcription_wav),
-            vote_threshold=21,      # ベンチマーク最適値 (F1=0.8916, 35モデル60%合議)
+            vote_threshold=moe_vote_threshold,  # 弦種適応: スチール21, ナイロン15
             onset_threshold=0.5,    # ベンチマーク最適値
             vote_prob_threshold=0.5, # 偽陽性抑制 (0.4→0.5): G3共鳴音等の除去
             fast_mode=False,        # フルモード（利用可能なモデルを全て使用）
