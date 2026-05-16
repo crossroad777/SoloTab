@@ -344,19 +344,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
 
-    # --- 3c: 融合 ---
+    # --- 3c: 融合 (優先順位: MoE融合 > MoE単独 > CRNN > BasicPitch) ---
+    # MoE 35モデル合議 (F1=0.8916) > CRNN単体 (F1=0.726)
     MATCH_ONSET_TOL = 0.10   # 100ms (緩和: 速い曲で取りこぼし防止)
     MATCH_PITCH_TOL = 1      # ±1 semitone
-    MOE_SOLO_MIN_VOTE = 4    # MoE独自ノート追加に必要な最小合意数
 
-    if crnn_notes_list:
-        # CRNN: ギター専用モデル（弦/フレット直接出力）→ 最優先
-        notes = crnn_notes_list
-        method = "crnn_guitar"
-        model_stats = {"crnn_notes": len(notes)}
-        report("notes", f"CRNNモード: {len(notes)} notes（弦/フレット付き）")
-    elif bp_notes_list and moe_notes_list:
-        # 融合: BPとMoEの一致ノート + MoE高確信独自ノートも追加
+    if bp_notes_list and moe_notes_list:
+        # 最優先: BPとMoEの融合
         fused_notes = []
         used_moe = set()
         for bp_n in bp_notes_list:
@@ -399,11 +393,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         }
         report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (一致={len(notes)-moe_only_added}, MoE独自={moe_only_added})")
     elif moe_notes_list:
-        # BPが使えない場合はMoE単独
+        # MoE単独 (F1=0.89)
         notes = moe_notes_list
         method = "pure_moe"
         model_stats = {"ensemble_notes": len(notes)}
         report("notes", f"MoE単独モード: {len(notes)} notes")
+    elif crnn_notes_list:
+        # CRNNフォールバック (F1=0.726, 弦/フレット付きだがViterbi DPで再割り当て)
+        notes = crnn_notes_list
+        method = "crnn_guitar"
+        model_stats = {"crnn_notes": len(notes)}
+        report("notes", f"CRNNフォールバック: {len(notes)} notes（MoE不可時のみ使用）")
     elif bp_notes_list:
         # MoEが使えない場合はBP単独（フレット情報なし → Viterbiで補完）
         notes = bp_notes_list
