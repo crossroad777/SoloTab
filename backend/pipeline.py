@@ -344,13 +344,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
 
-    # --- 3c: 融合 (優先順位: MoE融合 > MoE単独 > CRNN > BasicPitch) ---
-    # MoE 35モデル合議 (F1=0.8916) > CRNN単体 (F1=0.726)
+    # --- 3c: 融合 (優先順位: CRNN > MoE融合 > MoE単独 > BasicPitch) ---
+    # CRNN: ギター専用モデル、クラシックギターでより多くの音を検出 (529 vs MoE 423)
+    # MoE F1=0.89 は GuitarSet (Blues/Jazz/Rock) で計測、クラシックギターでは未検証
+    # 弦/フレットはCNN分類器(92%)+Viterbi DPが担当
     MATCH_ONSET_TOL = 0.10   # 100ms (緩和: 速い曲で取りこぼし防止)
     MATCH_PITCH_TOL = 1      # ±1 semitone
 
-    if bp_notes_list and moe_notes_list:
-        # 最優先: BPとMoEの融合
+    if crnn_notes_list:
+        # CRNN: ギター専用モデル → 最優先（弦/フレットはCNN分類器+Viterbi DPで再割り当て）
+        notes = crnn_notes_list
+        method = "crnn_guitar"
+        model_stats = {"crnn_notes": len(notes)}
+        report("notes", f"CRNNモード: {len(notes)} notes（弦/フレットはCNN分類器+ViterbiDP）")
+    elif bp_notes_list and moe_notes_list:
+        # MoE融合フォールバック
         fused_notes = []
         used_moe = set()
         for bp_n in bp_notes_list:
@@ -360,27 +368,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 onset_diff = abs(bp_n["start"] - moe_n["start"])
                 pitch_diff = abs(bp_n["pitch"] - moe_n["pitch"])
                 if onset_diff < MATCH_ONSET_TOL and pitch_diff <= MATCH_PITCH_TOL:
-                    # 両方で検出 → 高信頼: velocityをブースト
                     boosted = dict(moe_n)
                     boosted["velocity"] = min(1.0, float(moe_n.get("velocity", 0.8)) * 1.2)
                     fused_notes.append(boosted)
                     used_moe.add(j)
                     break
 
-        # MoE独自ノート: BPが拾えなかったがMoEが高確信で検出したノートも追加
-        # 閾値を厳しく (0.75) して偽陽性を削減
         moe_only_added = 0
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
                 vel = float(moe_n.get("velocity", 0))
                 if vel >= 0.75:
-                    # MoE独自はvelocityをやや下げて不確実性をマーキング
                     downgraded = dict(moe_n)
                     downgraded["velocity"] = vel * 0.85
                     fused_notes.append(downgraded)
                     moe_only_added += 1
 
-        # 時間順にソート
         fused_notes.sort(key=lambda n: (n["start"], n["pitch"]))
 
         notes = fused_notes
@@ -393,19 +396,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         }
         report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (一致={len(notes)-moe_only_added}, MoE独自={moe_only_added})")
     elif moe_notes_list:
-        # MoE単独 (F1=0.89)
         notes = moe_notes_list
         method = "pure_moe"
         model_stats = {"ensemble_notes": len(notes)}
         report("notes", f"MoE単独モード: {len(notes)} notes")
-    elif crnn_notes_list:
-        # CRNNフォールバック (F1=0.726, 弦/フレット付きだがViterbi DPで再割り当て)
-        notes = crnn_notes_list
-        method = "crnn_guitar"
-        model_stats = {"crnn_notes": len(notes)}
-        report("notes", f"CRNNフォールバック: {len(notes)} notes（MoE不可時のみ使用）")
     elif bp_notes_list:
-        # MoEが使えない場合はBP単独（フレット情報なし → Viterbiで補完）
         notes = bp_notes_list
         method = "basic_pitch"
         model_stats = {"bp_notes": len(notes)}
