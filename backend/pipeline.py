@@ -344,21 +344,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
 
-    # --- 3c: 融合 (優先順位: CRNN > MoE融合 > MoE単独 > BasicPitch) ---
-    # CRNN: ギター専用モデル、クラシックギターでより多くの音を検出 (529 vs MoE 423)
-    # MoE F1=0.89 は GuitarSet (Blues/Jazz/Rock) で計測、クラシックギターでは未検証
-    # 弦/フレットはCNN分類器(92%)+Viterbi DPが担当
+    # --- 3c: 融合 (優先順位: MoE融合 > MoE単独 > CRNN > BasicPitch) ---
+    # MoE+BP融合 F1=0.8916 (GuitarSet TEST 36曲で検証済み)
+    # CRNN F1=0.726 (同条件)
+    # 数値優先: ベンチマーク検証済みの精度を信頼する
     MATCH_ONSET_TOL = 0.10   # 100ms (緩和: 速い曲で取りこぼし防止)
     MATCH_PITCH_TOL = 1      # ±1 semitone
 
-    if crnn_notes_list:
-        # CRNN: ギター専用モデル → 最優先（弦/フレットはCNN分類器+Viterbi DPで再割り当て）
-        notes = crnn_notes_list
-        method = "crnn_guitar"
-        model_stats = {"crnn_notes": len(notes)}
-        report("notes", f"CRNNモード: {len(notes)} notes（弦/フレットはCNN分類器+ViterbiDP）")
-    elif bp_notes_list and moe_notes_list:
-        # MoE融合フォールバック
+    if bp_notes_list and moe_notes_list:
+        # 最優先: BPとMoEの融合 (F1=0.89)
         fused_notes = []
         used_moe = set()
         for bp_n in bp_notes_list:
@@ -400,6 +394,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         method = "pure_moe"
         model_stats = {"ensemble_notes": len(notes)}
         report("notes", f"MoE単独モード: {len(notes)} notes")
+    elif crnn_notes_list:
+        # CRNNフォールバック (MoE+BP両方失敗時)
+        notes = crnn_notes_list
+        method = "crnn_guitar"
+        model_stats = {"crnn_notes": len(notes)}
+        report("notes", f"CRNNフォールバック: {len(notes)} notes")
     elif bp_notes_list:
         notes = bp_notes_list
         method = "basic_pitch"
