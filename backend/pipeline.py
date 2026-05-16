@@ -272,14 +272,30 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             print(f"[pipeline] Preprocessing failed, using original: {e}")
             transcription_wav = guitar_wav
 
-    # --- Step 3: Note Detection (Fusion: Basic Pitch + MoE) ---
-    # 融合戦略C: Basic Pitch (高Recall) で候補を検出し、
-    # MoE (高Precision, フレット情報付き) で確認・フィルタリング。
-    # 両方が一致したノートのみ採用 → F1=0.8816, P=0.9593
+    # --- Step 3: Note Detection (Priority: CRNN → MoE → Basic Pitch) ---
+    # CRNN: guitar_transcriber.py — ギター専用モデル（弦/フレット付き直接出力）
+    # MoE: 35モデルアンサンブル（高精度だがモジュール未インストールの場合あり）
+    # Basic Pitch: 汎用ピアノモデル（最終フォールバック）
     ensemble_success = False
     notes = []
     method = "none"
     model_stats = {}
+
+    # --- 3a-0: CRNN ギター専用モデル ---
+    crnn_notes_list = []
+    try:
+        from guitar_transcriber import transcribe_guitar, is_model_available
+        if is_model_available():
+            report("notes", "CRNN推論中（ギター専用モデル）...")
+            t0 = time.time()
+            crnn_result = transcribe_guitar(
+                str(transcription_wav),
+                onset_threshold=0.5,
+            )
+            crnn_notes_list = crnn_result.get("notes", [])
+            report("notes", f"CRNN抽出完了: {len(crnn_notes_list)} notes ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        report("notes", f"CRNN失敗: {e}")
 
     # --- 3a: MoEアンサンブル ---
     moe_notes_list = []
@@ -333,7 +349,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     MATCH_PITCH_TOL = 1      # ±1 semitone
     MOE_SOLO_MIN_VOTE = 4    # MoE独自ノート追加に必要な最小合意数
 
-    if bp_notes_list and moe_notes_list:
+    if crnn_notes_list:
+        # CRNN: ギター専用モデル（弦/フレット直接出力）→ 最優先
+        notes = crnn_notes_list
+        method = "crnn_guitar"
+        model_stats = {"crnn_notes": len(notes)}
+        report("notes", f"CRNNモード: {len(notes)} notes（弦/フレット付き）")
+    elif bp_notes_list and moe_notes_list:
         # 融合: BPとMoEの一致ノート + MoE高確信独自ノートも追加
         fused_notes = []
         used_moe = set()
@@ -531,8 +553,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
     # Conformer出力のpitchは正確だが、string/fret割り当ては
-    # 低フレット偏重（fret 12が0個になる問題）があるため、
-    # Viterbi DPで演奏可能なポジションに再割り当てする。
+    # 弦正解率63%（ベンチマーク検証済み）のため、Viterbi DPに任せる。
+    # CNN弦分類器 (Val acc 92.66%) + Viterbi DP が最適な弦割り当てを行う。
+    if method == "crnn_guitar":
+        report("assign", f"CRNNハイブリッドモード: ピッチはCRNN, 弦/フレットはCNN分類器+Viterbi DP: {len(notes)} notes")
+        # CRNN弦予測を除去し、CNN弦分類器+Viterbi DPに弦割り当てを任せる
+        for n in notes:
+            n.pop("string", None)
+            n.pop("fret", None)
+            n.pop("cnn_string_probs", None)  # CNN分類器が新たに注入する
+
     report("assign", "運指最適化中 (Viterbi DP)...")
     t0 = time.time()
     try:
