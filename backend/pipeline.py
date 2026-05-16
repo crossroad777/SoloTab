@@ -147,7 +147,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  title: Optional[str] = None,
                  progress_cb: Optional[Callable] = None,
                  skip_demucs: bool = False,
-                 fast_moe: bool = True):
+                 fast_moe: bool = True,
+                 guitar_type: str = "auto"):
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
@@ -302,20 +303,28 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # 論文§12.6: ナイロン弦はRecall=0.6635と低い → vote_threshold緩和が必要
     # 検証: hf_ratio(>4kHz) — ナイロン≤0.03, スチール≥0.077, 閾値0.05で完全分離
     moe_vote_threshold = 21  # デフォルト: スチール弦最適値
-    try:
-        import librosa as _lr
-        _y, _sr = _lr.load(str(transcription_wav), sr=22050, duration=30)
-        _S = np.abs(_lr.stft(_y))
-        _freqs = _lr.fft_frequencies(sr=_sr)
-        _hf_ratio = float(np.sum(_S[_freqs > 4000, :]) / (np.sum(_S) + 1e-10))
-        is_nylon = _hf_ratio < 0.05
-        if is_nylon:
-            moe_vote_threshold = 15  # ナイロン弦: 合議緩和 (43%)
-            report("notes", f"弦種検出: ナイロン弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
-        else:
-            report("notes", f"弦種検出: スチール弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
-    except Exception as e:
-        report("notes", f"弦種検出スキップ: {e}")
+    if guitar_type == "nylon":
+        moe_vote_threshold = 15
+        report("notes", f"弦種: ナイロン弦 (ユーザー指定) → vote_threshold={moe_vote_threshold}/35")
+    elif guitar_type == "steel":
+        moe_vote_threshold = 21
+        report("notes", f"弦種: スチール弦 (ユーザー指定) → vote_threshold={moe_vote_threshold}/35")
+    else:
+        # 自動検出
+        try:
+            import librosa as _lr
+            _y, _sr = _lr.load(str(transcription_wav), sr=22050, duration=30)
+            _S = np.abs(_lr.stft(_y))
+            _freqs = _lr.fft_frequencies(sr=_sr)
+            _hf_ratio = float(np.sum(_S[_freqs > 4000, :]) / (np.sum(_S) + 1e-10))
+            is_nylon = _hf_ratio < 0.05
+            if is_nylon:
+                moe_vote_threshold = 15
+                report("notes", f"弦種検出: ナイロン弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+            else:
+                report("notes", f"弦種検出: スチール弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+        except Exception as e:
+            report("notes", f"弦種検出スキップ: {e}")
 
     moe_notes_list = []
     try:

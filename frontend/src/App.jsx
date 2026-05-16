@@ -25,6 +25,7 @@ export default function SoloTabApp() {
   const [history, setHistory] = useState([]);
   const [toast, setToast] = useState(null);
   const [soloGuitar, setSoloGuitar] = useState(true);
+  const [guitarType, setGuitarType] = useState("auto");
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
@@ -214,6 +215,7 @@ export default function SoloTabApp() {
     formData.append("file", file);
     formData.append("skip_demucs", soloGuitar);
     formData.append("fast_moe", "true");
+    formData.append("guitar_type", guitarType);
     try {
       const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
@@ -504,6 +506,23 @@ export default function SoloTabApp() {
                 style={{ accentColor: 'var(--st-accent)', width: 16, height: 16 }} />
               <span>🎸 ソロギターモード <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>(Demucs分離スキップ・高速)</span></span>
             </label>
+
+            {/* Guitar Type Selector */}
+            <div onClick={(e) => e.stopPropagation()} style={{
+              display: 'flex', alignItems: 'center', gap: 8, margin: '8px auto 0',
+              fontSize: '0.85rem', color: 'var(--st-text-dim)',
+              userSelect: 'none', width: 'fit-content',
+            }}>
+              <span>🎵 弦タイプ:</span>
+              <select value={guitarType} onChange={(e) => setGuitarType(e.target.value)}
+                style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 6,
+                  background: 'var(--st-surface-2)', color: 'var(--st-text)',
+                  border: '1px solid var(--st-border)', cursor: 'pointer' }}>
+                <option value="auto">自動判別</option>
+                <option value="steel">アコギ (スチール弦)</option>
+                <option value="nylon">クラシック (ナイロン弦)</option>
+              </select>
+            </div>
 
 
             {status === STATUS.FAILED && (

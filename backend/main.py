@@ -208,6 +208,7 @@ async def upload_audio(file: UploadFile = File(...),
                        tuning: str = Form("standard"),
                        skip_demucs: bool = Form(False),
                        fast_moe: bool = Form(True),
+                       guitar_type: str = Form("auto"),
                        background_tasks: BackgroundTasks = None):
     """音声ファイルをアップロードして解析開始"""
     session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -243,6 +244,7 @@ async def upload_audio(file: UploadFile = File(...),
         "tuning": tuning if tuning in TUNINGS else "standard",
         "skip_demucs": skip_demucs,
         "fast_moe": fast_moe,
+        "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
     }
     save_session(session_id)
 
@@ -425,6 +427,7 @@ def _run_pipeline_bg(session_id: str):
             progress_cb=progress_cb,
             skip_demucs=session.get("skip_demucs", False),
             fast_moe=session.get("fast_moe", True),
+            guitar_type=session.get("guitar_type", "auto"),
         )
 
         session["status"] = SessionStatus.COMPLETED
