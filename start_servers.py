@@ -47,29 +47,9 @@ def main():
     _kill_port(8001)
     _kill_port(5174)
     
-    # __pycache__ を全階層から削除して古いバイトコードが残らないようにする
     import shutil
     from pathlib import Path
-    
-    cleaned = 0
-    for cache_dir in Path(r"D:\Music\nextchord-solotab").rglob("__pycache__"):
-        try:
-            shutil.rmtree(cache_dir)
-            cleaned += 1
-        except Exception:
-            pass
-    if cleaned:
-        print(f"[cleanup] __pycache__ x{cleaned} を削除しました")
-    
-    # Vite キャッシュ削除
-    vite_cache = Path(r"D:\Music\nextchord-solotab\frontend\node_modules\.vite")
-    if vite_cache.exists():
-        try:
-            shutil.rmtree(vite_cache)
-            print("[cleanup] Vite キャッシュを削除しました")
-        except Exception:
-            pass
-    
+
     # 前回セッションの中間生成ファイルを削除（tab_dual, pdf等の古い結果）
     uploads_dir = Path(r"D:\Music\nextchord-solotab\uploads")
     if uploads_dir.exists():

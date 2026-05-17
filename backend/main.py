@@ -60,15 +60,20 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 # --- Models (lazy load) ---
-# Removed global model definitions here to speed up startup time.
-# Models will be imported and loaded on-demand in the pipeline tasks.
+# All models are preloaded in a single background thread at startup.
+# Each module has its own cache mechanism, so we just trigger the load.
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_all_sessions()
-    # バックグラウンドでMoEモデルをプリロード（サーバー応答をブロックしない）
+    # 全モデルを1つのバックグラウンドスレッドで一括プリロード
+    # （サーバー応答をブロックしない。初回リクエストのコールドスタートを回避）
     import threading
-    def _preload_models():
+    def _preload_all():
+        t_total = time.time()
+        loaded = []
+
+        # --- 1. MoEモデル (35個, ~8s, GPU) ---
         try:
             t0 = time.time()
             from pure_moe_transcriber import _FULL_STAGES, _DOMAINS, _CACHED_MODELS
@@ -78,7 +83,7 @@ async def lifespan(app: FastAPI):
                 sys.path.insert(0, mt_dir)
             from model import architecture  # type: ignore
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            loaded = 0
+            moe_count = 0
             for dname in _DOMAINS:
                 for suffix in _FULL_STAGES:
                     key = f"finetuned_{dname}_{suffix}"
@@ -95,12 +100,56 @@ async def lifespan(app: FastAPI):
                         model.to(device)
                         model.eval()
                         _CACHED_MODELS[key] = model
-                        loaded += 1
-            print(f"[Preload] {loaded} MoE models cached on {device} in {time.time()-t0:.1f}s", flush=True)
+                        moe_count += 1
+            loaded.append(f"MoE×{moe_count} ({time.time()-t0:.1f}s)")
         except Exception as e:
-            print(f"[Preload] Failed (non-blocking): {e}", flush=True)
-            import traceback; traceback.print_exc()
-    threading.Thread(target=_preload_models, daemon=True).start()
+            loaded.append(f"MoE FAIL: {e}")
+
+        # --- 2. madmom ビートプロセッサ (~0.5s, CPU) ---
+        try:
+            t0 = time.time()
+            from beat_detector import _get_beat_processors
+            _get_beat_processors()
+            loaded.append(f"madmom ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            loaded.append(f"madmom FAIL: {e}")
+
+        # --- 3. CRNN ギターモデル (~1s, GPU) ---
+        try:
+            t0 = time.time()
+            from guitar_transcriber import _load_model
+            _load_model()
+            loaded.append(f"CRNN ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            loaded.append(f"CRNN FAIL: {e}")
+
+        # --- 4. BTC コードモデル (~0.7s, CPU) ---
+        try:
+            t0 = time.time()
+            btc_dir = r'D:\Music\nextchord\BTC-ISMIR19'
+            if btc_dir not in sys.path:
+                sys.path.insert(0, btc_dir)
+            for cp in [r'D:\Music\nextchord\fastapi-backend']:
+                if cp not in sys.path and os.path.isdir(cp):
+                    sys.path.insert(0, cp)
+            from btc_engine import get_btc_engine
+            get_btc_engine()
+            loaded.append(f"BTC ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            loaded.append(f"BTC FAIL: {e}")
+
+        # --- 5. CNN弦分類器 (~0.3s, GPU) ---
+        try:
+            t0 = time.time()
+            from string_assigner import _load_string_classifier
+            _load_string_classifier()
+            loaded.append(f"CNN-Str ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            loaded.append(f"CNN-Str FAIL: {e}")
+
+        print(f"[Preload] All models ready in {time.time()-t_total:.1f}s: {', '.join(loaded)}", flush=True)
+
+    threading.Thread(target=_preload_all, daemon=True).start()
     yield
 
 app = FastAPI(
