@@ -415,8 +415,8 @@ export default function SoloTabApp() {
         totalNotes: data.total_notes,
         detectedCapo: capoToUse,  // update badge display
       }));
-      // Wait briefly for backend to flush GP5 file to disk before re-fetching
-      await new Promise(r => setTimeout(r, 300));
+      // Wait for backend to flush GP5 file to disk before re-fetching
+      await new Promise(r => setTimeout(r, 500));
       setRetuneKey(k => k + 1);
       if (newCapo !== undefined && newCapo !== null) {
         _showToast(capoToUse > 0 ? `カポ ${capoToUse} に変更しました` : 'カポを外しました');
@@ -664,9 +664,9 @@ export default function SoloTabApp() {
                   {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (<option key={n} value={n}>Capo {n}</option>))}
                 </select>
                 <div className="transpose-controls" style={{ gap: 2 }}>
-                  <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調: フロントエンド表示のみ (TAB譜はretune時に反映)'); }} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調 −1'); }} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
                   <span className="transpose-label" style={{ fontSize: 11, minWidth: 28 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
-                  <button className="transpose-btn" onClick={() => { setTranspose(t => t + 1); _showToast('移調: フロントエンド表示のみ (TAB譜はretune時に反映)'); }} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t + 1); _showToast('移調 +1'); }} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
                 </div>
                 {retuning && <span style={{ fontSize: 10, color: 'var(--st-amber)' }}>⏳</span>}
                 <button className="home-btn" title="PDF"

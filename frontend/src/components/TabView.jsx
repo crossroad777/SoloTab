@@ -43,7 +43,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     // ============================================================
     // BeatMap: 小節単位 — beats.jsonの実時刻 + AlphaTab bar座標
     // ============================================================
-    const beatsDataRef = useRef([]); // beats.json の beat timestamps(秒)
+    // notesDataRef: APIから取得したノートデータ（start時刻あり）
+    const notesDataRef = useRef([]);
 
     const buildBeatMap = (api) => {
         if (!api.score || !api.renderer?.boundsLookup) {
@@ -53,30 +54,115 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         const lookup = api.renderer.boundsLookup;
         const systems = lookup.staffSystems || lookup.staveGroups;
         if (!systems || systems.length === 0) {
-            const keys = Object.keys(lookup).filter(k => typeof lookup[k] !== 'function');
-            console.warn(`[TabView] BeatMap: no staffSystems/staveGroups. Available keys:`, keys);
+            console.warn(`[TabView] BeatMap: no staffSystems/staveGroups`);
             return false;
         }
-        const beats = beatsDataRef.current;
 
-        // ビートレベルの座標を取得（各音符位置）
-        const beatCoords = [];
-        let barCounterFallback = 0;
+        const notes = notesDataRef.current;
+        const bpm = api.score.tempo || 120;
+        // AlphaTab MIDI ticks per quarter note (standard = 960)
+        const ticksPerBeat = 960;
+
+        // ===================================================================
+        // Strategy 1: tick-based mapping using AlphaTab beat model
+        // Each boundsLookup beat has .beat → absolutePlaybackStart (ticks)
+        // Convert ticks to audio seconds: sec = ticks * 60 / (bpm * ticksPerBeat)
+        // ===================================================================
+        const tickEntries = [];
         for (const system of systems) {
             const sgBars = system.bars || system.masterBars;
             if (!sgBars) continue;
             const sysVb = system.visualBounds;
             for (const sgBar of sgBars) {
-                const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounterFallback;
-                barCounterFallback++;
-                // ビートレベルのバウンディング取得
-                const barBeats = sgBar.beats || [];
-                if (barBeats.length > 0) {
+                // MasterBarBounds → .bars[] (BarBounds) → .beats[] (BeatBounds)
+                const innerBars = sgBar.bars || [];
+                for (const barBounds of innerBars) {
+                    for (const beatBounds of (barBounds.beats || [])) {
+                        const bvb = beatBounds.visualBounds || beatBounds.bounds;
+                        if (!bvb || bvb.x == null) continue;
+                        const beat = beatBounds.beat;
+                        const ticks = beat?.absolutePlaybackStart ?? beat?.playbackStart ?? null;
+                        if (ticks != null) {
+                            tickEntries.push({
+                                timeMs: ticks * 60000 / (bpm * ticksPerBeat),
+                                isRest: beat.isRest || beat.isEmpty || false,
+                                vb: {
+                                    x: bvb.x,
+                                    y: sysVb ? sysVb.y : bvb.y,
+                                    w: bvb.w,
+                                    h: sysVb ? sysVb.h : bvb.h,
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if (tickEntries.length > 0) {
+            // Sort by tick time (should already be in order, but ensure)
+            tickEntries.sort((a, b) => a.timeMs - b.timeMs);
+
+            // If we have notes data, calibrate the tick-based times to actual audio times.
+            // The GP5 places notes at quantized tick positions. The actual audio may differ.
+            // Use the first and last note to establish a linear mapping.
+            let offsetMs = 0;
+            let scale = 1;
+            if (notes.length > 0) {
+                const sorted = [...notes].sort((a, b) => a.start - b.start);
+                const firstNoteMs = sorted[0].start * 1000;
+                const lastNoteMs = sorted[sorted.length - 1].start * 1000;
+
+                // Find first and last non-rest tick entries
+                const nonRests = tickEntries.filter(e => !e.isRest);
+                if (nonRests.length >= 2) {
+                    const firstTickMs = nonRests[0].timeMs;
+                    const lastTickMs = nonRests[nonRests.length - 1].timeMs;
+                    const tickSpan = lastTickMs - firstTickMs;
+                    const noteSpan = lastNoteMs - firstNoteMs;
+                    if (tickSpan > 0 && noteSpan > 0) {
+                        scale = noteSpan / tickSpan;
+                        offsetMs = firstNoteMs - firstTickMs * scale;
+                        console.log(`[TabView] Tick calibration: offset=${offsetMs.toFixed(0)}ms, scale=${scale.toFixed(3)}`);
+                    }
+                }
+            }
+
+            const map = [];
+            for (let i = 0; i < tickEntries.length; i++) {
+                const startMs = tickEntries[i].timeMs * scale + offsetMs;
+                const endMs = i + 1 < tickEntries.length
+                    ? tickEntries[i + 1].timeMs * scale + offsetMs
+                    : startMs + 1000;
+                map.push({ startMs, endMs, vb: tickEntries[i].vb });
+            }
+
+            beatMapRef.current = map;
+            console.log(`[TabView] BeatMap (tick-based): ${map.length} entries, ` +
+                `range: ${(map[0].startMs/1000).toFixed(2)}s → ${(map[map.length-1].startMs/1000).toFixed(2)}s`);
+            return true;
+        }
+
+        // ===================================================================
+        // Strategy 2 fallback: note-time to visual-coord mapping
+        // If tick data unavailable, match note events to beat coords by index
+        // ===================================================================
+        const beatCoords = [];
+        for (const system of systems) {
+            const sgBars = system.bars || system.masterBars;
+            if (!sgBars) continue;
+            const sysVb = system.visualBounds;
+            for (const sgBar of sgBars) {
+                const innerBars = sgBar.bars || [];
+                for (const barBounds of innerBars) {
+                    const barBeats = barBounds.beats || [];
                     for (const beatBounds of barBeats) {
                         const bvb = beatBounds.visualBounds || beatBounds.bounds;
                         if (!bvb || bvb.x == null) continue;
+                        const beat = beatBounds.beat;
+                        // Only include non-rest beats for note matching
+                        if (beat && (beat.isRest || beat.isEmpty)) continue;
                         beatCoords.push({
-                            barIndex,
                             vb: {
                                 x: bvb.x,
                                 y: sysVb ? sysVb.y : bvb.y,
@@ -85,111 +171,85 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             },
                         });
                     }
-                } else {
-                    // ビートがない場合は小節全体をフォールバック
-                    const barVb = sgBar.visualBounds;
-                    if (barVb && barVb.x != null) {
-                        beatCoords.push({
-                            barIndex,
-                            vb: {
-                                x: barVb.x,
-                                y: sysVb ? sysVb.y : barVb.y,
-                                w: barVb.w,
-                                h: sysVb ? sysVb.h : barVb.h,
-                            },
-                        });
-                    }
                 }
             }
         }
 
-        // バー座標（フォールバック用）も構築
+        if (notes.length > 0 && beatCoords.length > 0) {
+            // Group notes into chord events (same time = 1 event)
+            const sorted = [...notes].sort((a, b) => a.start - b.start);
+            const noteEvents = [];
+            let prev = -999;
+            for (const n of sorted) {
+                if (n.start - prev > 0.03) {
+                    noteEvents.push({ startSec: n.start, endSec: n.end || n.start + 0.3 });
+                }
+                prev = n.start;
+            }
+
+            const mapLen = Math.min(noteEvents.length, beatCoords.length);
+            if (mapLen > 0) {
+                const map = [];
+                for (let i = 0; i < mapLen; i++) {
+                    const startMs = noteEvents[i].startSec * 1000;
+                    const endMs = i + 1 < noteEvents.length
+                        ? noteEvents[i + 1].startSec * 1000
+                        : noteEvents[i].endSec * 1000 + 500;
+                    map.push({ startMs, endMs, vb: beatCoords[i].vb });
+                }
+                beatMapRef.current = map;
+                console.log(`[TabView] BeatMap (note-fallback): ${map.length} entries`);
+                return true;
+            }
+        }
+
+        // ===================================================================
+        // Strategy 3: BPM-based even distribution (last resort)
+        // ===================================================================
+        const map = [];
+        let accMs = 0;
+        const forEach = (list, cb) => {
+            if (Array.isArray(list)) list.forEach(cb);
+            else if (list?.items) list.items.forEach(cb);
+            else if (list?.forEach) list.forEach(cb);
+        };
+        const masterBars = api.score.masterBars;
+        const getBeatsPerBar = (idx) => {
+            let arr = [];
+            if (masterBars) forEach(masterBars, mb => arr.push(mb));
+            return idx < arr.length ? (arr[idx].timeSignatureNumerator || 4) : 4;
+        };
         const barCoords = [];
-        barCounterFallback = 0;
+        let barCounter = 0;
         const seenBars = new Set();
         for (const system of systems) {
             const sgBars = system.bars || system.masterBars;
             if (!sgBars) continue;
             const sysVb = system.visualBounds;
             for (const sgBar of sgBars) {
-                const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounterFallback;
-                barCounterFallback++;
+                const barIndex = sgBar.index ?? sgBar.barIndex ?? barCounter;
+                barCounter++;
                 if (seenBars.has(barIndex)) continue;
                 seenBars.add(barIndex);
                 const barVb = sgBar.visualBounds;
                 if (barVb && barVb.x != null) {
                     barCoords.push({
                         barIndex,
-                        vb: {
-                            x: barVb.x,
-                            y: sysVb ? sysVb.y : barVb.y,
-                            w: barVb.w,
-                            h: sysVb ? sysVb.h : barVb.h,
-                        },
+                        vb: { x: barVb.x, y: sysVb ? sysVb.y : barVb.y, w: barVb.w, h: sysVb ? sysVb.h : barVb.h },
                     });
                 }
             }
         }
         barCoords.sort((a, b) => a.barIndex - b.barIndex);
-
-        console.log(`[TabView] beatCoords: ${beatCoords.length}, barCoords: ${barCoords.length}`);
-
-        // 拍子を取得
-        const masterBars = api.score.masterBars;
-        const getBeatsPerBar = (idx) => {
-            let arr = [];
-            const forEach = (list, cb) => {
-                if (Array.isArray(list)) list.forEach(cb);
-                else if (list?.items) list.items.forEach(cb);
-                else if (list?.forEach) list.forEach(cb);
-            };
-            if (masterBars) forEach(masterBars, mb => arr.push(mb));
-            return idx < arr.length ? (arr[idx].timeSignatureNumerator || 4) : 4;
-        };
-
-        // ビートレベルのマップが十分あればビート単位カーソル
-        if (beatCoords.length > barCoords.length * 1.5) {
-            // beats.jsonのタイムスタンプと1:1マッピング
-            const map = [];
-            for (let i = 0; i < Math.min(beatCoords.length, beats.length); i++) {
-                const startMs = beats[i] * 1000;
-                const endMs = i + 1 < beats.length ? beats[i + 1] * 1000 : startMs + 600;
-                map.push({ startMs, endMs, vb: beatCoords[i].vb });
-            }
-            if (map.length > 0) {
-                beatMapRef.current = map;
-                console.log(`[TabView] BeatMap (beat-level): ${map.length} entries`);
-                return true;
-            }
-        }
-
-        // フォールバック: 小節単位
-        const map = [];
-        let beatIdx = 0;
         for (const bc of barCoords) {
             const bpb = getBeatsPerBar(bc.barIndex);
-            const startMs = beatIdx < beats.length ? beats[beatIdx] * 1000 : null;
-            const endBeatIdx = beatIdx + bpb;
-            const endMs = endBeatIdx < beats.length ? beats[endBeatIdx] * 1000 : null;
-            if (startMs == null) break;
-            map.push({ startMs, endMs: endMs ?? (startMs + bpb * 600), vb: bc.vb });
-            beatIdx += bpb;
+            const durMs = bpb * (60000 / bpm);
+            map.push({ startMs: accMs, endMs: accMs + durMs, vb: bc.vb });
+            accMs += durMs;
         }
-
-        if (map.length === 0) {
-            const bpm = api.score.tempo || 120;
-            let accMs = 0;
-            for (const bc of barCoords) {
-                const bpb = getBeatsPerBar(bc.barIndex);
-                const durMs = bpb * (60000 / bpm);
-                map.push({ startMs: accMs, endMs: accMs + durMs, vb: bc.vb });
-                accMs += durMs;
-            }
-        }
-
         beatMapRef.current = map;
-        console.log(`[TabView] BeatMap (bar-level fallback): ${map.length} entries`);
-        return true;
+        console.log(`[TabView] BeatMap (bpm-fallback): ${map.length} entries`);
+        return map.length > 0;
     };
 
     const findBeat = (audioMs) => {
@@ -213,8 +273,11 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     useEffect(() => {
         if (!sessionId || !wrapperRef.current) return;
 
-        const key = `${sessionId}_${transpose}_${capo}_${reloadKey}`;
-        if (initKeyRef.current === key) return;
+        // Only sessionId, apiBase, reloadKey trigger GP5 re-fetch.
+        // capo/tuning changes go through handleRetune → retuneKey → parent remount.
+        // transpose is handled in a separate effect (no GP5 re-fetch needed).
+        const key = `${sessionId}_${reloadKey}_${Date.now()}`;
+        console.log(`[TabView] init triggered — key=${key}`);
         initKeyRef.current = key;
 
         let destroyed = false;
@@ -236,20 +299,29 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             setError(null);
 
             try {
-                // GP5バイナリを取得
+                // GP5バイナリを取得 — cache-busting with unique timestamp
                 let res;
                 let useGp5 = true;
+                const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                 for (let attempt = 0; attempt < 3; attempt++) {
-                    res = await fetch(`${apiBase}/result/${sessionId}/gp5?t=${Date.now()}`, { cache: 'no-store' });
+                    const url = `${apiBase}/result/${sessionId}/gp5?${cacheBuster}&attempt=${attempt}`;
+                    console.log(`[TabView] Fetching GP5: ${url}`);
+                    res = await fetch(url, {
+                        cache: 'no-store',
+                        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+                    });
                     if (res.ok) break;
-                    console.warn(`[TabView] GP5 attempt ${attempt + 1} failed, retrying...`);
+                    console.warn(`[TabView] GP5 attempt ${attempt + 1} failed (status=${res.status}), retrying...`);
                     await new Promise(r => setTimeout(r, 1500));
                 }
                 if (!res || !res.ok) {
                     console.warn("[TabView] GP5 not available, falling back to MusicXML");
                     useGp5 = false;
                     for (let attempt = 0; attempt < 3; attempt++) {
-                        res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`, { cache: 'no-store' });
+                        res = await fetch(`${apiBase}/result/${sessionId}/musicxml?${cacheBuster}&attempt=${attempt}`, {
+                            cache: 'no-store',
+                            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+                        });
                         if (res.ok) break;
                         await new Promise(r => setTimeout(r, 1500));
                     }
@@ -261,15 +333,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     : new TextEncoder().encode(await res.text());
                 if (destroyed) return;
 
-                console.log(`[TabView] Loading ${useGp5 ? 'GP5' : 'MusicXML'}: ${scoreData.length} bytes`);
+                console.log(`[TabView] Loaded ${useGp5 ? 'GP5' : 'MusicXML'}: ${scoreData.length} bytes (key=${key})`);
 
-                // beats.jsonを取得（カーソル同期用）
+                // ノートデータを取得（カーソル同期用 — 各ノートのstart時刻を使用）
                 try {
-                    const beatRes = await fetch(`${apiBase}/result/${sessionId}/beats`);
-                    if (beatRes.ok) {
-                        const beatData = await beatRes.json();
-                        beatsDataRef.current = beatData.beats || [];
-                        console.log(`[TabView] Loaded ${beatsDataRef.current.length} beats for cursor sync`);
+                    const notesRes = await fetch(`${apiBase}/result/${sessionId}/notes`);
+                    if (notesRes.ok) {
+                        const notesData = await notesRes.json();
+                        notesDataRef.current = notesData.notes || [];
+                        console.log(`[TabView] Loaded ${notesDataRef.current.length} notes for cursor sync`);
                     }
                 } catch { /* ignore */ }
 
@@ -462,6 +534,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (!destroyed) { setError("TAB表示エラー"); setLoading(false); }
                 });
 
+                // Transpose is handled in a separate effect below
+
+                console.log(`[TabView] Loading score data into AlphaTab...`);
                 api.load(scoreData);
             } catch (err) {
                 console.error("[TabView init]", err);
@@ -476,7 +551,29 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             initKeyRef.current = null;
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId, apiBase, transpose, capo, reloadKey]);
+    }, [sessionId, apiBase, reloadKey]);
+
+    // Separate effect for frontend-only transpose — no GP5 re-fetch
+    useEffect(() => {
+        const api = apiRef.current;
+        if (!api || !api.score) return;
+        try {
+            const trackList = api.score.tracks?.items || api.score.tracks || [];
+            const forEach = (list, cb) => {
+                if (Array.isArray(list)) list.forEach(cb);
+                else if (list?.forEach) list.forEach(cb);
+            };
+            forEach(trackList, (track) => {
+                forEach(track.staves, (staff) => {
+                    staff.transpositionPitch = transpose;
+                });
+            });
+            console.log(`[TabView] Applied transpose=${transpose}`);
+            api.render();
+        } catch (e) {
+            console.warn('[TabView] Transpose failed:', e);
+        }
+    }, [transpose]);
 
     // Cleanup on unmount
     useEffect(() => {

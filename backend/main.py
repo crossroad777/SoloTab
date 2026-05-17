@@ -601,6 +601,21 @@ async def get_gp5(session_id: str):
     )
 
 
+@app.get("/result/{session_id}/notes")
+async def get_notes(session_id: str):
+    """ノートデータを返す（カーソル同期用 — 各ノートのstart時刻を含む）"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    assigned_path = session_dir / "notes_assigned.json"
+    if not assigned_path.exists():
+        raise HTTPException(status_code=404, detail="Notes not available")
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    notes = data if isinstance(data, list) else data.get("notes", [])
+    return {"notes": notes}
+
 @app.get("/result/{session_id}/gp4")
 async def get_gp4(session_id: str):
     """GP4ファイルを返す（TuxGuitar互換用）"""
