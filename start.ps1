@@ -36,7 +36,7 @@ Write-Host ""
 Write-Host "[2/3] Starting backend on port $BACKEND_PORT..." -ForegroundColor Yellow
 
 $backendJob = Start-Process -FilePath $PYTHON `
-    -ArgumentList "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$BACKEND_PORT", "--reload" `
+    -ArgumentList "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "$BACKEND_PORT", "--reload", "--reload-dir", ".", "--reload-exclude", "uploads", "--reload-exclude", "__pycache__", "--reload-exclude", "logs", "--reload-exclude", "ground_truth", "--reload-exclude", "benchmark", "--reload-exclude", "train" `
     -WorkingDirectory $BACKEND_DIR `
     -PassThru -NoNewWindow
 

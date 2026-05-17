@@ -92,7 +92,15 @@ def main():
     backend_cmd = [
         "D:\\Music\\nextchord\\venv312\\Scripts\\python.exe",
         "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001",
-        "--reload", "--reload-dir", "."
+        "--reload", "--reload-dir", ".",
+        "--reload-exclude", "uploads",
+        "--reload-exclude", "__pycache__",
+        "--reload-exclude", "logs",
+        "--reload-exclude", "ground_truth",
+        "--reload-exclude", "benchmark",
+        "--reload-exclude", "train",
+        "--reload-exclude", "fretnet_models",
+        "--reload-exclude", "gp5_training",
     ]
     
     # [重要] $env:CI="true" を付与しないと Vite は非対話ターミナルですぐ死ぬ

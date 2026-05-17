@@ -1442,24 +1442,29 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             is_nylon = True
 
     # === ポジション推定 (対策2) ===
-    # 曲冒頭のノートから演奏ポジション（フレット中心）を推定
-    # ナイロン弦クラシックギターはハイポジション演奏が多い
+    # 曲のピッチ分布から演奏ポジション（フレット中心）を推定
+    # 低フレットで弾ける曲はオープンポジション(0-4f)を維持する
     estimated_position = initial_position
     if notes:
         # 全ピッチの中央値からポジションを推定
         all_pitches = sorted([n.get('pitch', 60) for n in notes])
         median_pitch = all_pitches[len(all_pitches) // 2]
-        # 中央ピッチを各弦で弾いた場合のフレット中央値
+        # 中央ピッチを弾ける最低フレットを基準にする
+        # (平均ではなく最低: Romance等のオープンポジション曲を正しく扱う)
         fret_options = []
         for i, op in enumerate(tuning):
             f = median_pitch - op
             if 0 <= f <= max_fret:
                 fret_options.append(f)
         if fret_options:
-            estimated_position = max(estimated_position, sum(fret_options) / len(fret_options))
+            min_fret = min(fret_options)
+            # 最低フレットが低い場合はオープンポジション曲の可能性が高い
+            # initial_position(キー検出由来)も考慮して控えめに推定
+            estimated_position = max(initial_position, min_fret)
         if is_nylon:
-            # ナイロン弦: ハイポジション傾向を加味 (クラシック奏法)
-            estimated_position = max(estimated_position, 3.0)
+            # ナイロン弦: クラシック奏法だがオープンポジション曲も多い
+            # (Romance de Amor, Lagrima等)。最低位置を1.0に抑える
+            estimated_position = max(estimated_position, 1.0)
             print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
                   f"est_position={estimated_position:.1f} (ナイロン弦補正あり)")
         else:

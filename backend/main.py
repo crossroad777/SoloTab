@@ -380,9 +380,14 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
 
 def _run_pipeline_bg(session_id: str):
     """Background task: run the analysis pipeline."""
-    import importlib
-    import pipeline as _pipeline_mod
-    importlib.reload(_pipeline_mod)
+    # 明示的にbackend/pipeline.pyをロード
+    # chord_detector.pyがsys.pathにfastapi-backendを追加するため、
+    # importlib.reloadだと別のpipeline.pyを読み込む可能性がある
+    import importlib.util
+    _pipeline_path = str(Path(__file__).parent / "pipeline.py")
+    _spec = importlib.util.spec_from_file_location("pipeline", _pipeline_path)
+    _pipeline_mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_pipeline_mod)
     run_pipeline = _pipeline_mod.run_pipeline
 
     session = sessions[session_id]

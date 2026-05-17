@@ -12,7 +12,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8001" ^| findstr "LISTENING
 :: Start Backend (Python)
 echo [1/2] Starting Backend...
 cd /d "D:\Music\nextchord-solotab\backend"
-start "Backend (Port 8001)" "D:\Music\nextchord\venv312\Scripts\python.exe" -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+start "Backend (Port 8001)" "D:\Music\nextchord\venv312\Scripts\python.exe" -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload --reload-dir . --reload-exclude uploads --reload-exclude __pycache__ --reload-exclude logs --reload-exclude ground_truth --reload-exclude benchmark --reload-exclude train
 
 :: Start Frontend (NPM)
 echo [2/2] Starting Frontend...
