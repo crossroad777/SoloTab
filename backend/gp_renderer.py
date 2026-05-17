@@ -347,9 +347,7 @@ def _filter_noise(notes, gate):
     if not notes:
         return []
     # ノート数ベース: gate=0.5 → velocity下位50%のノートをカット
-    # 重要: velocityが同一の場合、安定ソートにより時間順の先頭ノートが
-    # 常にカットされるバグを防止するため、同一velocity内では
-    # 時間的に均等分散してカットする
+    # 重要: 同時発音ノート（和音・アルペジオ開始）は分離不可のため保護する
     import random
     cut_count = int(len(notes) * gate)
     if cut_count >= len(notes):
@@ -357,13 +355,40 @@ def _filter_noise(notes, gate):
     if cut_count <= 0:
         return notes.copy()
 
+    # 同時発音ノート（50ms以内）をグループ化し、保護対象を特定
+    SIMUL_THRESHOLD = 0.05  # 50ms
+    sorted_by_time = sorted(enumerate(notes), key=lambda x: float(x[1].get("start", 0)))
+    protected_indices = set()
+    i = 0
+    while i < len(sorted_by_time):
+        group = [sorted_by_time[i]]
+        j = i + 1
+        while j < len(sorted_by_time):
+            t_diff = abs(float(sorted_by_time[j][1].get("start", 0)) - float(group[0][1].get("start", 0)))
+            if t_diff <= SIMUL_THRESHOLD:
+                group.append(sorted_by_time[j])
+                j += 1
+            else:
+                break
+        # 2ノート以上同時発音 → 全て保護
+        if len(group) >= 2:
+            for idx, _ in group:
+                protected_indices.add(idx)
+        i = j
+
     # velocityでグループ化し、同一velocity内はシャッフルして偏りを防止
     # (deterministic seed for reproducibility)
     rng = random.Random(42)
     indexed = list(enumerate(notes))
     # velocity + ランダムキーでソート（同一velocity内を均等分散）
     indexed.sort(key=lambda x: (float(x[1].get("velocity", 0.5)), rng.random()))
-    cut_indices = set(idx for idx, _ in indexed[:cut_count])
+    # 保護対象を除いてカット
+    cut_indices = set()
+    for idx, _ in indexed:
+        if len(cut_indices) >= cut_count:
+            break
+        if idx not in protected_indices:
+            cut_indices.add(idx)
     filtered = [n for i, n in enumerate(notes) if i not in cut_indices]
     return filtered if filtered else [notes[0]]
 

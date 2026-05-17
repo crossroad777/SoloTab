@@ -745,6 +745,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
         beats = bd.get("beats", [])
         bpm = bd.get("bpm", bpm)
         time_sig = bd.get("time_signature", time_sig)
+        rhythm_info = bd.get("rhythm_info")  # triplet/straight情報を復元
 
     title_raw = s.get("filename", session_id)
     # Remove audio extension first

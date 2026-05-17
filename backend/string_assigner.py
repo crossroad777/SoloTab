@@ -39,7 +39,7 @@ def _load_string_classifier():
     if _STRING_CLASSIFIER is not None:
         return _STRING_CLASSIFIER
     
-    model_path = os.path.join(os.path.dirname(__file__), "string_classifier.pth")
+    model_path = os.path.join(os.path.dirname(__file__), "string_classifier_mixed_v2.pth")
     if not os.path.exists(model_path):
         _STRING_CLASSIFIER = False  # モデルなし
         return False
@@ -119,6 +119,17 @@ def _predict_string_probs(audio_path: str, onset_time: float,
         
         with torch.no_grad():
             logits = clf['model'](patch_tensor, pitch_tensor)
+            # 物理制約マスク: ピッチからフレット0-24で弾けない弦を-infに
+            # CNN: index 0=1弦(E4), 5=6弦(E2)
+            # STANDARD_TUNING: index 0=6弦(E2), 5=1弦(E4)
+            from solotab_utils import STANDARD_TUNING
+            mask = torch.zeros(6, device=device)
+            for s_idx in range(6):
+                open_pitch = STANDARD_TUNING[5 - s_idx]  # CNN idx→チューニング逆順
+                fret = midi_pitch - open_pitch
+                if fret < 0 or fret > 24:
+                    mask[s_idx] = float('-inf')
+            logits = logits + mask.unsqueeze(0)
             probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
         
         return {s + 1: float(probs[s]) for s in range(6)}
@@ -616,7 +627,7 @@ WEIGHTS = {
     "w_sweet_spot_bonus":    -1.0,    # sweet spot (0-9f) ボーナス (PDL最適化: -1.5→-1.0)
 
     # 遷移コスト（ポジション連続性を重視）
-    "w_movement":            15.0,    # ポジション移動コスト (フレット差に比例)
+    "w_movement":             8.0,    # ポジション移動コスト (フレット差に比例)
     "w_position_shift":      50.0,    # ポジション跨ぎ追加コスト (4f超の移動)
     "w_string_switch":        2.0,    # 弦切り替えコスト (弦距離に比例)
     "w_same_string_repeat":   5.5,    # ⑧ 右手PIMA: 同弦連打ペナルティ
@@ -628,7 +639,7 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,    # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
 
     # 音色コスト
-    "w_open_string_bonus":   -8.0,    # 開放弦ボーナス（CNN統合後は強めに設定）
+    "w_open_string_bonus":  -15.0,    # 開放弦ボーナス（指を離すだけで弾ける）
     "w_open_match_bonus":    -5.0,    # 開放弦でしか出せない音のボーナス
     "w_barre_bonus":         -5.0,    # バレーコードボーナス (per extra string)
 
@@ -686,6 +697,10 @@ def _position_cost(s: int, f: int) -> float:
     # Sweet spot ボーナス (負のコスト) — 0-9fまで拡大
     if 0 <= f <= 9:
         cost += WEIGHTS["w_sweet_spot_bonus"]
+    
+    # 低フレットボーナス: fret 0-4 は特に弾きやすい
+    if 0 < f <= 4:
+        cost -= 3.0  # ローポジション追加ボーナス
 
     return cost
 
@@ -698,11 +713,10 @@ def _transition_cost(s: int, f: int,
     """
     cost = 0.0
 
-    # フレット移動コスト (開放弦の軽減を抑制してポジション連続性を重視)
+    # フレット移動コスト
     if f == 0:
-        # 開放弦への移動 = 指を離すだけだが、ポジション連続性は崩れる
-        fret_diff = abs(prev_f)
-        cost += fret_diff * WEIGHTS["w_movement"] * 0.7
+        # 開放弦への移動 = 指を離すだけ → フレット差によらず固定小コスト
+        cost += WEIGHTS["w_movement"] * 0.15
     elif prev_f == 0:
         # 開放弦からの移動 = 新しくポジションを取る
         cost += f * WEIGHTS["w_movement"] * 0.8
@@ -907,7 +921,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         if len(groups[0]) == 1:
             cnn_probs = groups[0][0].get('cnn_string_probs')
             if cnn_probs and s in cnn_probs:
-                cnn_bonus = -cnn_probs[s] * 30.0  # CNN弦予測ボーナス
+                _w = groups[0][0].get('_cnn_weight', 30.0)
+                cnn_bonus = -cnn_probs[s] * _w  # CNN弦予測ボーナス（ナイロン弦時は低重み）
         # 初期ポジションからの距離
         init_cost = abs(f - initial_position) * WEIGHTS["w_movement"] * 0.3 if f > 0 else 0.0
         # ⑪ ソロギター用: コードフォーム内ポジション優先
@@ -949,7 +964,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             if is_single:
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
                 if cnn_probs and s in cnn_probs:
-                    emission -= cnn_probs[s] * 30.0
+                    _w = groups[gi][0].get('_cnn_weight', 30.0)
+                    emission -= cnn_probs[s] * _w  # ナイロン弦時は低重み
                 # ⑪ ソロギター用: コードフォーム内ポジション優先
                 chord_name = groups[gi][0].get("_chord_name", "")
                 if chord_name:
@@ -1363,7 +1379,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                       max_fret: int = MAX_FRET,
                       initial_position: float = 0.0,
                       chords: List[dict] = None,
-                      audio_path: str = None) -> List[dict]:
+                      audio_path: str = None,
+                      guitar_type: str = 'auto') -> List[dict]:
     """
     Assign (string, fret) to each note using Viterbi DP + Minimax postprocessing.
 
@@ -1381,6 +1398,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     chords : List[dict], optional
         コード検出結果。各要素: {'start': float, 'end': float, 'chord': str}
         Viterbiの出力コストに音楽理論的制約を加えるために使用。
+    guitar_type : str
+        'steel', 'nylon', or 'auto'.
+        'nylon'時: CQT特徴量の信頼性が低いため、CNN重みを大幅に下げ
+        ピッチベースのViterbi DPを優先する。
     """
     if tuning is None:
         tuning = STANDARD_TUNING
@@ -1410,12 +1431,33 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             if injected > 0:
                 print(f"[string_assigner] 弦分類器CNN: {injected}/{len(notes)}ノートに弦確率注入")
 
+    # === ギタータイプ判定 ===
+    is_nylon = False
+    if guitar_type == 'nylon':
+        is_nylon = True
+    elif guitar_type == 'auto' and audio_path:
+        # GAPS等のナイロン弦データセットを自動判定（パスにgaps/nylon/classical含む）
+        ap_lower = audio_path.lower()
+        if any(kw in ap_lower for kw in ['gaps', 'nylon', 'classical']):
+            is_nylon = True
+    
+    # CNN重み: steel=30.0 (CQT信頼大), nylon=5.0 (CQT信頼低→ピッチ優先)
+    cnn_weight = 5.0 if is_nylon else 30.0
+    if is_nylon:
+        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (ピッチ優先)")
+    
+    # CNNの弦確率にギタータイプ別重みを反映
+    for note in notes:
+        if 'cnn_string_probs' in note:
+            note['_cnn_weight'] = cnn_weight
+
     # === 統合パイプライン: CNN-first弦決定 → Minimax/PIMA後処理 ===
-    # CNNが利用可能な場合: CNN-firstで弦を決定し、Minimax後処理で運指を改善
+    # ナイロン弦: CNN-firstをスキップし、Viterbi DP（ピッチ優先）に直行
+    # スチール弦: CNN-firstで弦を決定し、Minimax後処理で運指を改善
     has_cnn = any(note.get('cnn_string_probs') for note in notes)
     
-    if has_cnn:
-        # Phase 1: CNN-firstで各ノートの弦を決定
+    if has_cnn and not is_nylon:
+        # Phase 1: CNN-firstで各ノートの弦を決定（スチール弦のみ）
         OPEN_STRING_PROB_THRESHOLD = 0.01
         cnn_assigned = 0
         

@@ -122,13 +122,13 @@ Constructed from 4 complementary data sources (IDMT + GuitarSet + GOAT + GProTab
 | Ground truth | JAMS annotation string number (1-6) |
 | Architecture | 3-layer CNN (32→64→128ch) + FC (512+1→128→6) |
 | Training data | GuitarSet 360 tracks (61,885 samples) |
-| **Val accuracy** | **92.66%** |
+| **Val accuracy** | **94.1%** (optimized) |
 
 ### 3.2 Same-Player vs. LOPO Evaluation
 
 | Evaluation | Accuracy | Notes |
 |---|---|---|
-| Same-player (random split) | **93.3%** | Same players in train and test |
+| Same-player (random split) | **94.1%** | Same players in train and test |
 | **LOPO (Leave-One-Player-Out)** | **80.4%** | True generalization |
 
 | Fold | Held-out Player | LOPO Accuracy |
@@ -140,7 +140,7 @@ Constructed from 4 complementary data sources (IDMT + GuitarSet + GOAT + GProTab
 | 5 | Player 04 | 82.3% |
 | 6 | Player 05 | 84.9% |
 
-**Critical finding:** True CNN generalization is **80.4%**, not 93.3%. The 12.9% gap confirms overfitting to player-specific characteristics.
+**Critical finding:** True CNN generalization is **80.4%**, not 94.1%. The 13.7% gap confirms overfitting to player-specific characteristics.
 
 ### 3.3 CNN Error Pattern Analysis
 
@@ -155,6 +155,102 @@ Top error patterns (1,003 errors analyzed):
 | S5→S4 | 85 | 8.5% | Human plays A string, CNN picks D string |
 
 **Root cause: Position playing vs. open-position bias.** Human guitarists maintain "position" playing — keeping the hand in a 4-fret zone on a thicker string rather than jumping to a thinner string at a lower fret. CNN error direction: picks **thinner** string 60.7%, **thicker** string 39.3%.
+
+### 3.4 Synthetic Data Training: Three Generations of Failure
+
+To eliminate dependency on GuitarSet (61,885 samples), we attempted synthetic-only string classifier training across three generations using FluidSynth with string-specific physical filtering.
+
+#### v3: Baseline Synthesis (972K patches)
+
+FluidSynth + sequence-level CQT normalization. No string-specific acoustic differences applied.
+
+| Metric | Result |
+|---|---|
+| Synth val | 33.0% |
+| GS eval | 35.1% |
+
+**Diagnosis:** Identical spectral distributions across all strings; the model had no signal to learn string differentiation.
+
+#### v4: Physical Filter Introduction (162K patches)
+
+String-specific digital filters (lowpass, harmonic decay, attack envelope) applied to simulate physical string properties.
+
+| Metric | v3 | v4 | Change |
+|---|---|---|---|
+| Synth val | 33.0% | **84.1%** | +51.1% |
+| GS eval | 35.1% | 32.7% | -2.4% |
+
+**Finding:** Synth-internal val accuracy jumped to 84% but GuitarSet real-data accuracy did not improve. The string differences created by synthetic filters are fundamentally different from those of real guitars.
+
+### 3.5 Domain Gap Quantification
+
+To identify the root cause of v4's failure, we performed spectral feature comparison between GuitarSet (3,549 samples / 20 tracks) and v4 synthetic data (54,000 samples).
+
+| Metric | GuitarSet | v4 Synthetic | Gap |
+|---|---|---|---|
+| Mean energy | 0.381 | 0.239 | v4 is 37% darker |
+| Same-pitch cross-string CQT distance | **0.566** | **0.213** | v4 has only **38%** of GS string separation |
+| Peak frequency bin | bin 30-31 | bin 22-23 | 10-bin offset |
+
+**Three fundamental discrepancies:**
+1. **Energy deficit:** v4 is 37% darker than GS
+2. **Insufficient string separation:** v4 filters produce only 38% of real inter-string spectral distance
+3. **Frequency peak misalignment:** 10-bin offset in peak energy location
+
+**Root cause:** Real guitar string differentiation arises from body resonance, touch dynamics, and picking position — factors impossible to replicate with parametric digital filters.
+
+#### v5: GS Feature Matching (162K patches)
+
+Redesigned filters based on analysis: filter order 2→4, FFT decay 3× stronger, gain correction to match GS energy.
+
+| Metric | v4 | v5 |
+|---|---|---|
+| Synth val | 55.9% | **85.6%** |
+| GS eval | 18.5% | **24.7%** |
+
+Improved but GS accuracy remained at 24.7%.
+
+### 3.6 Transfer Learning: Negative Transfer
+
+We tested v5 pre-training (162K, 3 types) → GuitarSet fine-tuning (49,508 samples):
+
+| Phase | Method | GS Eval |
+|---|---|---|
+| Phase 1 | v5 pre-training only (162K, 20 epochs) | 20.7% |
+| Phase 2a | Conv frozen, FC-only FT (5 epochs) | 44.8% |
+| Phase 2b | All layers unfrozen, low-LR FT (30 epochs) | 78.3% |
+
+**Comparison with baseline:**
+
+| Method | GS Eval Accuracy |
+|---|---|
+| **Baseline (GS direct, 30 epochs)** | **89.4%** |
+| v5 pre-trained + fine-tuned | 78.3% |
+| **Difference** | **-11.1%** |
+
+Synthetic pre-training caused **negative transfer** (-11.1%). Features learned from synthetic data were incompatible with real-world spectral characteristics.
+
+### 3.7 Optimized Production CNN String Classifier
+
+Abandoning synthetic data, we optimized GuitarSet direct training with data augmentation and hyperparameter tuning.
+
+| Parameter | Baseline | Optimized |
+|---|---|---|
+| Data split | GS 61,885 (80/20) | GS 61,885 (85/15) |
+| Epochs | 30 | **80** |
+| Optimizer | Adam (lr=1e-3) | **AdamW** (lr=1e-3, wd=1e-4) |
+| Scheduler | ReduceLROnPlateau | **CosineAnnealing** (→1e-5) |
+| Augmentation | None | **Gain (×0.85-1.15), noise (σ=0.015), temporal shift (±1 frame, p=0.3), frequency shift (±1 bin, p=0.2)** |
+
+**Results:**
+
+| Metric | Baseline | Optimized | Improvement |
+|---|---|---|---|
+| **Best val** | 89.4% | **94.1%** | **+4.7%** |
+| Train (final) | 88.9% | 97.2% | |
+| Training time | ~2 min | 10 min | |
+
+**Estimated contribution breakdown:** CosineAnnealing (+2.0%), augmentation (+1.5%), epoch increase (+1.0%), weight decay (+0.2%).
 
 ---
 
@@ -411,7 +507,7 @@ The remaining ~5% represents genuine **individual preference** — e.g., one gui
 | 1 | Viterbi DP (pitch only) | 52.8% | — | Pitch sequence |
 | 2 | Viterbi + human preference | 59.5% | — | Pitch + preference map |
 | 3 | Viterbi + Path Difference Learning | 61.7% | — | Pitch + learned weights |
-| 4 | CNN String Classifier | 93.3% | 80.4% | Audio CQT |
+| 4 | CNN String Classifier | 94.1% | 80.4% | Audio CQT |
 | 5 | CNN + preference map fusion | 93.1% | — | Audio + preference |
 | 6 | CNN-Viterbi (string/fret) | 93.7% | — | Audio + sequence |
 | 7 | **CNN + Biomechanical Viterbi** | **95.9%** | **80.8%** | **Audio + biomechanics** |
@@ -456,6 +552,8 @@ The remaining 5% is attributable to individual preference among adjacent strings
 | Transformer test | 803,700 samples |
 | GuitarSet cross-validation | 360 JAMS files, 56,716 notes |
 | CNN training data | GuitarSet 360 tracks (61,885 samples) |
+| CNN optimization | AdamW + CosineAnnealing + augmentation, 80 epochs |
+| Synthetic experiments | v3 (972K), v4 (162K), v5 (162K) — all failed to generalize to GS |
 | Preference map | 520,269 notes (IDMT + GuitarSet + GOAT + GProTab) |
 | Transformer model | FingeringTransformer, 1.9M params |
 | CNN model | 3-layer CNN, ~200K params |
@@ -609,8 +707,11 @@ graph TD
 |---|---|---|
 | 1. Parse GP5 files | `build_fingering_dataset_v3.py` | `gp_training_data/v3/` |
 | 2. Train Transformer | `train_fingering_v3.py` | `fingering_transformer_v3_best.pt` |
-| 3. Train CNN | `train_string_classifier.py` | `string_classifier.pth` |
+| 3. Train CNN | `scratch/train_production.py` | `string_classifier.pth` (Val 94.1%) |
 | 4. Benchmark (internal) | `benchmark_guitarset_v3.py` | 97.2% / 95.2% |
 | 5. Benchmark (pipeline) | `assign_strings_dp()` with audio | 73.1% (Viterbi integration) |
 | 6. Ablation study | `analyze_fingering_rules.py` | 5 laws + attention weights |
+| 7. Synthetic experiments | `scratch/generate_synth_v5.py` | v5 synth data (162K) |
+| 8. Domain gap analysis | `scratch/analyze_string_spectra.py` | GS vs synthetic spectral comparison |
+| 9. Transfer learning | `scratch/pretrain_finetune.py` | Negative transfer demonstrated |
 

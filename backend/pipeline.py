@@ -206,6 +206,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         json.dump(_to_native({
             "beats": beats, "bpm": bpm,
             "time_signature": time_signature, "downbeats": downbeats,
+            "rhythm_info": None,  # 後で音楽理論解析後に更新される
         }), f, ensure_ascii=False)
 
     # --- Step 1.5: Key Detection ---
@@ -571,6 +572,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("theory", f"音楽理論解析完了: rhythm={rhythm_info['subdivision']} "
                f"(triplet_ratio={rhythm_info.get('triplet_ratio', 0):.2f}), "
                f"key={detected_key_sig} ({time.time()-t0:.1f}s)")
+        # beats.jsonにrhythm_infoを追記保存（_regenerate_musicxmlで参照される）
+        try:
+            beats_json_path = session_dir / "beats.json"
+            if beats_json_path.exists():
+                with open(beats_json_path, "r", encoding="utf-8") as f:
+                    bd = json.load(f)
+                bd["rhythm_info"] = rhythm_info
+                with open(beats_json_path, "w", encoding="utf-8") as f:
+                    json.dump(_to_native(bd), f, ensure_ascii=False)
+        except Exception:
+            pass
     except Exception as e:
         report("theory", f"音楽理論解析スキップ: {e}")
 
