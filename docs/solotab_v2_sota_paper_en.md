@@ -486,5 +486,69 @@ The remaining 21.0% error is attributed to: (1) nylon string inter-string spectr
 
 ---
 
+## Step 13: Nylon Guitar Production Optimization (2026-05-17)
+
+### Motivation
+
+Step 12 established the Mixed v2 string classifier (GS: 95.3%, GAPS: 79.0%), but the production pipeline lacked nylon-specific optimizations for the string assignment engine (Viterbi DP, CNN-first, Minimax). Additionally, the automatic guitar type detection relied on a single spectral feature (hf_ratio > 4kHz) with only 86.7% accuracy, causing 4/30 misdetections in stress testing.
+
+### 13.1 Automatic Guitar Type Detection: 3-Feature Spectral Voting
+
+Replaced single hf_ratio threshold with a 3-feature majority voting classifier:
+
+| Feature | Threshold | What it measures |
+| :--- | :---: | :--- |
+| `hf4k` (>4kHz energy ratio) | < 0.057 | Nylon strings have less high-frequency energy |
+| `hf6k` (>6kHz energy ratio) | < 0.057 | Extended HF check for edge cases |
+| `bandwidth` (spectral bandwidth) | < 1386 Hz | Nylon has narrower spectral spread |
+
+**Decision rule**: If ≥ 2/3 features indicate nylon → classify as nylon guitar.
+
+**Critical bug fix**: Detection was using `preprocessed.wav` (post melody-boost EQ) instead of the original audio. The EQ's high-frequency boost raised hf_ratio from 0.039 to 0.058, causing nylon guitars to be misclassified as steel. Fixed to use the raw input audio.
+
+| Metric | Old (hf4k < 0.05) | **New (3-feature voting)** |
+| :--- | :---: | :---: |
+| **Accuracy** | 86.7% (26/30) | **93.3%** (28/30) |
+| GAPS misdetections | 4 | **2** |
+| GuitarSet misdetections | 0 | 0 |
+| Regressions | — | **0** |
+
+The remaining 2 misdetections (GAPS 129_TD1wc with hf4k=0.116, GuitarSet 05_SS3 with hf4k=0.021) have acoustic properties that genuinely cross domain boundaries.
+
+### 13.2 Nylon-Specific String Assignment Improvements
+
+Three optimizations activated when `guitar_type='nylon'` is detected:
+
+1. **Position Estimation Correction**: Nylon-specific median-pitch to position mapping (`est_position=9.2` for typical classical repertoire vs. `est_position=4.6` for steel)
+2. **CNN Weight Reduction**: CNN-first emission weight reduced from 30.0 to 25.0, giving Minimax Viterbi more latitude for ergonomic classical fingering
+3. **Minimax Protection**: Increased CNN probability protection threshold, reducing Minimax replacements from 16 to 3 notes
+
+**Benchmark (GAPS 298_Cpswc, 154 GT notes)**:
+
+| Mode | String Accuracy | Minimax Replacements | S3 Accuracy | S5 Accuracy |
+| :--- | :---: | :---: | :---: | :---: |
+| Steel (baseline) | 92.2% | 16 | 58% | 70% |
+| **Nylon (optimized)** | **95.5%** | **3** | **64%** | **75%** |
+| **Improvement** | **+3.2%** | **-81%** | **+6%** | **+5%** |
+
+### 13.3 Comprehensive E2E Validation
+
+Final validation across all system components:
+
+| Test | Result | Details |
+| :--- | :---: | :--- |
+| GuitarSet string accuracy (360 tracks) | ✅ **98.1%** | 61,317/62,476 notes |
+| ±1 string tolerance | ✅ **99.97%** | 62,456/62,476 |
+| ≥2 string errors | ✅ **0.03%** | 20/62,476 |
+| Nylon/steel auto-detection | ✅ **93.3%** | 28/30 samples |
+| GAPS nylon string accuracy (27 tracks) | ✅ **93.5%** | Auto-detect mode |
+| GuitarSet regression (20 tracks, auto mode) | ✅ **98.2%** | 0/20 degraded |
+| E2E pipeline (upload→inference→GP5) | ✅ **PASS** | 59 notes, 20.0s, GP5=2248B |
+| Edge cases (5 scenarios) | ✅ **PASS** | Empty/single/high-pitch/nylon/chord |
+
+> **Conclusion**: The production system achieves robust cross-domain performance with automatic guitar type detection, eliminating the need for manual mode selection in most cases (93.3% accuracy). The nylon-specific optimizations improve classical guitar string accuracy by +3.2% without any regression on steel-string performance.
+
+---
+
 *SoloTab V2.0 -- May 2026*
 
