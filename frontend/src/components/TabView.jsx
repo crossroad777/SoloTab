@@ -520,12 +520,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 if (beat) {
                     const { x, y, w, h } = beat.vb;
 
-                    // 小節全体をハイライト（小節ごとに移動）
+                    // Thin vertical line — interpolate position within beat
+                    const progress = (beat.endMs > beat.startMs) 
+                        ? Math.min(1, Math.max(0, (ms - beat.startMs) / (beat.endMs - beat.startMs)))
+                        : 0;
+                    const cursorX = x + progress * w;
+
                     cursor.style.display = "block";
-                    cursor.style.left = `${x}px`;
+                    cursor.style.left = `${cursorX}px`;
                     cursor.style.top = `${y}px`;
-                    cursor.style.width = `${w}px`;
                     cursor.style.height = `${h}px`;
+                    // width is fixed at 3px via inline style
 
                     if (container && autoScrollRef.current) {
                         const now = Date.now();
@@ -591,16 +596,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
             {/* Score container — position:relative for cursor positioning */}
             <div style={{ position: "relative", padding: 0, margin: 0 }}>
-                {/* Custom cursor (blue bar) */}
+                {/* Custom cursor (thin vertical line — precise beat tracking) */}
                 <div
                     ref={cursorRef}
                     style={{
                         position: "absolute", display: "none", pointerEvents: "none",
                         zIndex: 30, top: 0, left: 0,
-                        background: "rgba(59,130,246,0.10)",
-                        borderRadius: 4,
-                        boxShadow: "none",
-                        transition: "left 0.15s ease, top 0.05s ease, width 0.15s ease",
+                        width: "3px",
+                        background: "rgba(239, 68, 68, 0.85)",
+                        borderRadius: 2,
+                        boxShadow: "0 0 6px rgba(239, 68, 68, 0.4)",
+                        transition: "left 0.08s linear, top 0.05s ease",
                         willChange: "left, top",
                     }}
                 />

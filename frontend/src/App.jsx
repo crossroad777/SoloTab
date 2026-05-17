@@ -389,9 +389,10 @@ export default function SoloTabApp() {
 
   const handleRetune = async (newTuning, newCapo, newNoiseGate) => {
     if (!session?.id || retuning) return;
+    // Always fallback to current session values — never send null/undefined to backend
     const tuningToUse = newTuning || session.tuning || "standard";
-    const capoToUse = newCapo !== undefined ? newCapo : capo;
-    const gateToUse = newNoiseGate !== undefined ? newNoiseGate : noiseGate;
+    const capoToUse = (newCapo !== undefined && newCapo !== null) ? newCapo : capo;
+    const gateToUse = (newNoiseGate !== undefined && newNoiseGate !== null) ? newNoiseGate : noiseGate;
     setRetuning(true);
     try {
       const res = await fetch(`${API_BASE}/result/${session.id}/retune`, {
@@ -399,18 +400,23 @@ export default function SoloTabApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tuning: tuningToUse, capo: capoToUse, noise_gate: gateToUse }),
       });
-      if (!res.ok) throw new Error("Retune failed");
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.detail || `Retune failed (${res.status})`);
+      }
       const data = await res.json();
       setSession(prev => ({ ...prev, tuning: tuningToUse, totalNotes: data.total_notes }));
       setRetuneKey(k => k + 1);
-      if (newCapo !== undefined) {
-        _showToast(`カポ ${capoToUse} に変更しました`);
+      if (newCapo !== undefined && newCapo !== null) {
+        _showToast(capoToUse > 0 ? `カポ ${capoToUse} に変更しました` : 'カポを外しました');
+      } else if (newNoiseGate !== undefined && newNoiseGate !== null) {
+        _showToast(`CUT: ${Math.round(gateToUse * 100)}% に変更`);
       } else {
         _showToast(`チューニングを${TUNING_OPTIONS.find(t => t.value === tuningToUse)?.label || tuningToUse}に変更しました`);
       }
     } catch (err) {
       console.error('[handleRetune] failed:', err);
-      _showToast("変更に失敗しました");
+      _showToast(`変更に失敗: ${err.message}`);
     } finally {
       setRetuning(false);
     }
@@ -647,9 +653,9 @@ export default function SoloTabApp() {
                   {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (<option key={n} value={n}>Capo {n}</option>))}
                 </select>
                 <div className="transpose-controls" style={{ gap: 2 }}>
-                  <button className="transpose-btn" onClick={() => setTranspose(t => t - 1)} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調: フロントエンド表示のみ (TAB譜はretune時に反映)'); }} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
                   <span className="transpose-label" style={{ fontSize: 11, minWidth: 28 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
-                  <button className="transpose-btn" onClick={() => setTranspose(t => t + 1)} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t + 1); _showToast('移調: フロントエンド表示のみ (TAB譜はretune時に反映)'); }} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
                 </div>
                 {retuning && <span style={{ fontSize: 10, color: 'var(--st-amber)' }}>⏳</span>}
                 <button className="home-btn" title="PDF"
@@ -695,16 +701,36 @@ export default function SoloTabApp() {
                   style={{ fontSize: 10, padding: '4px 8px' }}>
                   <Download size={11} style={{ marginRight: 2 }} />MusicXML
                 </button>
-                <button className="home-btn" title="TuxGuitarで開く"
+                <button className="home-btn" title="TuxGuitarで開く（ローカル） / GP5ダウンロード（リモート）"
                   onClick={async () => {
-                    try {
-                      const res = await fetch(`${API_BASE}/result/${session.id}/open-tuxguitar`, { method: 'POST' });
-                      if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err.detail || "起動失敗");
-                      }
-                      _showToast("TuxGuitarを起動しました");
-                    } catch(e) { _showToast("TuxGuitar: " + e.message); }
+                    const isLocal = API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
+                    if (isLocal) {
+                      // ローカル環境: サーバー側でTuxGuitarを起動
+                      try {
+                        const res = await fetch(`${API_BASE}/result/${session.id}/open-tuxguitar`, { method: 'POST' });
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({}));
+                          throw new Error(err.detail || "起動失敗");
+                        }
+                        _showToast("TuxGuitarを起動しました");
+                      } catch(e) { _showToast("TuxGuitar: " + e.message); }
+                    } else {
+                      // リモート環境 (Vercel等): GP5ファイルをダウンロード
+                      try {
+                        const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
+                        if (!res.ok) throw new Error("取得失敗");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp5`;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                        _showToast("GP5をダウンロードしました。TuxGuitar/Guitar Proで開いてください");
+                      } catch(e) { _showToast("GP5: " + e.message); }
+                    }
                   }}
                   style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#10b981', fontWeight: 700 }}>
                   🎸 TuxGuitar
