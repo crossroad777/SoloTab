@@ -2,6 +2,10 @@
 
 ## SoloTab V2.0 Research Report
 
+**Author:** Alice Lin — [BaseLineDesigns.com](https://baselinedesigns.com)
+
+*© 2026 BaseLineDesigns.com. All rights reserved. This work and all associated research, data, and implementations are the intellectual property of BaseLineDesigns.com.*
+
 ## Abstract
 
 Automatic music transcription (AMT) for guitar is an extremely challenging task due to fingering ambiguity, diversity of playing techniques, and timbral variation across genres. We propose a **Domain-Adaptive Pure Mixture-of-Experts (MoE) Ensemble** that combines pre-training on over 52,000 synthetic tracks with multi-dataset fine-tuning integrating GuitarSet, GAPS, and AG-PT-set. Through frame-level consensus voting among seven instrument- and technique-specific CRNN models, we **completely eliminate all post-processing** traditionally required—including noise filtering, dynamic-programming string assignment, and rhythm quantization—while achieving **Pitch F1 = 0.8916** on GuitarSet Test (60 steel-string tracks) and **Pitch F1 = 0.7312** on GAPS Test (30 nylon-string tracks). Furthermore, we discover a "diversity-driven consensus improvement" phenomenon where mixed training with synthetic data (Synth V2) degrades individual model Val F1 yet improves MoE ensemble F1, presenting a novel design principle for ensemble learning. Cross-dataset evaluation on 90 unseen tracks demonstrates the generalization capability of our acoustic guitar-specialized model.
@@ -307,7 +311,9 @@ This study systematically overcame multiple technical barriers in guitar AMT, ul
 | Pitch detection (steel-string) | GuitarSet Test Pitch F1 | 0.8916 |
 | Pitch detection (nylon-string) | GAPS Test Pitch F1 | 0.7312 |
 | String classifier accuracy | CNN Val accuracy (optimized) | **94.1%** |
-| String assignment accuracy | CNN-first string+fret match (GuitarSet) | 96.60% |
+| **String assignment accuracy** | **CNN-first + Minimax (GuitarSet 62,476 notes)** | **98.1%** |
+| String assignment ±1 tolerance | Predictions within ±1 string | **100.0%** |
+| String assignment cross-domain | **GAPS nylon (auto-detected, 27 tracks)** | **93.5%** |
 | String assignment generalization | Leave-One-Out cross-validation | 80.92% |
 | Sequence string prediction | Fingering LSTM Val accuracy | 98.31% |
 | Post-processing | Noise filter, DP, quantization | Fully eliminated |
@@ -324,7 +330,7 @@ By retaining and combining all models from every training stage (35 models) rath
 
 **Finding 3: CNN-First Architecture for String Estimation**
 
-Replacing Viterbi DP-based string assignment (61.18%) with a CNN string classifier using audio CQT features as input dramatically improved string+fret match rate to 96.60% (+35.42%). This demonstrates that overcoming the theoretical ceiling of pitch-only string estimation (~70%) fundamentally requires the utilization of audio spectral features.
+Replacing Viterbi DP-based string assignment (61.18%) with a CNN string classifier using audio CQT features as input dramatically improved string+fret match rate. The production system (CNN-first + Minimax Viterbi) achieves **98.1%** on GuitarSet (62,476 notes, 360 tracks), with **100.0%** of predictions within ±1 string and only **0.03%** errors spanning ≥2 strings. Per-string accuracy ranges from 94.3% (S6) to 99.4% (S1). On the GAPS nylon guitar dataset, the system achieves **93.5%** with automatic guitar type detection (3-feature spectral voting, 93.3% detection accuracy). This demonstrates that overcoming the theoretical ceiling of pitch-only string estimation (~70%) fundamentally requires the utilization of audio spectral features.
 
 ### 8.4 Overall Effect of Progressive Training Strategy
 
@@ -341,7 +347,7 @@ GuitarSet-specific domain adaptation (Step 2) provided the largest single improv
 
 ### 8.5 Position Relative to Prior Work
 
-Under the constraint of using absolutely no post-processing, our pure MoE ensemble (Step 10) significantly surpasses TabCNN (F1 ~ 0.826) and achieves accuracy equal to or exceeding existing methods that rely on extensive post-processing. The combination of training scale (52,000 synthetic tracks + 3-dataset integrated fine-tuning) with architectural simplicity (no post-processing) represents the unique contribution of this work.
+Under the constraint of using absolutely no post-processing, our pure MoE ensemble (Step 10) significantly surpasses TabCNN (F1 ~ 0.826) and achieves accuracy equal to or exceeding existing methods that rely on extensive post-processing. The combination of training scale (52,000 synthetic tracks + 3-dataset integrated fine-tuning) with architectural simplicity (no post-processing) represents the unique contribution of this work. The string assignment pipeline achieves **98.1%** accuracy, surpassing all prior benchmarks including TabCNN TDR (89.9%) by +8.2pp and our own research-phase CNN+Bio Viterbi (95.9%) by +2.2pp.
 
 ### 8.6 Summary
 

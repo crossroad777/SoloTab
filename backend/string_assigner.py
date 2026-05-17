@@ -1440,11 +1440,37 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         ap_lower = audio_path.lower()
         if any(kw in ap_lower for kw in ['gaps', 'nylon', 'classical']):
             is_nylon = True
+
+    # === ポジション推定 (対策2) ===
+    # 曲冒頭のノートから演奏ポジション（フレット中心）を推定
+    # ナイロン弦クラシックギターはハイポジション演奏が多い
+    estimated_position = initial_position
+    if notes:
+        # 全ピッチの中央値からポジションを推定
+        all_pitches = sorted([n.get('pitch', 60) for n in notes])
+        median_pitch = all_pitches[len(all_pitches) // 2]
+        # 中央ピッチを各弦で弾いた場合のフレット中央値
+        fret_options = []
+        for i, op in enumerate(tuning):
+            f = median_pitch - op
+            if 0 <= f <= max_fret:
+                fret_options.append(f)
+        if fret_options:
+            estimated_position = max(estimated_position, sum(fret_options) / len(fret_options))
+        if is_nylon:
+            # ナイロン弦: ハイポジション傾向を加味 (クラシック奏法)
+            estimated_position = max(estimated_position, 3.0)
+            print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
+                  f"est_position={estimated_position:.1f} (ナイロン弦補正あり)")
+        else:
+            print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
+                  f"est_position={estimated_position:.1f}")
     
-    # CNN重み: steel=30.0 (CQT信頼大), nylon=5.0 (CQT信頼低→ピッチ優先)
-    cnn_weight = 5.0 if is_nylon else 30.0
+    # CNN重み: steel=30.0 (CQT信頼大), nylon=25.0 (CNN-first有効化)
+    # 分析結果: CNN argmax=70.8% > Viterbi=66.9% → ナイロンでもCNNを信頼
+    cnn_weight = 25.0 if is_nylon else 30.0
     if is_nylon:
-        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (ピッチ優先)")
+        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (CNN-first有効)")
     
     # CNNの弦確率にギタータイプ別重みを反映
     for note in notes:
@@ -1452,13 +1478,15 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             note['_cnn_weight'] = cnn_weight
 
     # === 統合パイプライン: CNN-first弦決定 → Minimax/PIMA後処理 ===
-    # ナイロン弦: CNN-firstをスキップし、Viterbi DP（ピッチ優先）に直行
-    # スチール弦: CNN-firstで弦を決定し、Minimax後処理で運指を改善
+    # 対策1: ナイロン弦でもCNN-firstを使用（CNN argmax > Viterbi精度のため）
     has_cnn = any(note.get('cnn_string_probs') for note in notes)
     
-    if has_cnn and not is_nylon:
-        # Phase 1: CNN-firstで各ノートの弦を決定（スチール弦のみ）
-        OPEN_STRING_PROB_THRESHOLD = 0.01
+    if has_cnn:
+        # Phase 1: CNN-firstで各ノートの弦を決定
+        # 対策3: ナイロン弦時はオープンストリング優先を無効化
+        # クラシックギター奏法ではハイポジション（S1f7, S2f5等）を多用するため、
+        # 開放弦（S1f0, S2f0）を安易に選ぶとポジション一貫性が崩れる
+        OPEN_STRING_PROB_THRESHOLD = 0.01 if not is_nylon else 0.80  # ナイロン: 80%以上のみ開放弦
         cnn_assigned = 0
         
         for note in notes:
@@ -1482,24 +1510,43 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                             break
                 
                 if not assigned_open:
-                    sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
-                    assigned = False
-                    for s_cand, prob in sorted_strings:
-                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
-                        if pos_for_string:
-                            note["string"] = pos_for_string[0][0]
-                            note["fret"] = pos_for_string[0][1]
-                            assigned = True
-                            break
-                    if not assigned:
-                        note["string"] = positions[0][0]
-                        note["fret"] = positions[0][1]
+                    if is_nylon:
+                        # ナイロン弦: ポジション一貫性を考慮した弦選択
+                        # CNNの確率 × ポジション距離ペナルティ で最終選択
+                        best_score = -float('inf')
+                        best_sf = positions[0]
+                        for s, f in positions:
+                            s_key = str(s) if str(s) in cnn_probs else s
+                            prob = float(cnn_probs.get(s_key, 0))
+                            # ポジション距離ペナルティ: 推定ポジションから遠いほど減点
+                            pos_dist = abs(f - estimated_position) if f > 0 else estimated_position * 0.3
+                            score = prob * cnn_weight - pos_dist * 2.0
+                            if score > best_score:
+                                best_score = score
+                                best_sf = (s, f)
+                        note["string"] = best_sf[0]
+                        note["fret"] = best_sf[1]
+                    else:
+                        # スチール弦: CNN最大確率の弦を選択
+                        sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
+                        assigned = False
+                        for s_cand, prob in sorted_strings:
+                            pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                            if pos_for_string:
+                                note["string"] = pos_for_string[0][0]
+                                note["fret"] = pos_for_string[0][1]
+                                assigned = True
+                                break
+                        if not assigned:
+                            note["string"] = positions[0][0]
+                            note["fret"] = positions[0][1]
                 cnn_assigned += 1
             else:
                 note["string"] = positions[0][0]
                 note["fret"] = positions[0][1]
         
-        print(f"[string_assigner] CNN-first: {cnn_assigned}/{len(notes)}ノートにCNN弦割り当て適用")
+        mode_str = "ナイロン弦" if is_nylon else "スチール弦"
+        print(f"[string_assigner] CNN-first ({mode_str}): {cnn_assigned}/{len(notes)}ノートにCNN弦割り当て適用")
         
         # Phase 2: PIMA R5後処理 — a-m-a交替回避（右手の腱結合制約）
         from guitar_cost_functions import pima_r5_postprocess

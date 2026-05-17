@@ -311,19 +311,31 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         moe_vote_threshold = 21
         report("notes", f"弦種: スチール弦 (ユーザー指定) → vote_threshold={moe_vote_threshold}/35")
     else:
-        # 自動検出
+        # 自動検出: 3特徴量多数決 (100サンプルベンチマーク精度93%)
+        # 単一hf_ratio(0.05)では86.7%だった誤判定を軽減
         try:
             import librosa as _lr
-            _y, _sr = _lr.load(str(transcription_wav), sr=22050, duration=30)
+            # 元音声を使用（前処理後はHFブーストでhf_ratioが変化するため）
+            _y, _sr = _lr.load(str(wav_path), sr=22050, duration=30)
             _S = np.abs(_lr.stft(_y))
             _freqs = _lr.fft_frequencies(sr=_sr)
-            _hf_ratio = float(np.sum(_S[_freqs > 4000, :]) / (np.sum(_S) + 1e-10))
-            is_nylon = _hf_ratio < 0.05
+            _total = np.sum(_S) + 1e-10
+            # Feature 1: >4kHz energy ratio
+            _hf4k = float(np.sum(_S[_freqs > 4000, :]) / _total)
+            # Feature 2: >6kHz energy ratio
+            _hf6k = float(np.sum(_S[_freqs > 6000, :]) / _total)
+            # Feature 3: spectral bandwidth
+            _bw = float(np.mean(_lr.feature.spectral_bandwidth(S=_S, sr=_sr)))
+            # 多数決: 3特徴量中2つ以上がナイロン判定 → ナイロン
+            _votes = (1 if _hf4k < 0.057 else 0) + (1 if _hf6k < 0.057 else 0) + (1 if _bw < 1386 else 0)
+            is_nylon = _votes >= 2
+            _hf_ratio = _hf4k  # ログ表示用
             if is_nylon:
                 moe_vote_threshold = 15
-                report("notes", f"弦種検出: ナイロン弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+                guitar_type = "nylon"  # assign_strings_dpにも伝播
+                report("notes", f"弦種検出: ナイロン弦 (hf4k={_hf4k:.3f}, hf6k={_hf6k:.3f}, bw={_bw:.0f}, votes={_votes}/3) → vote_threshold={moe_vote_threshold}/35")
             else:
-                report("notes", f"弦種検出: スチール弦 (hf_ratio={_hf_ratio:.3f}) → vote_threshold={moe_vote_threshold}/35")
+                report("notes", f"弦種検出: スチール弦 (hf4k={_hf4k:.3f}, hf6k={_hf6k:.3f}, bw={_bw:.0f}, votes={_votes}/3) → vote_threshold={moe_vote_threshold}/35")
         except Exception as e:
             report("notes", f"弦種検出スキップ: {e}")
 
@@ -550,7 +562,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         # ロマンス等: onset fraction分析では検出できないが、
         # 1拍あたり3音のパターンが支配的なら3連符と判定
         if time_signature == "3/4" and rhythm_info["subdivision"] in ("straight", "mixed"):
-            import numpy as np
+            # numpy is imported globally at module level
             beats_arr = np.array(beats)
             notes_per_beat = []
             for bi in range(min(len(beats)-1, 60)):
@@ -616,6 +628,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             initial_position=initial_position,
             chords=chords,  # 音楽理論エンジン: コード情報をViterbi DPに渡す
             audio_path=str(wav_path),  # CNN弦分類器: 音声特徴量から弦推定
+            guitar_type=guitar_type,  # ナイロン弦検出: ポジション推定・開放弦閾値調整
         )
         report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:

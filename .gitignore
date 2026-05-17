@@ -84,3 +84,8 @@ backend/logs/
 *.docx
 _temp*
 
+
+# Large data files
+backend/gp5_training/data/*.jsonl
+backend/gp5_training/*.db
+backend/*.pth.bak*
