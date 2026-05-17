@@ -406,7 +406,15 @@ export default function SoloTabApp() {
       }
       const data = await res.json();
       console.log('[handleRetune] Backend response:', data);
-      setSession(prev => ({ ...prev, tuning: tuningToUse, totalNotes: data.total_notes }));
+      // Sync all state with backend — capo, noiseGate, tuning, totalNotes, badge
+      setCapo(capoToUse);
+      setNoiseGate(gateToUse);
+      setSession(prev => ({
+        ...prev,
+        tuning: tuningToUse,
+        totalNotes: data.total_notes,
+        detectedCapo: capoToUse,  // update badge display
+      }));
       // Wait briefly for backend to flush GP5 file to disk before re-fetching
       await new Promise(r => setTimeout(r, 300));
       setRetuneKey(k => k + 1);
