@@ -405,7 +405,10 @@ export default function SoloTabApp() {
         throw new Error(errBody.detail || `Retune failed (${res.status})`);
       }
       const data = await res.json();
+      console.log('[handleRetune] Backend response:', data);
       setSession(prev => ({ ...prev, tuning: tuningToUse, totalNotes: data.total_notes }));
+      // Wait briefly for backend to flush GP5 file to disk before re-fetching
+      await new Promise(r => setTimeout(r, 300));
       setRetuneKey(k => k + 1);
       if (newCapo !== undefined && newCapo !== null) {
         _showToast(capoToUse > 0 ? `カポ ${capoToUse} に変更しました` : 'カポを外しました');

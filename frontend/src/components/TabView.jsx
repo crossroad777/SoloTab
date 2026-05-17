@@ -240,7 +240,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 let res;
                 let useGp5 = true;
                 for (let attempt = 0; attempt < 3; attempt++) {
-                    res = await fetch(`${apiBase}/result/${sessionId}/gp5?t=${Date.now()}`);
+                    res = await fetch(`${apiBase}/result/${sessionId}/gp5?t=${Date.now()}`, { cache: 'no-store' });
                     if (res.ok) break;
                     console.warn(`[TabView] GP5 attempt ${attempt + 1} failed, retrying...`);
                     await new Promise(r => setTimeout(r, 1500));
@@ -249,7 +249,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     console.warn("[TabView] GP5 not available, falling back to MusicXML");
                     useGp5 = false;
                     for (let attempt = 0; attempt < 3; attempt++) {
-                        res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`);
+                        res = await fetch(`${apiBase}/result/${sessionId}/musicxml?t=${Date.now()}`, { cache: 'no-store' });
                         if (res.ok) break;
                         await new Promise(r => setTimeout(r, 1500));
                     }

@@ -594,7 +594,10 @@ async def get_gp5(session_id: str):
     return FileResponse(
         str(gp5_path),
         media_type="application/octet-stream",
-        headers={"Content-Disposition": cd},
+        headers={
+            "Content-Disposition": cd,
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        },
     )
 
 
