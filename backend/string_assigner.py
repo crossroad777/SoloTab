@@ -1486,12 +1486,11 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # 対策1: ナイロン弦でもCNN-firstを使用（CNN argmax > Viterbi精度のため）
     has_cnn = any(note.get('cnn_string_probs') for note in notes)
     
-    if has_cnn:
+    if has_cnn and not is_nylon:
         # Phase 1: CNN-firstで各ノートの弦を決定
-        # 対策3: ナイロン弦時のオープンストリング優先の閾値
-        # クラシックギター奏法ではハイポジションを多用するが、Romanceの伴奏のような
-        # 開放弦も頻繁に使用されるため、ペナルティ（閾値）を0.80から0.30に緩和
-        OPEN_STRING_PROB_THRESHOLD = 0.01 if not is_nylon else 0.30  # ナイロン: 30%以上で開放弦を許可
+        # スチール弦のみ適用。ナイロン弦（クラシック）は多声部や開放弦伴奏が多いため、
+        # 単音ごとの貪欲法（CNN-first）ではなくViterbi DP（後段）に任せる。
+        OPEN_STRING_PROB_THRESHOLD = 0.01
         cnn_assigned = 0
         
         for note in notes:
@@ -1515,34 +1514,17 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                             break
                 
                 if not assigned_open:
-                    if is_nylon:
-                        # ナイロン弦: ポジション一貫性を考慮した弦選択
-                        # CNNの確率 × ポジション距離ペナルティ で最終選択
-                        best_score = -float('inf')
-                        best_sf = positions[0]
-                        for s, f in positions:
-                            s_key = str(s) if str(s) in cnn_probs else s
-                            prob = float(cnn_probs.get(s_key, 0))
-                            # ポジション距離ペナルティ: 推定ポジションから遠いほど減点
-                            pos_dist = abs(f - estimated_position) if f > 0 else estimated_position * 0.3
-                            score = prob * cnn_weight - pos_dist * 2.0
-                            if score > best_score:
-                                best_score = score
-                                best_sf = (s, f)
-                        note["string"] = best_sf[0]
-                        note["fret"] = best_sf[1]
-                    else:
-                        # スチール弦: CNN最大確率の弦を選択
-                        sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
-                        assigned = False
-                        for s_cand, prob in sorted_strings:
-                            pos_for_string = [(s, f) for s, f in positions if s == s_cand]
-                            if pos_for_string:
-                                note["string"] = pos_for_string[0][0]
-                                note["fret"] = pos_for_string[0][1]
-                                assigned = True
-                                break
-                        if not assigned:
+                    # スチール弦: CNN最大確率の弦を選択
+                    sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
+                    assigned = False
+                    for s_cand, prob in sorted_strings:
+                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                        if pos_for_string:
+                            note["string"] = pos_for_string[0][0]
+                            note["fret"] = pos_for_string[0][1]
+                            assigned = True
+                            break
+                    if not assigned:
                             note["string"] = positions[0][0]
                             note["fret"] = positions[0][1]
                 cnn_assigned += 1
