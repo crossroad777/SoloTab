@@ -1488,10 +1488,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     
     if has_cnn:
         # Phase 1: CNN-firstで各ノートの弦を決定
-        # 対策3: ナイロン弦時はオープンストリング優先を無効化
-        # クラシックギター奏法ではハイポジション（S1f7, S2f5等）を多用するため、
-        # 開放弦（S1f0, S2f0）を安易に選ぶとポジション一貫性が崩れる
-        OPEN_STRING_PROB_THRESHOLD = 0.01 if not is_nylon else 0.80  # ナイロン: 80%以上のみ開放弦
+        # 対策3: ナイロン弦時のオープンストリング優先の閾値
+        # クラシックギター奏法ではハイポジションを多用するが、Romanceの伴奏のような
+        # 開放弦も頻繁に使用されるため、ペナルティ（閾値）を0.80から0.30に緩和
+        OPEN_STRING_PROB_THRESHOLD = 0.01 if not is_nylon else 0.30  # ナイロン: 30%以上で開放弦を許可
         cnn_assigned = 0
         
         for note in notes:
