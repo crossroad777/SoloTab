@@ -184,7 +184,8 @@ def notes_to_gp5(notes: List[dict], *,
         if melody:
             groups1 = _group_by_time(melody, threshold=0.1)
             m.voices[0].beats = _build_voice_beats(
-                groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet
+                groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet,
+                include_techniques=include_techniques
             )
         else:
             rest_beat = gp.Beat(m.voices[0], status=gp.BeatStatus.rest)
@@ -195,7 +196,8 @@ def notes_to_gp5(notes: List[dict], *,
         if bass and len(m.voices) > 1:
             groups2 = _group_by_time(bass, threshold=0.1)
             m.voices[1].beats = _build_voice_beats(
-                groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True
+                groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True,
+                include_techniques=include_techniques
             )
 
     # --- Voice integrity check ---
@@ -217,7 +219,7 @@ def notes_to_gp5(notes: List[dict], *,
 
 # ─── Helper Functions ───
 
-def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_legato=False):
+def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_legato=False, include_techniques=True):
     """グループ化されたノートからGP Beatリストを構築する。"""
     gp_beats = []
     current_pos = 0
