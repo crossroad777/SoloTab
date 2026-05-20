@@ -702,11 +702,30 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("technique", f"テクニック検出スキップ: {e}")
         traceback.print_exc()
 
-    # --- Palm Mute / Harmonic 検出 ---
-    # 無効化: technique_classifier_cnn.annotate_techniquesが
-    # 音声CQT処理でパイプライン全体を数分ブロックするため。
-    # PM/NH検出はスキップし、h/p/slideのViterbiベース検出のみで十分。
-    report("technique_pm", "PM/NH検出スキップ (高速化のため無効化中)")
+    # --- CNN-based technique detection (PM/Harmonic/Bend/Slide/Vibrato) ---
+    if enable_technique_gp5:
+        report("technique_cnn", "CNN technique detection...")
+        try:
+            from technique_classifier_cnn import annotate_techniques_cnn
+            t0 = time.time()
+            moe_notes = [n for n in notes if not n.get("_bp_only")]
+            bp_only_ns = [n for n in notes if n.get("_bp_only")]
+            moe_notes = annotate_techniques_cnn(
+                moe_notes, str(wav_path), confidence_threshold=0.90
+            )
+            notes = moe_notes + bp_only_ns
+            notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+            cnn_count = sum(1 for n in notes
+                           if n.get("technique_source") == "cnn")
+            report("technique_cnn",
+                   f"CNN detection done: {cnn_count} techniques "
+                   f"({time.time()-t0:.1f}s)")
+        except Exception as e:
+            import traceback
+            report("technique_cnn", f"CNN detection skipped: {e}")
+            traceback.print_exc()
+    else:
+        report("technique_cnn", "CNN detection OFF (toggle disabled)")
 
     # --- テクニック情報に基づく指番号の微調整 ---
     if enable_technique_fingers:
