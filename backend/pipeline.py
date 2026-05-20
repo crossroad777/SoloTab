@@ -705,6 +705,23 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # PM/NH検出はスキップし、h/p/slideのViterbiベース検出のみで十分。
     report("technique_pm", "PM/NH検出スキップ (高速化のため無効化中)")
 
+    # --- テクニック情報に基づく指番号の微調整 ---
+    try:
+        from finger_assigner import _apply_technique_constraints
+        # technique_detector が note['technique'] に設定するので _technique に変換
+        for n in notes:
+            tech = n.get('technique', 'normal')
+            if tech and tech != 'normal':
+                n['_technique'] = tech
+        tech_fixes = _apply_technique_constraints(notes)
+        # cleanup
+        for n in notes:
+            n.pop('_technique', None)
+        if tech_fixes > 0:
+            report("assign", f"テクニック反映指修正: {tech_fixes}件")
+    except Exception as e:
+        report("assign", f"テクニック指修正スキップ: {e}")
+
 
 
     # --- 後処理1: ノート重複除去 ---

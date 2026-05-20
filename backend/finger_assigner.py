@@ -667,11 +667,25 @@ def _smooth_scale_runs(notes: List[dict]) -> int:
     return corrected
 
 
-def assign_fingers(notes: List[dict], phrase_gap: float = 0.5) -> List[dict]:
+def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
+                    techniques: Optional[List[str]] = None) -> List[dict]:
     """Main API: Assign left_hand_finger (0-4) to each note.
-    CNN-first with biomechanical post-processing."""
+    CNN-first with biomechanical post-processing.
+
+    Args:
+        notes: List of note dicts with string, fret, pitch, start keys
+        phrase_gap: Gap in seconds to split phrases for smoothing
+        techniques: Optional list of technique strings (1:1 with notes).
+                    Values: 'normal', 'hammer_on', 'pull_off', 'slide_up',
+                    'slide_down', 'bend', 'harmonic', etc.
+    """
     if not notes:
         return notes
+
+    # Attach technique info to notes if provided
+    if techniques and len(techniques) == len(notes):
+        for i, note in enumerate(notes):
+            note['_technique'] = techniques[i]
 
     # Step 1: CNN prediction
     cnn_results = _cnn_predict(notes)
@@ -734,12 +748,104 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5) -> List[dict]:
     # Step 4: Scale run finger ordering
     run_fixes = _smooth_scale_runs(notes)
 
+    # Step 5: Technique-aware finger constraints
+    tech_fixes = _apply_technique_constraints(notes)
+
     # Cleanup temp attributes
     for note in notes:
         note.pop('_finger_conf', None)
         note.pop('_finger_probs', None)
+        note.pop('_technique', None)
 
     mode = "CNN" if use_cnn else "PDMX"
     print(f"[finger_assigner] {len(notes)} notes ({mode}, "
-          f"{len(groups)} groups, smoothed={smoothed}, run_fixes={run_fixes})")
+          f"{len(groups)} groups, smoothed={smoothed}, run_fixes={run_fixes}, "
+          f"tech_fixes={tech_fixes})")
     return notes
+
+
+def _apply_technique_constraints(notes: List[dict]) -> int:
+    """Step 5: Apply technique-specific finger constraints.
+
+    Rules:
+    - slide_up/slide_down: Same finger on source and target notes
+    - hammer_on: Target finger must be HIGHER than source (higher fret = higher finger)
+    - pull_off: Target finger must be LOWER than source (lower fret = lower finger)
+    - bend: Prefer ring finger (3) — strongest for bending
+
+    Only modifies notes where the technique constraint conflicts with
+    the current assignment. Minimal intervention approach.
+
+    Returns number of notes corrected."""
+    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
+    corrected = 0
+
+    for i in range(len(sorted_notes)):
+        note = sorted_notes[i]
+        tech = note.get('_technique', 'normal')
+        fret = note.get('fret', 0)
+        finger = note.get('left_hand_finger', 0)
+
+        if tech == 'normal' or fret == 0 or finger == 0:
+            continue
+
+        # --- Bend: prefer ring finger (3) ---
+        if tech == 'bend':
+            if finger != 3 and _is_valid_finger(fret, 3):
+                note['left_hand_finger'] = 3
+                corrected += 1
+            continue
+
+        # --- Slide: same finger on connected notes ---
+        if tech in ('slide_up', 'slide_down'):
+            # Find the previous fretted note (slide source)
+            prev = _find_prev_fretted(sorted_notes, i)
+            if prev is not None:
+                prev_finger = prev.get('left_hand_finger', 0)
+                if prev_finger > 0 and finger != prev_finger:
+                    if _is_valid_finger(fret, prev_finger):
+                        note['left_hand_finger'] = prev_finger
+                        corrected += 1
+            continue
+
+        # --- Hammer-on: target finger must be higher ---
+        if tech == 'hammer_on':
+            prev = _find_prev_fretted(sorted_notes, i)
+            if prev is not None:
+                prev_finger = prev.get('left_hand_finger', 0)
+                prev_fret = prev.get('fret', 0)
+                # Hammer-on goes to higher fret → need higher finger
+                if prev_finger > 0 and fret > prev_fret and finger <= prev_finger:
+                    # Pick the next finger up
+                    for candidate in range(prev_finger + 1, 5):
+                        if _is_valid_finger(fret, candidate):
+                            note['left_hand_finger'] = candidate
+                            corrected += 1
+                            break
+            continue
+
+        # --- Pull-off: target finger must be lower ---
+        if tech == 'pull_off':
+            prev = _find_prev_fretted(sorted_notes, i)
+            if prev is not None:
+                prev_finger = prev.get('left_hand_finger', 0)
+                prev_fret = prev.get('fret', 0)
+                # Pull-off goes to lower fret → need lower finger
+                if prev_finger > 0 and fret < prev_fret and finger >= prev_finger:
+                    for candidate in range(prev_finger - 1, 0, -1):
+                        if _is_valid_finger(fret, candidate):
+                            note['left_hand_finger'] = candidate
+                            corrected += 1
+                            break
+            continue
+
+    return corrected
+
+
+def _find_prev_fretted(sorted_notes: List[dict], current_idx: int) -> Optional[dict]:
+    """Find the previous fretted note (skipping open strings)."""
+    for j in range(current_idx - 1, -1, -1):
+        if sorted_notes[j].get('fret', 0) > 0:
+            return sorted_notes[j]
+    return None
+
