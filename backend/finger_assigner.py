@@ -544,27 +544,27 @@ def _position_smoothing(notes: List[dict], phrase_gap: float = 0.5,
     return reassigned
 
 
-def _segment_by_position(fretted_notes: List[dict]) -> List[tuple]:
+def _segment_by_position(fretted_notes: List[dict], prev_position: int = 0) -> List[tuple]:
     """Split fretted notes into segments that each fit in one hand position.
 
     Returns list of (notes_in_segment, position) tuples.
 
-    Algorithm: greedy forward scan. Start with position = min_fret of first note.
-    Extend segment while all frets fit in [pos, pos+3]. When a note doesn't fit,
-    start a new segment.
+    Algorithm: greedy forward scan with Law 4 position continuity bonus.
+    When multiple candidate positions cover the same number of notes,
+    prefer positions closer to the previous segment (within 2 frets).
     """
     if not fretted_notes:
         return []
 
     segments = []
     seg_start = 0
+    current_prev_pos = prev_position
 
     while seg_start < len(fretted_notes):
-        # Determine initial position from the first fretted note
         first_fret = int(fretted_notes[seg_start].get('fret', 1))
-        # Try different positions and pick the one that covers the most notes
         best_pos = first_fret
         best_end = seg_start
+        best_score = -1
 
         # Try positions from first_fret-3 to first_fret
         for candidate_pos in range(max(1, first_fret - 3), first_fret + 1):
@@ -576,12 +576,27 @@ def _segment_by_position(fretted_notes: List[dict]) -> List[tuple]:
                     end = k
                 else:
                     break
-            if end > best_end or (end == best_end and candidate_pos <= best_pos):
+            coverage = end - seg_start + 1
+            # Law 4: Position continuity bonus — prefer staying close
+            if current_prev_pos > 0:
+                dist = abs(candidate_pos - current_prev_pos)
+                if dist <= 2:
+                    continuity_bonus = 0.5  # Strong preference for ≤2 fret move
+                elif dist <= 4:
+                    continuity_bonus = 0.2  # Mild preference
+                else:
+                    continuity_bonus = 0.0
+            else:
+                continuity_bonus = 0.0
+            score = coverage + continuity_bonus
+            if score > best_score:
+                best_score = score
                 best_end = end
                 best_pos = candidate_pos
 
         seg_notes = fretted_notes[seg_start:best_end + 1]
         segments.append((seg_notes, best_pos))
+        current_prev_pos = best_pos
         seg_start = best_end + 1
 
     return segments
@@ -667,6 +682,72 @@ def _smooth_scale_runs(notes: List[dict]) -> int:
     return corrected
 
 
+def _apply_pitch_proximity_rule(notes: List[dict]) -> int:
+    """Step 3.5: Law 3 — Pitch proximity preserves position.
+
+    When consecutive notes are < 3 semitones apart and on the same string,
+    they should use the same hand position. This prevents unnecessary
+    position changes for chromatic or whole-step movements.
+
+    Statistics (from 8.1M notes):
+      0 semitones: 96.6% same-string
+      1 semitone:  76.6% same-string
+      2 semitones: 63.0% same-string
+      3 semitones: 18.7% same-string (boundary)
+
+    Returns number of notes corrected."""
+    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
+    corrected = 0
+
+    for i in range(1, len(sorted_notes)):
+        prev = sorted_notes[i - 1]
+        curr = sorted_notes[i]
+
+        prev_fret = int(prev.get('fret', 0))
+        curr_fret = int(curr.get('fret', 0))
+        if prev_fret <= 0 or curr_fret <= 0:
+            continue
+
+        prev_pitch = int(prev.get('pitch', 0))
+        curr_pitch = int(curr.get('pitch', 0))
+        interval = abs(curr_pitch - prev_pitch)
+
+        # Only apply when pitch interval < 3 semitones
+        if interval >= 3:
+            continue
+
+        # Check if on same string
+        if prev.get('string') != curr.get('string'):
+            continue
+
+        # Skip if time gap is large (different phrase)
+        time_gap = curr.get('start', 0) - prev.get('start', 0)
+        if time_gap > 0.5:
+            continue
+
+        prev_finger = int(prev.get('left_hand_finger', 0))
+        if prev_finger <= 0:
+            continue
+
+        # Compute prev note's position
+        prev_pos = prev_fret - (prev_finger - 1)
+        if prev_pos < 1:
+            continue
+
+        # Check if curr note fits in the same position
+        curr_offset = curr_fret - prev_pos
+        if 0 <= curr_offset <= 3:
+            ideal_finger = curr_offset + 1
+            curr_finger = int(curr.get('left_hand_finger', 0))
+            if curr_finger != ideal_finger and _is_valid_finger(curr_fret, ideal_finger):
+                # Within same position, offset-based fingers are always
+                # anatomically valid (fret order = finger order by construction)
+                curr['left_hand_finger'] = ideal_finger
+                corrected += 1
+
+    return corrected
+
+
 def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
                     techniques: Optional[List[str]] = None) -> List[dict]:
     """Main API: Assign left_hand_finger (0-4) to each note.
@@ -745,6 +826,9 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
     # Step 3: Position consistency smoothing
     smoothed = _position_smoothing(notes, phrase_gap=phrase_gap)
 
+    # Step 3.5: Law 3 — Pitch proximity preserves position
+    prox_fixes = _apply_pitch_proximity_rule(notes)
+
     # Step 4: Scale run finger ordering
     run_fixes = _smooth_scale_runs(notes)
 
@@ -759,8 +843,8 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
 
     mode = "CNN" if use_cnn else "PDMX"
     print(f"[finger_assigner] {len(notes)} notes ({mode}, "
-          f"{len(groups)} groups, smoothed={smoothed}, run_fixes={run_fixes}, "
-          f"tech_fixes={tech_fixes})")
+          f"{len(groups)} groups, smoothed={smoothed}, prox={prox_fixes}, "
+          f"run_fixes={run_fixes}, tech_fixes={tech_fixes})")
     return notes
 
 
