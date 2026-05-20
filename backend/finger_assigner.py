@@ -1,15 +1,18 @@
 """
-finger_assigner.py - Hybrid CNN + Constraint Engine v5
+finger_assigner.py - Hybrid CNN + Constraint Engine v6
 =======================================================
 Strategy:
   1. CNN predicts finger for each note (83.8% standalone)
   2. Post-processing: enforce biomechanical constraints
      - Open string = finger 0 (override)
      - Chord finger uniqueness
-     - Position consistency smoothing (sliding window)
+     - Position consistency smoothing (phrase-level)
+     - Scale run finger ordering
   3. PDMX table fallback when CNN unavailable
+  4. derived_fingering_rules.json for fret-offset → finger mapping
 """
 from typing import List, Tuple, Optional
+import json
 import math
 import os
 import numpy as np
@@ -103,6 +106,54 @@ for _k, _v in _PDMX_SF_TABLE.items():
         _PDMX_PROB[_k] = {fg: c / _t for fg, c in _v.items()}
 
 MAX_POS = 19
+
+# ============================================================
+# Derived Fingering Rules (from GP5 corpus mining)
+# ============================================================
+_FRET_OFFSET_RULES = None  # offset → {finger: count}
+
+
+def _load_derived_rules():
+    """Load fret_offset_rules from derived_fingering_rules.json."""
+    global _FRET_OFFSET_RULES
+    if _FRET_OFFSET_RULES is not None:
+        return
+    rules_path = os.path.join(os.path.dirname(__file__),
+                              'derived_fingering_rules.json')
+    if os.path.exists(rules_path):
+        try:
+            with open(rules_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            raw = data.get('fret_offset_rules', {})
+            _FRET_OFFSET_RULES = {}
+            for offset_str, finger_counts in raw.items():
+                offset = int(offset_str)
+                total = sum(finger_counts.values())
+                if total > 0:
+                    _FRET_OFFSET_RULES[offset] = {
+                        int(fg): cnt / total
+                        for fg, cnt in finger_counts.items()
+                    }
+        except Exception as e:
+            print(f"[finger_assigner] derived rules load failed: {e}")
+            _FRET_OFFSET_RULES = {}
+    else:
+        _FRET_OFFSET_RULES = {}
+
+
+def _finger_from_offset(offset: int) -> Optional[int]:
+    """Get most likely finger for a fret offset from position.
+    offset = fret - position (0-based).
+    Returns finger (1-4) or None."""
+    _load_derived_rules()
+    assert _FRET_OFFSET_RULES is not None
+    probs = _FRET_OFFSET_RULES.get(offset)
+    if probs:
+        return max(probs, key=probs.get)
+    # Standard mapping: offset 0→1, 1→2, 2→3, 3→4
+    if 0 <= offset <= 3:
+        return offset + 1
+    return None
 
 # ============================================================
 # CNN Model — Dual-Scale Ensemble (v4 CTX=7 + v5 CTX=15)
@@ -244,53 +295,376 @@ def _pdmx_predict(string, fret):
     return 1
 
 
-def _is_valid_finger(fret, finger):
+def _is_valid_finger(fret, finger, position=None):
     """Check if a finger assignment is biomechanically possible.
-    Relaxed: allow any finger 1-4 for fretted notes (stretches are valid)."""
+
+    Args:
+        fret: Fret number (0 = open string)
+        finger: Finger number (0=open, 1=index, 2=middle, 3=ring, 4=pinky)
+        position: Optional hand position (fret where index finger sits).
+                  If provided, validates that the finger can reach the fret.
+    """
     if fret == 0:
         return finger == 0
     if finger == 0:
         return fret == 0
-    # Any finger 1-4 is valid for any fret > 0
-    # (stretches and position shifts are normal guitar technique)
-    return 1 <= finger <= 4
+    if not (1 <= finger <= 4):
+        return False
+
+    # Position-aware validation
+    if position is not None and position >= 1:
+        offset = fret - position
+        # Finger 1 (index) covers offset 0
+        # Finger 2 (middle) covers offset 1
+        # Finger 3 (ring) covers offset 2
+        # Finger 4 (pinky) covers offset 3
+        # Allow ±1 stretch beyond standard position
+        expected_offset = finger - 1
+        if abs(offset - expected_offset) > 2:
+            return False
+
+    return True
+
+
+def _detect_barre(chord_notes):
+    """Detect barre chord: multiple strings on the same fret.
+    Returns dict of {fret: [notes]} for frets with 2+ notes."""
+    from collections import defaultdict
+    fret_groups = defaultdict(list)
+    for note in chord_notes:
+        fret = note.get('fret', 0)
+        if fret > 0:
+            fret_groups[fret].append(note)
+    return {f: notes for f, notes in fret_groups.items() if len(notes) >= 2}
 
 
 def _resolve_chord_conflicts(chord_notes):
-    """Ensure no finger used twice in a chord (except finger 0 for open)."""
-    used = {}
-    for note in chord_notes:
-        fg = note['left_hand_finger']
-        if fg == 0:
-            continue
-        if fg in used:
-            # Conflict: reassign the lower-confidence one
-            prev_note = used[fg]
-            # Keep the one with higher CNN confidence
-            prev_conf = prev_note.get('_finger_conf', 0)
-            cur_conf = note.get('_finger_conf', 0)
-            victim = prev_note if cur_conf > prev_conf else note
+    """Ensure valid finger assignments in chords.
 
-            # Find alternative finger for victim
-            fret = victim.get('fret', 0)
-            probs = victim.get('_finger_probs')
+    Handles:
+    1. Barre detection: same fret on 2+ strings → finger 1 (index barre)
+    2. Finger uniqueness: no two non-barre notes share a finger
+    3. Finger ordering: fret(I) ≤ fret(M) ≤ fret(R) ≤ fret(P)
+    """
+    if not chord_notes:
+        return
+
+    # --- Phase 1: Barre detection ---
+    barres = _detect_barre(chord_notes)
+    barre_notes = set()
+
+    for barre_fret, barre_group in barres.items():
+        # The lowest fret in the chord that has 2+ strings is the barre fret
+        # Assign finger 1 (index) to all notes on this fret
+        for note in barre_group:
+            note['left_hand_finger'] = 1
+            barre_notes.add(id(note))
+
+    # --- Phase 2: Assign non-barre notes ---
+    # Sort non-barre fretted notes by fret ascending
+    non_barre = [n for n in chord_notes
+                 if id(n) not in barre_notes and n.get('fret', 0) > 0]
+    non_barre.sort(key=lambda n: n.get('fret', 0))
+
+    # Determine position from barre fret or min fret
+    if barres:
+        position = min(barres.keys())
+    else:
+        fretted = [n.get('fret', 0) for n in chord_notes if n.get('fret', 0) > 0]
+        position = min(fretted) if fretted else 1
+
+    # Available fingers (1 may be used for barre)
+    used_fingers = {1} if barres else set()
+
+    for note in non_barre:
+        fret = note.get('fret', 0)
+        if fret <= 0:
+            continue
+
+        offset = fret - position
+        # Ideal finger based on offset
+        if 0 <= offset <= 3:
+            ideal = offset + 1
+        else:
+            ideal = note.get('left_hand_finger', 2)
+
+        # If ideal finger is available and valid, use it
+        if ideal not in used_fingers and 1 <= ideal <= 4:
+            note['left_hand_finger'] = ideal
+            used_fingers.add(ideal)
+        else:
+            # Find best available finger
+            probs = note.get('_finger_probs')
+            assigned = False
             if probs is not None:
-                # Pick next best valid finger not in use
                 order = np.argsort(-probs)
                 for alt in order:
                     alt = int(alt)
-                    if alt not in used and _is_valid_finger(fret, alt):
-                        victim['left_hand_finger'] = alt
-                        used[alt] = victim
+                    if alt not in used_fingers and 1 <= alt <= 4:
+                        note['left_hand_finger'] = alt
+                        used_fingers.add(alt)
+                        assigned = True
                         break
-            else:
-                for alt in [1, 2, 3, 4]:
-                    if alt not in used and _is_valid_finger(fret, alt):
-                        victim['left_hand_finger'] = alt
-                        used[alt] = victim
+            if not assigned:
+                for alt in [2, 3, 4, 1]:
+                    if alt not in used_fingers:
+                        note['left_hand_finger'] = alt
+                        used_fingers.add(alt)
                         break
+
+    # --- Phase 3: Enforce finger ordering ---
+    # fret(finger_i) <= fret(finger_j) when finger_i < finger_j
+    _enforce_chord_finger_order(chord_notes)
+
+
+def _enforce_chord_finger_order(chord_notes):
+    """Enforce anatomical constraint: fret(I) ≤ fret(M) ≤ fret(R) ≤ fret(P).
+    If violated, swap finger assignments to satisfy ordering."""
+    fretted = [(n, n.get('fret', 0), n.get('left_hand_finger', 0))
+               for n in chord_notes if n.get('fret', 0) > 0 and n.get('left_hand_finger', 0) > 0]
+    if len(fretted) < 2:
+        return
+
+    # Sort by finger number
+    fretted.sort(key=lambda x: x[2])
+
+    # Check ordering: each finger's fret should be >= previous finger's fret
+    for i in range(1, len(fretted)):
+        prev_note, prev_fret, prev_finger = fretted[i - 1]
+        curr_note, curr_fret, curr_finger = fretted[i]
+        if curr_fret < prev_fret and prev_finger < curr_finger:
+            # Violation: swap finger assignments
+            prev_note['left_hand_finger'] = curr_finger
+            curr_note['left_hand_finger'] = prev_finger
+            fretted[i - 1] = (prev_note, prev_fret, curr_finger)
+            fretted[i] = (curr_note, curr_fret, prev_finger)
+
+
+def _estimate_position(fretted_notes: List[dict]) -> Optional[int]:
+    """Estimate hand position from a group of fretted notes.
+    Position = fret where index finger (finger 1) would be.
+    Uses weighted median of high-confidence assignments."""
+    frets = []
+    weights = []
+    for n in fretted_notes:
+        fret = n.get('fret', 0)
+        if not isinstance(fret, (int, float)) or fret <= 0:
+            continue
+        finger = n.get('left_hand_finger', 1)
+        conf = n.get('_finger_conf', 0.5)
+        if finger <= 0:
+            continue
+        # position = fret - (finger - 1)
+        pos = int(fret) - (finger - 1)
+        if pos >= 1:
+            frets.append(pos)
+            weights.append(conf)
+    if not frets:
+        return None
+    # Weighted median
+    total = sum(weights)
+    if total <= 0:
+        return int(np.median(frets))
+    # Sort by position, find weighted median
+    pairs = sorted(zip(frets, weights))
+    cumsum = 0.0
+    for pos, w in pairs:
+        cumsum += w
+        if cumsum >= total / 2:
+            return pos
+    return pairs[-1][0]
+
+
+def _position_smoothing(notes: List[dict], phrase_gap: float = 0.5,
+                        conf_threshold: float = 0.5) -> int:
+    """Step 3: Position consistency smoothing.
+
+    Strategy: "Decide position first, fingers follow."
+    1. Split notes into phrases (by gap > phrase_gap)
+    2. Within each phrase, use a sliding window to find the dominant position
+    3. Apply position-consistent fingering to ALL notes in the window
+       (not just low-confidence ones)
+
+    This matches how guitarists actually play: they choose a hand position
+    and keep it until a position shift is needed.
+
+    Returns number of notes reassigned."""
+    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
+
+    # --- Phase 1: Split into phrases ---
+    phrases: List[List[dict]] = []
+    current_phrase: List[dict] = []
+    for note in sorted_notes:
+        if not current_phrase:
+            current_phrase.append(note)
+            continue
+        gap = note.get('start', 0) - current_phrase[-1].get('start', 0)
+        if gap > phrase_gap:
+            phrases.append(current_phrase)
+            current_phrase = [note]
         else:
-            used[fg] = note
+            current_phrase.append(note)
+    if current_phrase:
+        phrases.append(current_phrase)
+
+    reassigned = 0
+
+    for phrase in phrases:
+        # Only fretted notes participate in position estimation
+        fretted = [n for n in phrase
+                   if isinstance(n.get('fret', 0), (int, float))
+                   and n.get('fret', 0) > 0]
+        if len(fretted) < 2:
+            continue
+
+        # --- Phase 2: Segment into position-consistent groups ---
+        # Find the best position for each sub-segment where all frets
+        # can be covered within a 4-fret span
+        segments = _segment_by_position(fretted)
+
+        for seg_notes, seg_pos in segments:
+            if seg_pos < 1:
+                continue
+            for note in seg_notes:
+                fret = int(note.get('fret', 0))
+                if fret <= 0:
+                    continue
+                offset = fret - seg_pos
+                if 0 <= offset <= 3:
+                    ideal_finger = _finger_from_offset(offset)
+                    if ideal_finger is None:
+                        continue
+                    if not _is_valid_finger(fret, ideal_finger):
+                        continue
+                    current = note.get('left_hand_finger', 0)
+                    if current != ideal_finger:
+                        note['left_hand_finger'] = ideal_finger
+                        reassigned += 1
+
+    return reassigned
+
+
+def _segment_by_position(fretted_notes: List[dict]) -> List[tuple]:
+    """Split fretted notes into segments that each fit in one hand position.
+
+    Returns list of (notes_in_segment, position) tuples.
+
+    Algorithm: greedy forward scan. Start with position = min_fret of first note.
+    Extend segment while all frets fit in [pos, pos+3]. When a note doesn't fit,
+    start a new segment.
+    """
+    if not fretted_notes:
+        return []
+
+    segments = []
+    seg_start = 0
+
+    while seg_start < len(fretted_notes):
+        # Determine initial position from the first fretted note
+        first_fret = int(fretted_notes[seg_start].get('fret', 1))
+        # Try different positions and pick the one that covers the most notes
+        best_pos = first_fret
+        best_end = seg_start
+
+        # Try positions from first_fret-3 to first_fret
+        for candidate_pos in range(max(1, first_fret - 3), first_fret + 1):
+            end = seg_start
+            for k in range(seg_start, len(fretted_notes)):
+                fret = int(fretted_notes[k].get('fret', 0))
+                offset = fret - candidate_pos
+                if 0 <= offset <= 3:
+                    end = k
+                else:
+                    break
+            if end > best_end or (end == best_end and candidate_pos <= best_pos):
+                best_end = end
+                best_pos = candidate_pos
+
+        seg_notes = fretted_notes[seg_start:best_end + 1]
+        segments.append((seg_notes, best_pos))
+        seg_start = best_end + 1
+
+    return segments
+
+
+def _smooth_scale_runs(notes: List[dict]) -> int:
+    """Step 4: Enforce finger ordering on same-string consecutive runs.
+
+    Handles two patterns:
+    a) Monotonic runs: ascending/descending frets → position-based fingers
+    b) Oscillating patterns: hammer-on/pull-off (e.g. 5f→7f→5f→7f)
+       → consistent position with fixed finger per fret
+
+    Position is computed directly from fret values (not from CNN predictions)
+    to avoid circular dependency on possibly-wrong finger assignments.
+
+    Returns number of notes corrected."""
+    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
+    corrected = 0
+
+    i = 0
+    while i < len(sorted_notes) - 1:
+        # Find runs of same-string consecutive fretted notes
+        run = [sorted_notes[i]]
+        j = i + 1
+        while j < len(sorted_notes):
+            curr = sorted_notes[j]
+            prev = run[-1]
+            # Same string, close in time
+            if (curr.get('string') == prev.get('string') and
+                    curr.get('string') is not None and
+                    abs(curr.get('start', 0) - prev.get('start', 0)) < 0.4 and
+                    curr.get('fret', 0) > 0 and prev.get('fret', 0) > 0):
+                run.append(curr)
+                j += 1
+            else:
+                break
+
+        if len(run) >= 2:
+            frets = [int(n.get('fret', 0)) for n in run]
+            min_fret = min(frets)
+            max_fret = max(frets)
+            span = max_fret - min_fret
+
+            # Check patterns
+            ascending = all(frets[k] <= frets[k+1] for k in range(len(frets)-1))
+            descending = all(frets[k] >= frets[k+1] for k in range(len(frets)-1))
+            # Oscillating: uses only 2-3 distinct frets (hammer/pull-off)
+            unique_frets = set(frets)
+            oscillating = len(unique_frets) <= 3 and len(run) >= 3
+
+            if (ascending or descending or oscillating) and span <= 4:
+                # All notes fit in one position: pos = min_fret
+                pos = min_fret
+
+                if pos >= 1:
+                    for note in run:
+                        fret = int(note.get('fret', 0))
+                        offset = fret - pos
+                        if 0 <= offset <= 3:
+                            ideal_finger = offset + 1
+                            current = note.get('left_hand_finger', 0)
+                            if current != ideal_finger and _is_valid_finger(fret, ideal_finger):
+                                note['left_hand_finger'] = ideal_finger
+                                corrected += 1
+
+            elif (ascending or descending) and span > 4:
+                # Span > 4: apply position from min_fret, fix what fits
+                pos = min_fret
+                if pos >= 1:
+                    for note in run:
+                        fret = int(note.get('fret', 0))
+                        offset = fret - pos
+                        if 0 <= offset <= 3:
+                            ideal_finger = offset + 1
+                            current = note.get('left_hand_finger', 0)
+                            if current != ideal_finger and _is_valid_finger(fret, ideal_finger):
+                                note['left_hand_finger'] = ideal_finger
+                                corrected += 1
+
+        i = j
+
+    return corrected
 
 
 def assign_fingers(notes: List[dict], phrase_gap: float = 0.5) -> List[dict]:
@@ -354,6 +728,12 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5) -> List[dict]:
         if len(group) > 1:
             _resolve_chord_conflicts(group)
 
+    # Step 3: Position consistency smoothing
+    smoothed = _position_smoothing(notes, phrase_gap=phrase_gap)
+
+    # Step 4: Scale run finger ordering
+    run_fixes = _smooth_scale_runs(notes)
+
     # Cleanup temp attributes
     for note in notes:
         note.pop('_finger_conf', None)
@@ -361,5 +741,5 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5) -> List[dict]:
 
     mode = "CNN" if use_cnn else "PDMX"
     print(f"[finger_assigner] {len(notes)} notes ({mode}, "
-          f"{len(groups)} groups)")
+          f"{len(groups)} groups, smoothed={smoothed}, run_fixes={run_fixes})")
     return notes

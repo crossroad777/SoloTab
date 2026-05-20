@@ -803,3 +803,93 @@ graph TD
 | 8. Domain gap analysis | `scratch/analyze_string_spectra.py` | GS vs synthetic spectral comparison |
 | 9. Transfer learning | `scratch/pretrain_finetune.py` | Negative transfer demonstrated |
 
+---
+
+## 13. Left-Hand Finger Assignment Post-Processing (v6→v7)
+
+### 13.1 Background
+
+In addition to string assignment (§2–8), production tablature requires **left-hand finger numbers** (0=open, 1=index, 2=middle, 3=ring, 4=pinky) for each note. `finger_assigner.py` uses a dual-scale CNN ensemble (v4 CTX=7, v5 CTX=15) to predict finger numbers per-note, but since the CNN classifies each note **independently**, several issues arise:
+
+- **Position inconsistency**: Hand position fluctuates per-note within the same phrase (e.g., pos4→pos3→pos2)
+- **Scale run finger reversal**: Finger numbers decrease on ascending same-string runs (e.g., F5→finger3, F7→finger2)
+- **No barre chord support**: Same-fret multi-string notes assigned to different fingers
+- **Missing anatomical constraints**: Physically impossible arrangements like fret(index) > fret(middle) are permitted
+
+### 13.2 Post-Processing Pipeline
+
+A 4-step post-processing pipeline was implemented after CNN prediction.
+
+#### Step 1: CNN Ensemble Prediction
+
+Dual-scale CNN (CTX=7 weight=0.4, CTX=15 weight=0.6) weighted average. Each note receives a 5-class probability distribution and confidence score.
+
+#### Step 2: Chord Conflict Resolution + Barre Detection
+
+```text
+Input: Simultaneous note group
+  → Phase 1: Detect same-fret on 2+ strings → finger=1 (index barre)
+  → Phase 2: Assign non-barre notes using position-offset-based finger mapping
+  → Phase 3: Enforce anatomical constraint fret(I) ≤ fret(M) ≤ fret(R) ≤ fret(P)
+```
+
+#### Step 3: Position Consistency Smoothing
+
+Strategy: "Decide position first, fingers follow."
+
+1. Split note sequence into phrases (gaps > 0.5s)
+2. Segment fretted notes within each phrase via `_segment_by_position`
+3. Determine optimal position per segment (greedy: maximize notes covered)
+4. Apply `finger = fret_offset + 1` to all notes in segment
+
+#### Step 4: Scale Run & Oscillation Pattern Enforcement
+
+Detect same-string consecutive notes (< 0.4s apart) and correct two pattern types:
+
+- **Monotonic runs** (scale passages): Enforce finger=offset+1 in fret order
+- **Oscillating patterns** (hammer-on/pull-off): 2-3 distinct frets alternating → fix position and assign consistent fingers
+
+### 13.3 Evaluation
+
+#### Qualitative: Romance (Jeux Interdits)
+
+| Pattern | CNN Only | Post-processed | Verdict |
+| --- | --- | --- | --- |
+| 7f repeated arpeggio | 7f→P(4) pos4 ✓ | No change | ✅ |
+| 5f↔3f alternating | pos2/pos3 oscillation | **pos2 unified** P(4)↔M(2) | ✅ Fixed |
+| Hammer-on 5f↔7f | pos3→5→4→5→4 oscillation | **pos5 fixed** I(1)↔R(3) | ✅ Fixed |
+| Barre chord F | 4th str 3f→P(4)/pos0 | 1f all→I(1) barre, 3f→R(3) **pos1** | ✅ Fixed |
+| Am pentatonic (pos5) | 5f→I(1)✓, others inconsistent | **All 8 notes pos5** I/R/P consistent | ✅ Fixed |
+
+#### Quantitative: Romance full piece (454 notes)
+
+| Metric | CNN Only (v5) | Post-processed (v7) | Improvement |
+| --- | --- | --- | --- |
+| Position changes / 40 notes | 19 | **14** | -26% |
+| Notes corrected by smoothing | 0 | **149** | — |
+| Notes corrected by run fixes | 0 | **65** | — |
+| Total correction rate | 0% | **47%** (214/454) | — |
+
+### 13.4 Statistical Rules from GP5 Corpus
+
+From 4,334 GP5 files, 37 files with `leftHandFinger` annotations (4,604 notes) were mined to produce `derived_fingering_rules.json`.
+
+**fret_offset → finger probability distribution:**
+
+| fret_offset | finger 1 | finger 2 | finger 3 | finger 4 |
+| --- | --- | --- | --- | --- |
+| 0 | **95.3%** | 2.1% | 1.8% | 0.8% |
+| 1 | 9.5% | **67.5%** | 14.3% | 8.7% |
+| 2 | 4.3% | 14.9% | **49.9%** | 31.0% |
+| 3 | 2.1% | 3.2% | 18.7% | **76.0%** |
+
+offset=0 maps to index finger 95% of the time; offset=3 maps to pinky 76% — statistically validating position-based finger assignment.
+
+### 13.5 Implementation Files
+
+| File | Purpose |
+| --- | --- |
+| `backend/finger_assigner.py` | CNN prediction + 4-step post-processing pipeline |
+| `backend/derived_fingering_rules.json` | Statistical fingering rules from GP5 corpus |
+| `backend/gp5_training/test_finger_assigner.py` | 18-case regression test suite |
+
