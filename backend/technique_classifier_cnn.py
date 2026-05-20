@@ -131,11 +131,12 @@ def _extract_patches(notes: List[dict], audio_path: str) -> np.ndarray:
     """Extract 3-channel mel patches for all notes in batch."""
     import librosa
 
-    sr = _ckpt_meta["sr"]
-    n_mels = _ckpt_meta["n_mels"]
-    hop = _ckpt_meta["hop_length"]
-    n_fft = _ckpt_meta.get("n_fft", 1024)
-    patch_frames = _ckpt_meta["patch_frames"]
+    cfg = _ckpt_meta.get("config", _ckpt_meta)  # V4 nests in config, V2 is flat
+    sr = cfg["sr"]
+    n_mels = cfg["n_mels"]
+    hop = cfg["hop_length"]
+    n_fft = cfg.get("n_fft", 1024)
+    patch_frames = cfg["patch_frames"]
 
     # Load audio once
     y, _ = librosa.load(audio_path, sr=sr, mono=True)
