@@ -816,12 +816,24 @@ def _apply_technique_constraints(notes: List[dict]) -> int:
                 prev_fret = prev.get('fret', 0)
                 # Hammer-on goes to higher fret → need higher finger
                 if prev_finger > 0 and fret > prev_fret and finger <= prev_finger:
-                    # Pick the next finger up
+                    # Strategy 1: raise target finger
+                    raised = False
                     for candidate in range(prev_finger + 1, 5):
                         if _is_valid_finger(fret, candidate):
                             note['left_hand_finger'] = candidate
                             corrected += 1
+                            raised = True
                             break
+                    # Strategy 2: if can't raise target (prev=pinky), lower source
+                    if not raised:
+                        offset = fret - prev_fret
+                        # Set source to index, target based on offset
+                        ideal_src = 1
+                        ideal_tgt = min(ideal_src + offset, 4)
+                        if ideal_tgt > ideal_src:
+                            prev['left_hand_finger'] = ideal_src
+                            note['left_hand_finger'] = ideal_tgt
+                            corrected += 1
             continue
 
         # --- Pull-off: target finger must be lower ---
