@@ -83,11 +83,26 @@ def detect_techniques(
     # --- 音声ロード（F0解析用）---
     audio    = None
     audio_sr = None
+    global_f0 = None
+    global_voiced = None
     if audio_path:
         try:
             import librosa
+            import time as _time
             audio, audio_sr = librosa.load(audio_path, sr=F0_SR, mono=True)
             print(f"[TechDet] Audio loaded: {len(audio)/audio_sr:.1f}s @ {audio_sr}Hz")
+            # ★ F0を全体で1回だけ計算（最大の高速化ポイント）
+            t0_f0 = _time.time()
+            global_f0, global_voiced, _ = librosa.pyin(
+                audio,
+                fmin=PYIN_FMIN,
+                fmax=PYIN_FMAX,
+                sr=audio_sr,
+                hop_length=HOP_LENGTH,
+                fill_na=None,
+            )
+            global_f0 = np.where(global_voiced, global_f0, np.nan)
+            print(f"[TechDet] Global F0 computed: {len(global_f0)} frames ({_time.time()-t0_f0:.1f}s)")
         except Exception as e:
             print(f"[TechDet] Audio load failed: {e}, falling back to rule-based")
 
@@ -111,8 +126,8 @@ def detect_techniques(
 
             if pos == 0:
                 # --- ビブラート（単独ノート内F0解析）---
-                if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
-                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+                if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
                     if tech:
                         curr["technique"] = tech
                 continue
@@ -123,8 +138,8 @@ def detect_techniques(
             # 既に付与済みならスキップ
             if prev.get("technique") and prev["technique"] != "normal":
                 # currに対してビブラートだけチェック
-                if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
-                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+                if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
                     if tech:
                         curr["technique"] = tech
                 continue
@@ -138,10 +153,11 @@ def detect_techniques(
             fret_diff  = abs(curr.get("fret", 0) - prev.get("fret", 0))
 
             # ── F0軌跡解析（音声がある場合は優先） ──
-            if audio is not None and ioi <= max(slide_max, hp_max):
+            if global_f0 is not None and ioi <= max(slide_max, hp_max):
                 tech = _classify_from_f0(
                     prev, curr, audio, audio_sr,
-                    pitch_diff, fret_diff, hp_max, slide_max, bend_max
+                    pitch_diff, fret_diff, hp_max, slide_max, bend_max,
+                    global_f0=global_f0
                 )
                 if tech:
                     prev["technique"] = tech
@@ -158,8 +174,8 @@ def detect_techniques(
                 continue
 
             # ── ビブラート（単独ノート）──
-            if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
-                tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+            if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
                 if tech:
                     curr["technique"] = tech
 
@@ -170,14 +186,14 @@ def detect_techniques(
                 _check_harmonic(note)
 
     # --- パームミュート（スペクトル重心ベース）---
-    if audio is not None:
+    if audio is not None and global_f0 is not None:
         _detect_palm_mute_batch(notes, audio, audio_sr)
 
     # --- ブラッシング/デッドノート（YG Ex-22: ×）---
     # 音程のない打楽器的なノートを検出する
     # 方法: PYIN voiced_ratio < 0.3 + スペクトル平坦度 > 0.6
-    if audio is not None:
-        _detect_dead_notes(notes, audio, audio_sr)
+    if audio is not None and global_f0 is not None:
+        _detect_dead_notes(notes, audio, audio_sr, global_f0, global_voiced)
 
     return notes
 
@@ -194,12 +210,27 @@ def _extract_f0(
     t_end:   float,
     fmin_hz: float = PYIN_FMIN,
     fmax_hz: float = PYIN_FMAX,
+    global_f0: np.ndarray = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    指定区間のF0軌跡を PYIN で抽出する。
+    指定区間のF0軌跡を取得する。
+    global_f0がある場合はスライスするだけ（高速）。
+    ない場合はフォールバックでpyinを呼ぶ。
     Returns: (f0_array, voiced_flag_array)
     """
     try:
+        # ★ グローバルF0からスライス（高速パス）
+        if global_f0 is not None:
+            fps = sr / HOP_LENGTH
+            start_frame = max(0, int(t_start * fps))
+            end_frame = min(len(global_f0), int(t_end * fps) + 1)
+            if end_frame - start_frame < 2:
+                return np.array([]), np.array([])
+            f0_slice = global_f0[start_frame:end_frame]
+            voiced_slice = ~np.isnan(f0_slice)
+            return f0_slice, voiced_slice
+
+        # フォールバック: 個別pyin（global_f0がない場合のみ）
         import librosa
         start_sample = max(0, int(t_start * sr) - HOP_LENGTH)
         end_sample   = min(len(audio), int(t_end * sr) + HOP_LENGTH)
@@ -216,7 +247,6 @@ def _extract_f0(
             hop_length=HOP_LENGTH,
             fill_na=None,
         )
-        # voiced部分のみ使用
         f0_voiced = np.where(voiced_flag, f0, np.nan)
         return f0_voiced, voiced_flag
     except Exception as e:
@@ -238,6 +268,7 @@ def _classify_from_f0(
     hp_max:    float,
     slide_max: float,
     bend_max:  float,
+    **kwargs,
 ) -> Optional[str]:
     """
     F0軌跡を解析してテクニックを分類する。
@@ -252,11 +283,12 @@ def _classify_from_f0(
       3. 特徴量パターンでテクニックを決定
     """
     ioi = curr["start"] - prev["start"]
+    _global_f0 = kwargs.get('global_f0', None)
 
     # 分析区間: prev.start から curr.start + 0.05s
     t_a = prev["start"]
     t_b = curr["start"] + min(0.08, curr["end"] - curr["start"])
-    f0, voiced = _extract_f0(audio, sr, t_a, t_b)
+    f0, voiced = _extract_f0(audio, sr, t_a, t_b, global_f0=_global_f0)
 
     if len(f0) < 6:
         return None  # データ不足 → ルールベースに委ねる
@@ -361,6 +393,7 @@ def _detect_vibrato_from_f0(
     note:  dict,
     audio: np.ndarray,
     sr:    int,
+    global_f0: np.ndarray = None,
 ) -> Optional[str]:
     """
     単一ノートのF0を解析してビブラートを検出する。
@@ -371,6 +404,7 @@ def _detect_vibrato_from_f0(
             audio, sr,
             note["start"] + 0.05,  # 最初50msはアタックなので除外
             note["end"]   - 0.02,
+            global_f0=global_f0,
         )
         valid = f0[~np.isnan(f0)]
         if len(valid) < 8:
@@ -543,70 +577,51 @@ def _detect_dead_notes(
     notes: List[dict],
     audio: np.ndarray,
     sr:    int,
+    global_f0: np.ndarray = None,
+    global_voiced: np.ndarray = None,
 ) -> None:
     """
     ブラッシング（デッドノート）を検出する。
-
-    YG Ex-22: ミュート（2）— 左手で弦振動を抑えた状態でピッキング。
-    特徴:
-      - PYIN voiced_ratio < 0.35  (安定したF0がない)
-      - Spectral flatness > 0.15  (ノイズ状のスペクトル)
-      - 上記2条件 or velocity < 0.15 の超短音
-      - PMとの違い: PMは低重心だがF0がある。デッドノートはF0なし。
-
-    参考: Abesser (2014) — unvoiced / noise-like note segments
+    ★ 高速化: グローバルF0のvoiced_ratioを使い、per-note pyinを廃止。
     """
     try:
         import librosa
+        fps = sr / HOP_LENGTH
 
         for note in notes:
-            # 既にテクニック付与済みはスキップ
             if note.get("technique") and note["technique"] not in ("normal", ""):
                 continue
 
             dur = note["end"] - note["start"]
             if dur < 0.02:
-                continue  # 2ms 以下は信頼できない
+                continue
 
+            # ── 特徴量1: voiced_ratio（グローバルF0からスライス）──
+            if global_voiced is not None:
+                start_frame = max(0, int(note["start"] * fps))
+                end_frame = min(len(global_voiced), int((note["start"] + min(dur, 0.15)) * fps))
+                if end_frame > start_frame:
+                    voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame]))
+                else:
+                    voiced_ratio = 1.0
+            else:
+                voiced_ratio = 1.0
+
+            # ── 特徴量2: スペクトル平坦度 ──
             s = max(0, int(note["start"] * sr))
             e = min(len(audio), int((note["start"] + min(dur, 0.15)) * sr))
             seg = audio[s:e]
-
             if len(seg) < 256:
                 continue
-
-            # ── 特徴量1: PYIN voiced 確率 ──
-            try:
-                _, voiced_flag, voiced_probs = librosa.pyin(
-                    seg,
-                    fmin=PYIN_FMIN,
-                    fmax=PYIN_FMAX,
-                    sr=sr,
-                    hop_length=HOP_LENGTH,
-                    fill_na=None,
-                )
-                voiced_ratio = float(np.mean(voiced_flag)) if voiced_flag is not None else 1.0
-            except Exception:
-                voiced_ratio = 1.0  # 計算失敗時は通常音と判定
-
-            # ── 特徴量2: スペクトル平坦度 ──
-            # 高いほどノイズ状（0=純音, 1=白色雑音）
             flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
-
-            # ── 特徴量3: RMSエネルギー ──
-            rms = float(librosa.feature.rms(y=seg).mean())
 
             # ── 判定ロジック ──
             is_unvoiced  = voiced_ratio < 0.35
             is_noisy     = flatness > 0.12
             is_very_short = dur < 0.08
 
-            # デッドノート判定:
-            # (音程なし AND ノイズ状) OR (超短音 AND 音程なし)
             if (is_unvoiced and is_noisy) or (is_unvoiced and is_very_short):
-                note["technique"] = "x"  # YG: ×
-                print(f"[TechDet] Dead note: t={note['start']:.2f}s "
-                      f"voiced={voiced_ratio:.2f} flat={flatness:.3f} dur={dur:.3f}s")
+                note["technique"] = "x"
 
     except Exception as e:
         print(f"[TechDet] Dead note detection error: {e}")
