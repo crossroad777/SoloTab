@@ -72,15 +72,9 @@ def main():
     backend_cmd = [
         "D:\\Music\\nextchord\\venv312\\Scripts\\python.exe",
         "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001",
-        "--reload", "--reload-dir", ".",
-        "--reload-exclude", "uploads",
-        "--reload-exclude", "__pycache__",
-        "--reload-exclude", "logs",
-        "--reload-exclude", "ground_truth",
-        "--reload-exclude", "benchmark",
-        "--reload-exclude", "train",
-        "--reload-exclude", "fretnet_models",
-        "--reload-exclude", "gp5_training",
+        # --reload は削除: ファイル変更のたびにワーカーが再起動し、
+        # 処理中のMoE推論(約4分)とSSE接続を強制切断するため。
+        # コード変更後はサーバーを手動で再起動すること。
     ]
     
     # [重要] $env:CI="true" を付与しないと Vite は非対話ターミナルですぐ死ぬ

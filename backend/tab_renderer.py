@@ -322,7 +322,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                     elif tech == "b":
                         bend_el = ET.SubElement(technical, "bend")
                         ET.SubElement(bend_el, "bend-alter").text = "2"; technique_map.append("bend")
-                    elif tech == "~":
+                    elif tech == "vibrato":
                         ornaments = notations.find("ornaments")
                         if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
                         ET.SubElement(ornaments, "wavy-line", type="start"); technique_map.append("vibrato")
@@ -594,6 +594,30 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, r
     # beat_pos: _group_by_time が参照するキーを設定
     for e in entries:
         e["beat_pos"] = e["beat_pos_in_bar"]
+
+    # --- 同一弦のグリッド被りを防止 (Hammer-On / Slide 等の消失防止) ---
+    # 同一弦上の連続ノートが同じ beat_pos にクオンタイズされた場合、
+    # 後発のノートを1グリッド(16分音符=3divs)後ろに押し出し、_group_by_timeでの重複消去を防ぐ。
+    entries.sort(key=lambda x: x["start_time"])
+    for i in range(len(entries)):
+        my_string = entries[i].get("string", 0)
+        if my_string == 0:
+            continue
+        for j in range(i + 1, len(entries)):
+            other = entries[j]
+            if other.get("string", -1) == my_string:
+                # 同じ弦で同じ beat_pos_absolute になってしまった場合
+                if other["beat_pos_absolute"] <= entries[i]["beat_pos_absolute"]:
+                    if other["start_time"] > entries[i]["start_time"] + 0.02:
+                        # 後発ノートなので最低16分音符(3 divs)分後ろにずらす
+                        shift = 3
+                        other["beat_pos_absolute"] = entries[i]["beat_pos_absolute"] + shift
+                        other["beat_pos_in_bar"] = entries[i]["beat_pos_in_bar"] + shift
+                        other["beat_pos"] = other["beat_pos_in_bar"]
+                break # 同じ弦の直後のノートだけチェック
+
+    # ソートし直す
+    entries.sort(key=lambda x: x["beat_pos_absolute"])
 
     # --- duration_divsの後処理: 同一弦の次のノートとの重複を防止 ---
     # ギターの物理特性: 異なる弦のノートは同時に鳴り続ける

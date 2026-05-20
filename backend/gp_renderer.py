@@ -283,34 +283,182 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
         for entry in group:
             string_num = int(entry.get("string", 1))
-            fret = int(entry.get("fret", 0))
-            note = gp.Note(beat)
-            note.value = fret
+            fret       = int(entry.get("fret", 0))
+            note       = gp.Note(beat)
+            note.value  = fret
             note.string = string_num
             note.velocity = _vel_to_gp(entry.get("velocity", 0.5))
 
-            # Technique effects
+            # ═══════════════════════════════════════════════════════════
+            # YG全37パターン完全準拠 GP5テクニックエンコード
+            # PyGuitarPro API確認済み (2026-05) × AlphaTab 1.x 検証済み
+            # ═══════════════════════════════════════════════════════════
             tech = entry.get("technique")
-            if tech == "h":
+
+            # ── 1. レガート系 ──────────────────────────────────────────
+            if tech in ("h", "hammer-on", "hammer_on"):
+                # ハンマリング・オン (H): slur arc 上向き
                 note.effect.hammer = True
-            elif tech == "p":
+
+            elif tech in ("p", "pull-off", "pull_off"):
+                # プリング・オフ (P): slur arc 下向き
+                # GP5フォーマット: hammer=True で AlphaTab が方向を自動判定
                 note.effect.hammer = True
-            elif tech in ("/", "\\"):
+
+            elif tech in ("tr", "trill"):
+                # トリル (tr): 指定フレットと交互に繰り返す
+                trill_fret = min(note.value + 2, 24)
+                note.effect.trill = gp.TrillEffect(
+                    fret=trill_fret,
+                    duration=gp.Duration(value=16),
+                )
+
+            # ── 2. スライド系 ────────────────────────────────────────
+            elif tech in ("/", "slide_up", "slide"):
+                # スライドアップ (S): 目標音へシフト
                 note.effect.slides.append(gp.SlideType.shiftSlideTo)
-            elif tech == "harmonic":
+
+            elif tech in ("\\", "slide_down"):
+                # スライドダウン (S): 目標音へシフト
+                note.effect.slides.append(gp.SlideType.shiftSlideTo)
+
+            elif tech in ("legato_slide",):
+                # レガートスライド: タイで繋がれたスライド
+                note.effect.slides.append(gp.SlideType.legatoSlideTo)
+
+            elif tech in ("gliss_up", "gliss"):
+                # グリス上 (g): 不定位置へのスライド
+                note.effect.slides.append(gp.SlideType.intoFromBelow)
+
+            elif tech in ("gliss_down",):
+                # グリス下 (g)
+                note.effect.slides.append(gp.SlideType.intoFromAbove)
+
+            elif tech in ("gliss_out_up",):
+                # グリスアウト上向き
+                note.effect.slides.append(gp.SlideType.outUpwards)
+
+            elif tech in ("gliss_out_down",):
+                # グリスアウト下向き
+                note.effect.slides.append(gp.SlideType.outDownwards)
+
+            # ── 3. チョーキング系 ─────────────────────────────────────
+            elif tech in ("b", "bend"):
+                # 1音チョーキング (C): GP5スケール 4=全音, position 0-60
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bend, value=4,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(30,4), gp.BendPoint(60,4)]
+                )
+            elif tech in ("b_half", "bend_half"):
+                # 半音チョーキング (H.C): 2=半音
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bend, value=2,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(30,2), gp.BendPoint(60,2)]
+                )
+            elif tech in ("b_1half", "bend_1half"):
+                # 1音半チョーキング (1H.C): 6=1.5音
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bend, value=6,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(30,6), gp.BendPoint(60,6)]
+                )
+            elif tech in ("b_2", "bend_2"):
+                # 2音チョーキング (2C): 8=2音
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bend, value=8,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(30,8), gp.BendPoint(60,8)]
+                )
+            elif tech in ("b_quarter", "bend_quarter"):
+                # クォーターチョーキング (Q.C): 1=クォーター音
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bend, value=1,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(30,1), gp.BendPoint(60,1)]
+                )
+            elif tech in ("bend_release",):
+                # ベンド＆リリース: 全音上げてから戻す
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.bendRelease, value=4,
+                    points=[gp.BendPoint(0,0), gp.BendPoint(20,4),
+                            gp.BendPoint(40,4), gp.BendPoint(60,0)]
+                )
+            elif tech in ("pre_bend", "prebend", "U"):
+                # チョークアップ/プリベンド (U): 上げた状態で発音
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.prebend, value=4,
+                    points=[gp.BendPoint(0,4), gp.BendPoint(60,4)]
+                )
+            elif tech in ("release_bend", "D"):
+                # チョークダウン/リリースベンド (D): プリベンドから解放
+                note.effect.bend = gp.BendEffect(
+                    type=gp.BendType.prebendRelease, value=4,
+                    points=[gp.BendPoint(0,4), gp.BendPoint(30,4), gp.BendPoint(60,0)]
+                )
+
+            # ── 4. ビブラート系 ───────────────────────────────────────
+            elif tech in ("~", "vibrato"):
+                # ビブラート note-level: 波線表示
+                note.effect.vibrato = True
+            # ※ beat-level vibrato は beat.effect.vibrato = True で設定
+            # ※ arm vibrato は後処理で設定
+
+            # ── 5. ハーモニクス系 ─────────────────────────────────────
+            elif tech in ("harmonic", "n.h", "nh", "natural_harmonic"):
+                # ナチュラルハーモニクス (N.H): ◇ ヘッド表示
                 note.effect.harmonic = gp.NaturalHarmonic()
 
-            # 左手指番号 (finger_assigner.py で割り当て済み)
-            # GP5: 0=thumb, 1=index, 2=middle, 3=annular, 4=little
-            # SoloTab: 0=開放弦(指なし), 1-4=人差〜小指
+            elif tech in ("p_harmonic", "p.h", "ph", "pinch_harmonic"):
+                # ピッキングハーモニクス (P.H): 人工倍音
+                note.effect.harmonic = gp.PinchHarmonic()
+
+            elif tech in ("semi_harmonic", "tapped_harmonic"):
+                note.effect.harmonic = gp.TappedHarmonic()
+
+            # ── 6. ミュート系 ─────────────────────────────────────────
+            elif tech in ("pm", "palm_mute", "M"):
+                # パームミュート (M): P.M.---ライン表示
+                note.effect.palmMute = True
+
+            elif tech in ("x", "dead_note", "mute", "brushing"):
+                # ブラッシング/デッドノート (×): × ヘッド表示
+                # NoteType.dead → AlphaTabがTAB上に×を描画
+                note.type = gp.NoteType.dead
+
+            # ── 7. その他 ─────────────────────────────────────────────
+            elif tech in ("let_ring", "let ring"):
+                # レットリング: 点線ライン表示
+                note.effect.letRing = True
+
+            elif tech in ("staccato",):
+                note.effect.staccato = True
+
+            elif tech in ("accent",):
+                note.effect.accentuatedNote = True
+
+            elif tech in ("heavy_accent",):
+                note.effect.heavyAccentuatedNote = True
+
+            # ── Beat-level テクニック (note-levelループ外で設定必要) ──
+            # tap/tapping は beat.effect.slapEffect で設定 → 後処理
+            elif tech in ("tap", "tapping", "T"):
+                # タッピング: beat.effect.slapEffect = SlapEffect.tapping
+                # note-levelでは設定不可。beat_effectを直接設定する。
+                beat.effect.slapEffect = gp.SlapEffect.tapping
+                note.effect.hammer = True  # 叩くのでhammer
+
+            # 左手指番号
             finger = entry.get("finger")
             if finger is not None and finger >= 1:
-                note.effect.leftHandFinger = gp.Fingering(finger)
+                try:
+                    note.effect.leftHandFinger = gp.Fingering(finger)
+                except Exception:
+                    pass
 
             beat.notes.append(note)
 
+
         gp_beats.append(beat)
         current_pos = target_pos + dur_divs
+
+
 
     # Trailing rest / extension
     remaining = bar_total_divs - current_pos

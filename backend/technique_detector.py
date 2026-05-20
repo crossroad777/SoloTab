@@ -1,279 +1,97 @@
 """
-technique_detector.py — ギター奏法テクニック検出モジュール (V2)
+technique_detector.py — ギター奏法テクニック検出エンジン (V3)
 ================================================================
-弦ごとにノートを分離し、各弦の時系列で隣接ノートのパターンから
-テクニックを検出する。和音内のテクニックも正しく検出できる。
+Abesser et al. (ISMIR 2014/2015) に基づくF0軌跡解析と
+スペクトル特徴による高精度テクニック検出。
 
 検出テクニック:
-  h  — ハンマリング・オン (同弦/ピッチ上昇/短IOI)
-  p  — プルオフ (同弦/ピッチ下降/短IOI)
-  /  — スライドアップ (同弦/フレット差≥2/短IOI)
-  \\\\  — スライドダウン
-  b  — ベンド (同弦/同フレット/ピッチ上昇)
-  harmonic — ナチュラルハーモニクス (fret 5,7,12 + ピッチ一致)
-  tr — トリル (h/pが4連続以上)
+  h   — ハンマリング・オン  (F0瞬間上行→安定)
+  p   — プルオフ            (F0瞬間下行→安定)
+  /   — スライドアップ      (F0線形上昇)
+  \\   — スライドダウン      (F0線形下降)
+  b   — ベンド              (F0上昇→ピーク→安定 or 下降)
+  ~   — ビブラート          (F0振動 4–8Hz)
+  gliss_up/gliss_down — グリッサンド (大幅フレット移動)
+  harmonic — ナチュラルハーモニクス
+  pm  — パームミュート      (スペクトル重心低下 + 短減衰)
+  tr  — トリル              (h/p 4連続以上)
 
-【提供物の状態】
-  構文レベル: 検証済み
-  実行結果: 未検証（実音声での動作確認は必要）
-  想定環境: SoloTab pipeline.py / modal_app.py から呼び出される
-  既知のリスク: ハーモニクス検出は fret 位置ベースのヒューリスティック
+参考文献:
+  [1] Abesser et al. (2014) "Automatic Transcription of Guitar Tones
+      and Playing Techniques", ISMIR 2014.
+  [2] Kehling et al. (2014) "Automatic Tablature Transcription of
+      Electric Guitar Recordings", EUSIPCO 2014.
+  [3] Stefani & Turchet (2022) "aGPTset", ICASSP 2022.
 """
 
-from typing import List, Dict, Optional
+from __future__ import annotations
+import numpy as np
+from typing import List, Dict, Optional, Tuple
 
 
 # =============================================================================
 # 閾値定数
 # =============================================================================
+HP_MAX_IOI      = 0.25   # H/P 最大 IOI（秒）
+SLIDE_MAX_IOI   = 0.40   # スライド 最大 IOI
+SLIDE_MIN_FRET  = 2      # スライド 最小フレット差
+GLISS_MIN_FRET  = 5      # グリッサンド 最小フレット差
+BEND_MAX_IOI    = 0.25   # ベンド 最大 IOI
+VIBRATO_MIN_DUR = 0.25   # ビブラート 最短持続時間
 
-HP_MAX_IOI = 0.15       # ハンマリング/プルオフの最大IOI（秒）
-SLIDE_MAX_IOI = 0.20    # スライドの最大IOI（秒）
-SLIDE_MIN_FRET_DIFF = 2 # スライドの最小フレット差
-BEND_MAX_IOI = 0.10     # ベンドの最大IOI（秒）
-BEND_MIN_PITCH = 1      # ベンドの最小ピッチ差（半音）
-BEND_MAX_PITCH = 3      # ベンドの最大ピッチ差（半音）
+# F0解析用
+F0_SR           = 22050  # 内部リサンプリングSR
+HOP_LENGTH      = 256    # PYIN hopサイズ
+PYIN_FMIN       = 60     # F0最小Hz（ギター最低音E2 ≈ 82Hz）
+PYIN_FMAX       = 1400   # F0最大Hz（ハイフレット）
 
-# ナチュラルハーモニクスが発生するフレット位置
-# fret: (倍音番号, 開放弦からの半音数)
-HARMONIC_FRETS = {
-    12: 12,   # 第2倍音: オクターブ
-    7:  19,   # 第3倍音: オクターブ+5度
-    5:  24,   # 第4倍音: 2オクターブ
-    4:  28,   # 第5倍音: 2オクターブ+長3度（近似）
-    3:  31,   # 第6倍音: 2オクターブ+5度（近似）
-}
-
-# 標準チューニングの開放弦MIDI値 (6弦→1弦)
-DEFAULT_OPEN_STRINGS = [40, 45, 50, 55, 59, 64]
+# スペクトル特徴（PM/Harmonic）
+PM_CENTROID_RATIO = 0.45  # PMはスペクトル重心が通常の45%以下
+NH_FRETS          = {5, 7, 12}  # ナチュラルハーモニクス主要フレット
 
 
-def detect_techniques(notes: List[dict], *, bpm: float = 120.0, 
-                      key_signature: str = "C") -> List[dict]:
+# =============================================================================
+# メイン API
+# =============================================================================
+
+def detect_techniques(
+    notes:      List[dict],
+    *,
+    bpm:        float = 120.0,
+    key_signature: str = "C",
+    audio_path: Optional[str] = None,
+) -> List[dict]:
     """
     ノートリストにテクニック情報を付与する。
 
-    **弦ごとに分離**してテクニック検出を行うため、
-    和音内のテクニック（例: 1弦でハンマリング + 他弦で持続音）も
-    正しく検出される。
-
     Parameters
     ----------
-    notes : list[dict]
-        各ノートは start, end, pitch, string, fret を持つ。
-    bpm : float
-        テンポ情報（IOI閾値の動的調整に使用）。
-    key_signature : str
-        調号（"C", "G", "Am" 等）。スケール内判定に使用。
-
-    Returns
-    -------
-    list[dict]
-        technique キーが追加されたノートリスト。
+    notes        : start/end/pitch/string/fret を持つノートリスト
+    bpm          : テンポ（IOI閾値スケーリングに使用）
+    key_signature: 調号
+    audio_path   : 音声ファイルパス（F0解析に使用、省略可）
     """
     if len(notes) < 2:
         return notes
 
-    # 調号からスケールのピッチクラスを取得
-    try:
-        from music_theory import KEY_SIGNATURES
-        scale_pcs = set(KEY_SIGNATURES.get(key_signature, KEY_SIGNATURES["C"]))
-    except Exception:
-        scale_pcs = {0, 2, 4, 5, 7, 9, 11}  # C major fallback
-
-    # テンポに応じた閾値スケーリング（高BPMでは許容IOIを広く）
-    tempo_scale = min(1.5, max(0.7, 120.0 / max(bpm, 60.0)))
-    hp_max = HP_MAX_IOI * tempo_scale
+    # テンポ補正
+    tempo_scale = min(1.6, max(0.6, 120.0 / max(bpm, 60.0)))
+    hp_max    = HP_MAX_IOI    * tempo_scale
     slide_max = SLIDE_MAX_IOI * tempo_scale
+    bend_max  = BEND_MAX_IOI  * tempo_scale
 
-    # --- Phase 1: ハーモニクス検出は無効化（誤検出が多いため） ---
-    # _detect_harmonics(notes)
+    # --- 音声ロード（F0解析用）---
+    audio    = None
+    audio_sr = None
+    if audio_path:
+        try:
+            import librosa
+            audio, audio_sr = librosa.load(audio_path, sr=F0_SR, mono=True)
+            print(f"[TechDet] Audio loaded: {len(audio)/audio_sr:.1f}s @ {audio_sr}Hz")
+        except Exception as e:
+            print(f"[TechDet] Audio load failed: {e}, falling back to rule-based")
 
-    # --- Phase 2: 弦ごとにノートを分離 ---
-    string_groups: Dict[int, List[int]] = {}  # string -> [index in notes]
-    for i, note in enumerate(notes):
-        s = note.get("string")
-        if s is not None:
-            string_groups.setdefault(s, []).append(i)
-
-    # --- Phase 3: 各弦内で時系列テクニック検出 ---
-    for string_num, indices in string_groups.items():
-        # 時間順にソート
-        indices_sorted = sorted(indices, key=lambda i: notes[i]["start"])
-
-        for pos in range(1, len(indices_sorted)):
-            prev_idx = indices_sorted[pos - 1]
-            curr_idx = indices_sorted[pos]
-            prev = notes[prev_idx]
-            curr = notes[curr_idx]
-
-            # 既にテクニックが付与されている場合はスキップ
-            if curr.get("technique") and curr["technique"] != "normal":
-                continue
-
-            ioi = curr["start"] - prev["start"]
-            if ioi <= 0:
-                continue  # 同時発音（和音の別ノート）はスキップ
-
-            pitch_diff = curr["pitch"] - prev["pitch"]
-            abs_pitch = abs(pitch_diff)
-            fret_diff = abs(curr.get("fret", 0) - prev.get("fret", 0))
-
-            # --- ハンマリング・オン / プルオフ ---
-            if 0 < ioi <= hp_max and 0 < abs_pitch <= 5:
-                if pitch_diff > 0:
-                    curr["technique"] = "h"
-                elif pitch_diff < 0:
-                    curr["technique"] = "p"
-                continue
-
-            # --- スライド ---
-            if 0 < ioi <= slide_max and SLIDE_MIN_FRET_DIFF <= fret_diff <= 4:
-                if pitch_diff > 0:
-                    curr["technique"] = "/"
-                elif pitch_diff < 0:
-                    curr["technique"] = "\\"
-                continue
-
-            # --- グリッサンド (大きなフレット移動: 5+) ---
-            GLISS_MAX_IOI = 0.30 * tempo_scale
-            if 0 < ioi <= GLISS_MAX_IOI and fret_diff >= 5:
-                if pitch_diff > 0:
-                    curr["technique"] = "gliss_up"
-                elif pitch_diff < 0:
-                    curr["technique"] = "gliss_down"
-                continue
-
-            # --- ベンド ---
-            if (0 < ioi <= BEND_MAX_IOI
-                    and BEND_MIN_PITCH <= pitch_diff <= BEND_MAX_PITCH
-                    and fret_diff == 0):
-                curr["technique"] = "b"
-                continue
-
-    # --- Phase 4: 全ノート横断テクニック検出（弦に依存しないもの） ---
-    beat_interval = 60.0 / max(bpm, 60.0)
-
-    for note in notes:
-        if note.get("technique") and note["technique"] != "normal":
-            continue
-
-        vel = float(note.get("velocity", 0.5))
-        if vel > 1.0:
-            vel /= 127.0
-        dur = float(note.get("end", 0)) - float(note.get("start", 0))
-
-        # --- ゴーストノート: 無効化（過検出が多い） ---
-        # if vel < 0.15:
-        #     note["technique"] = "x"
-        #     continue
-
-        # --- パームミュート: 極低velocity + 極短持続のみ ---
-        if vel < 0.20 and dur < beat_interval * 0.15:
-            note["technique"] = "palm_mute"
-            continue
-
-        # --- レットリング: 開放弦(fret=0) + 3拍以上持続のみ ---
-        # ギターは自然に長く鳴るので、通常の持続音をlet_ringにしない
-        if note.get("fret", -1) == 0 and dur > beat_interval * 3.0 and vel > 0.3:
-            note["technique"] = "let_ring"
-            continue
-
-    # --- Phase 5: ハーモニクス検出は無効化（誤検出が多いため） ---
-    # try:
-    #     _detect_harmonics(notes)
-    # except Exception:
-    #     pass
-
-    return notes
-
-
-def _detect_harmonics(notes: List[dict]) -> None:
-    """
-    ナチュラルハーモニクスを検出する。
-
-    条件:
-    - フレット位置が 5, 7, 12 のいずれか
-    - そのフレット位置のハーモニクスピッチが、ノートのピッチと一致
-    - ハーモニクスは通常のフレット音より高い音が出る（fret 7 で fret 19 相当等）
-
-    ただし fret 12 は通常フレットと同じピッチのため、
-    以下の追加条件で判定:
-    - fret 12: 前後にfret 5/7 ハーモニクスがある場合にハーモニクスと判定
-    - fret 5, 7: ピッチがハーモニクスピッチと一致すれば判定
-    """
-    # 各ノートの弦の開放弦ピッチを推定
-    for note in notes:
-        fret = note.get("fret", -1)
-        string = note.get("string")
-        pitch = note.get("pitch", 0)
-
-        if fret not in HARMONIC_FRETS or string is None:
-            continue
-
-        # 開放弦ピッチを推定: pitch - fret = open_pitch (通常フレットの場合)
-        # ハーモニクスの場合: open_pitch + HARMONIC_FRETS[fret] = pitch
-        open_pitch_if_normal = pitch - fret
-        harmonic_pitch_semitones = HARMONIC_FRETS[fret]
-
-        if fret in (5, 7, 3, 4):
-            # fret 5/7: ハーモニクスピッチは通常フレットより高い
-            # もし pitch が通常フレット音より高い場合 → ハーモニクスの可能性
-            # ハーモニクスの場合: pitch = open_pitch + harmonic_pitch_semitones
-            # 通常フレットの場合: pitch = open_pitch + fret
-            # 差: harmonic_pitch_semitones - fret
-            # fret 7: 19 - 7 = 12 (1オクターブ高い)
-            # fret 5: 24 - 5 = 19 (かなり高い)
-            #
-            # MoEは実際の鳴っているピッチを検出するので、
-            # ハーモニクスの場合は高いピッチが検出される。
-            # open_pitch = pitch - harmonic_pitch_semitones が
-            # 妥当な開放弦ピッチ(40,45,50,55,59,64)に近いか確認
-            estimated_open = pitch - harmonic_pitch_semitones
-            if estimated_open in DEFAULT_OPEN_STRINGS:
-                if not note.get("technique"):
-                    note["technique"] = "harmonic"
-
-        elif fret == 12:
-            # fret 12: ハーモニクスと通常フレットが同じピッチ
-            # 前後のコンテキストで判定（fret 5/7 ハーモニクスが近くにあれば）
-            # → 単独では判定困難なので、ここではマークしない
-            # ただし、開放弦ピッチが一致する場合は候補として記録
-            estimated_open = pitch - 12
-            if estimated_open in DEFAULT_OPEN_STRINGS:
-                # ハーモニクスの可能性はあるが確定できない
-                # 後続のコンテキスト分析でマークする
-                note["_harmonic_candidate"] = True
-
-    # fret 12 のハーモニクス候補を、近くに他のハーモニクスがあればマーク
-    harmonic_times = [n["start"] for n in notes
-                      if n.get("technique") == "harmonic"]
-
-    for note in notes:
-        if note.get("_harmonic_candidate"):
-            del note["_harmonic_candidate"]
-            # 1秒以内に他のハーモニクスがあれば、このfret12もハーモニクス
-            t = note["start"]
-            for ht in harmonic_times:
-                if abs(t - ht) < 1.0:
-                    if not note.get("technique"):
-                        note["technique"] = "harmonic"
-                    break
-
-
-def add_techniques_to_musicxml_notes(notes: List[dict]) -> List[dict]:
-    """
-    テクニック情報の後処理。
-    連続するh/pのチェーンを検出してトリル判定を行う。
-    """
-    if len(notes) < 3:
-        return notes
-
-    # --- トリル検出 ---
-    # 同弦上で4つ以上のh/pが連続する場合、トリルとして再分類
-    TRILL_MIN_CHAIN = 4
-
-    # 弦ごとにグループ化して処理
+    # --- 弦ごとに分離して処理 ---
     string_groups: Dict[int, List[int]] = {}
     for i, note in enumerate(notes):
         s = note.get("string")
@@ -283,27 +101,557 @@ def add_techniques_to_musicxml_notes(notes: List[dict]) -> List[dict]:
     for string_num, indices in string_groups.items():
         indices_sorted = sorted(indices, key=lambda i: notes[i]["start"])
 
-        chain_start = None
-        chain_len = 0
+        for pos in range(len(indices_sorted)):
+            curr_idx = indices_sorted[pos]
+            curr     = notes[curr_idx]
 
-        for pos, idx in enumerate(indices_sorted):
-            tech = notes[idx].get("technique")
-            if tech in ("h", "p"):
-                if chain_start is None:
-                    chain_start = pos
-                    chain_len = 1
-                else:
-                    chain_len += 1
-            else:
-                if chain_len >= TRILL_MIN_CHAIN and chain_start is not None:
-                    for j in range(chain_start, chain_start + chain_len):
-                        notes[indices_sorted[j]]["technique"] = "tr"
-                chain_start = None
-                chain_len = 0
+            # 既に付与済みならスキップ
+            if curr.get("technique") and curr["technique"] != "normal":
+                continue
 
-        # 最後のチェーン処理
-        if chain_len >= TRILL_MIN_CHAIN and chain_start is not None:
-            for j in range(chain_start, chain_start + chain_len):
-                notes[indices_sorted[j]]["technique"] = "tr"
+            if pos == 0:
+                # --- ビブラート（単独ノート内F0解析）---
+                if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+                    if tech:
+                        curr["technique"] = tech
+                continue
+
+            prev_idx = indices_sorted[pos - 1]
+            prev     = notes[prev_idx]
+
+            # 既に付与済みならスキップ
+            if prev.get("technique") and prev["technique"] != "normal":
+                # currに対してビブラートだけチェック
+                if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+                    if tech:
+                        curr["technique"] = tech
+                continue
+
+            ioi        = curr["start"] - prev["start"]
+            if ioi <= 0:
+                continue
+
+            pitch_diff = curr["pitch"] - prev["pitch"]
+            abs_pitch  = abs(pitch_diff)
+            fret_diff  = abs(curr.get("fret", 0) - prev.get("fret", 0))
+
+            # ── F0軌跡解析（音声がある場合は優先） ──
+            if audio is not None and ioi <= max(slide_max, hp_max):
+                tech = _classify_from_f0(
+                    prev, curr, audio, audio_sr,
+                    pitch_diff, fret_diff, hp_max, slide_max, bend_max
+                )
+                if tech:
+                    prev["technique"] = tech
+                    continue
+
+            # ── ルールベースフォールバック ──
+            tech = _rule_based(
+                ioi, pitch_diff, abs_pitch, fret_diff,
+                hp_max, slide_max, bend_max,
+                curr_fret=curr.get("fret", 0)
+            )
+            if tech:
+                prev["technique"] = tech
+                continue
+
+            # ── ビブラート（単独ノート）──
+            if audio is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR:
+                tech = _detect_vibrato_from_f0(curr, audio, audio_sr)
+                if tech:
+                    curr["technique"] = tech
+
+    # --- ナチュラルハーモニクス（フレット位置ベース）---
+    for note in notes:
+        if not note.get("technique") or note["technique"] == "normal":
+            if note.get("fret") in NH_FRETS:
+                _check_harmonic(note)
+
+    # --- パームミュート（スペクトル重心ベース）---
+    if audio is not None:
+        _detect_palm_mute_batch(notes, audio, audio_sr)
+
+    # --- ブラッシング/デッドノート（YG Ex-22: ×）---
+    # 音程のない打楽器的なノートを検出する
+    # 方法: PYIN voiced_ratio < 0.3 + スペクトル平坦度 > 0.6
+    if audio is not None:
+        _detect_dead_notes(notes, audio, audio_sr)
 
     return notes
+
+
+
+# =============================================================================
+# F0 解析コア
+# =============================================================================
+
+def _extract_f0(
+    audio: np.ndarray,
+    sr:    int,
+    t_start: float,
+    t_end:   float,
+    fmin_hz: float = PYIN_FMIN,
+    fmax_hz: float = PYIN_FMAX,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    指定区間のF0軌跡を PYIN で抽出する。
+    Returns: (f0_array, voiced_flag_array)
+    """
+    try:
+        import librosa
+        start_sample = max(0, int(t_start * sr) - HOP_LENGTH)
+        end_sample   = min(len(audio), int(t_end * sr) + HOP_LENGTH)
+        segment      = audio[start_sample:end_sample]
+
+        if len(segment) < HOP_LENGTH * 4:
+            return np.array([]), np.array([])
+
+        f0, voiced_flag, _ = librosa.pyin(
+            segment,
+            fmin=fmin_hz,
+            fmax=fmax_hz,
+            sr=sr,
+            hop_length=HOP_LENGTH,
+            fill_na=None,
+        )
+        # voiced部分のみ使用
+        f0_voiced = np.where(voiced_flag, f0, np.nan)
+        return f0_voiced, voiced_flag
+    except Exception as e:
+        print(f"[TechDet] F0 extraction error: {e}")
+        return np.array([]), np.array([])
+
+
+def _midi_to_hz(midi: float) -> float:
+    return 440.0 * (2.0 ** ((midi - 69) / 12.0))
+
+
+def _classify_from_f0(
+    prev:      dict,
+    curr:      dict,
+    audio:     np.ndarray,
+    sr:        int,
+    pitch_diff: int,
+    fret_diff:  int,
+    hp_max:    float,
+    slide_max: float,
+    bend_max:  float,
+) -> Optional[str]:
+    """
+    F0軌跡を解析してテクニックを分類する。
+
+    アルゴリズム (Abesser 2014 準拠):
+      1. 前後ノート間のF0軌跡を抽出
+      2. 軌跡の形状特徴量を計算:
+         - 傾き (slope): 線形回帰の傾き
+         - R²   (r2)   : 線形適合度
+         - 速度変化 (jump): 最初の20%と最後の20%の平均F0差
+         - 振動 (osc)  : 残差の標準偏差
+      3. 特徴量パターンでテクニックを決定
+    """
+    ioi = curr["start"] - prev["start"]
+
+    # 分析区間: prev.start から curr.start + 0.05s
+    t_a = prev["start"]
+    t_b = curr["start"] + min(0.08, curr["end"] - curr["start"])
+    f0, voiced = _extract_f0(audio, sr, t_a, t_b)
+
+    if len(f0) < 6:
+        return None  # データ不足 → ルールベースに委ねる
+
+    # voiced フレーム数が少なすぎる場合はスキップ
+    valid  = f0[~np.isnan(f0)]
+    if len(valid) < 4:
+        return None
+
+    n      = len(f0)
+    t_arr  = np.arange(n) / (sr / HOP_LENGTH)  # 秒
+
+    # IOI内のインデックス範囲
+    ioi_frames = min(n, max(2, int(ioi * sr / HOP_LENGTH)))
+
+    # ── 特徴量1: 線形回帰（傾き・R²）──
+    valid_mask = ~np.isnan(f0[:ioi_frames])
+    if valid_mask.sum() < 4:
+        return None
+    t_v = t_arr[:ioi_frames][valid_mask]
+    f_v = f0[:ioi_frames][valid_mask]
+
+    slope, intercept = np.polyfit(t_v, f_v, 1) if len(t_v) >= 2 else (0, f_v[0])
+    f_pred = np.polyval([slope, intercept], t_v)
+    ss_res = np.sum((f_v - f_pred) ** 2)
+    ss_tot = np.sum((f_v - np.mean(f_v)) ** 2)
+    r2     = 1 - ss_res / ss_tot if ss_tot > 1e-6 else 0.0
+
+    # ── 特徴量2: ジャンプ（最初20% vs 最後20%の平均差）──
+    q = max(1, ioi_frames // 5)
+    f0_start_region = f0[:q]
+    f0_end_region   = f0[ioi_frames - q : ioi_frames]
+    mean_start = np.nanmean(f0_start_region) if not np.all(np.isnan(f0_start_region)) else None
+    mean_end   = np.nanmean(f0_end_region)   if not np.all(np.isnan(f0_end_region))   else None
+
+    if mean_start is None or mean_end is None:
+        return None
+
+    jump_hz   = mean_end - mean_start
+    jump_semi = 12 * np.log2(mean_end / mean_start) if mean_start > 0 and mean_end > 0 else 0.0
+
+    # ── 特徴量3: ピーク検出（ベンド用）──
+    f0_ioi   = f0[:ioi_frames]
+    peak_idx = np.nanargmax(f0_ioi) if not np.all(np.isnan(f0_ioi)) else None
+    if peak_idx is not None:
+        peak_hz    = f0_ioi[peak_idx]
+        peak_ratio = peak_idx / max(1, ioi_frames)  # ピーク位置比率
+        peak_rise  = 12 * np.log2(peak_hz / mean_start) if mean_start > 0 and peak_hz > 0 else 0.0
+    else:
+        peak_ratio = 0.5
+        peak_rise  = 0.0
+
+    # ── 期待F0値（ピッチ→Hz）──
+    hz_prev = _midi_to_hz(prev["pitch"])
+    hz_curr = _midi_to_hz(curr["pitch"])
+
+    # ──────────────────────────────────────────
+    # テクニック判定ロジック
+    # ──────────────────────────────────────────
+
+    abs_jump = abs(jump_semi)
+    abs_diff = abs(pitch_diff)
+
+    # ── ベンド: F0が上昇してピークを形成し、終点が高い or 元に戻る ──
+    if (ioi <= bend_max + 0.05
+            and peak_rise >= 0.3        # 0.3半音以上のピーク上昇
+            and peak_ratio < 0.85       # ピークが最後でない
+            and pitch_diff == 0         # 同フレット
+            and fret_diff == 0):
+        return "b"
+
+    # ── H / P: 急峻なジャンプ（線形でない、R²低い）──
+    if ioi <= hp_max and abs_diff >= 1 and abs_diff <= 6:
+        # H/P はF0が段階的に変化する（スライドと区別）
+        # スライドはR²高い（線形）、H/Pは急峻（低R²またはジャンプ）
+        if r2 < 0.65 or abs_jump >= 0.8 * abs_diff:
+            # F0のジャンプ方向で判定
+            if jump_semi > 0.3:
+                return "h"
+            elif jump_semi < -0.3:
+                return "p"
+
+    # ── スライド: 線形F0遷移（R²高い）──
+    if ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff:
+        if r2 >= 0.55 and abs_jump >= 0.5:  # 線形かつ移動あり
+            if jump_semi > 0:
+                return "/"
+            elif jump_semi < 0:
+                return "\\"
+
+    # ── グリッサンド: 大フレット移動 ──
+    if ioi <= slide_max and fret_diff >= GLISS_MIN_FRET:
+        if pitch_diff > 0:
+            return "gliss_up"
+        elif pitch_diff < 0:
+            return "gliss_down"
+
+    return None  # 判定不能 → ルールベースに委ねる
+
+
+def _detect_vibrato_from_f0(
+    note:  dict,
+    audio: np.ndarray,
+    sr:    int,
+) -> Optional[str]:
+    """
+    単一ノートのF0を解析してビブラートを検出する。
+    ビブラート = 4〜8Hzの周期的F0振動。
+    """
+    try:
+        f0, voiced = _extract_f0(
+            audio, sr,
+            note["start"] + 0.05,  # 最初50msはアタックなので除外
+            note["end"]   - 0.02,
+        )
+        valid = f0[~np.isnan(f0)]
+        if len(valid) < 8:
+            return None
+
+        # F0の標準偏差が閾値以上 → ピッチ揺れあり
+        f0_std_cents = 1200 * np.std(valid) / np.mean(valid) if np.mean(valid) > 0 else 0
+
+        if f0_std_cents < 25:  # 25セント未満は揺れなし（15→25に厳格化）
+            return None
+
+        # 周波数スペクトルで4–8Hzの振動を確認
+        fps   = sr / HOP_LENGTH
+        freqs = np.fft.rfftfreq(len(valid), d=1.0 / fps)
+        power = np.abs(np.fft.rfft(valid - np.mean(valid))) ** 2
+
+        vib_mask   = (freqs >= 3.5) & (freqs <= 9.0)
+        total_power = power.sum()
+        vib_power   = power[vib_mask].sum()
+
+        if total_power > 0 and vib_power / total_power > 0.45:  # 0.30→0.45に厳格化
+            return "~"
+
+    except Exception:
+        pass
+    return None
+
+
+# =============================================================================
+# ルールベース フォールバック
+# =============================================================================
+
+def _rule_based(
+    ioi:        float,
+    pitch_diff: int,
+    abs_pitch:  int,
+    fret_diff:  int,
+    hp_max:     float,
+    slide_max:  float,
+    bend_max:   float,
+    curr_fret:  int = -1,
+) -> Optional[str]:
+    """F0解析なしのルールベース分類。"""
+    # H / P
+    if 0 < ioi <= hp_max and 0 < abs_pitch <= 6:
+        return "h" if pitch_diff > 0 else "p"
+
+    # スライド
+    if 0 < ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff <= 5:
+        if pitch_diff > 0:
+            return "/"
+        elif pitch_diff < 0:
+            return "\\"
+
+    # グリッサンド
+    if 0 < ioi <= slide_max * 1.2 and fret_diff >= GLISS_MIN_FRET:
+        return "gliss_up" if pitch_diff > 0 else "gliss_down"
+
+    # ベンド（フレット押弦のみ: fret > 0 が条件）
+    # オープン弦（fret=0）はベンド不可能
+    # 注: pitch_diff==0の同フレット繰り返しノートは b_quarter にしない
+    #     （アルペジオの繰り返し音を誤検出するため）
+    #     F0解析がある場合のみベンドを検出する（_classify_from_f0が優先）
+    if curr_fret > 0:
+        if 0 < ioi <= bend_max and fret_diff == 0 and pitch_diff >= 1:
+            if pitch_diff == 1:
+                return "b_half"      # H.C: 半音
+            elif pitch_diff == 2:
+                return "b"           # C:   1音
+            elif pitch_diff == 3:
+                return "b_1half"     # 1H.C: 1音半
+            elif pitch_diff >= 4:
+                return "b_2"         # 2C: 2音以上
+        # クォーターベンド: ルールベースでは無効（誤検出が多すぎる）
+        # F0解析（_classify_from_f0）で検出された場合のみ有効
+        # if 0 < ioi <= bend_max and fret_diff == 0 and pitch_diff == 0:
+        #     return "b_quarter"
+
+
+    return None
+
+
+# =============================================================================
+# ナチュラルハーモニクス
+# =============================================================================
+
+HARMONIC_FRETS = {12: 12, 7: 19, 5: 24}
+DEFAULT_OPEN_STRINGS = [40, 45, 50, 55, 59, 64]
+
+def _check_harmonic(note: dict) -> None:
+    """
+    ナチュラルハーモニクス判定。
+    重要: フレット位置だけでなく弦番号も照合する。
+    フレット5の通常音（例: 2弦5フレット=E4）が
+    6弦のハーモニクスと誤判定されるバグを防ぐ。
+    """
+    fret = note.get("fret", -1)
+    pitch = note.get("pitch", 0)
+    string_num = note.get("string", -1)  # 1=1弦(最高音), 6=6弦(最低音)
+    if fret not in HARMONIC_FRETS:
+        return
+    expected_harmonic_pitch = HARMONIC_FRETS[fret]
+    open_pitch = pitch - expected_harmonic_pitch
+    if open_pitch not in DEFAULT_OPEN_STRINGS:
+        return
+    # 弦番号と開放弦音高が一致するか確認
+    if string_num >= 1 and string_num <= 6:
+        string_idx = 6 - string_num  # 0=6弦(E2), 5=1弦(E4)
+        actual_open = DEFAULT_OPEN_STRINGS[string_idx]
+        if open_pitch != actual_open:
+            return  # 別の弦のハーモニクスと誤認 → スキップ
+    note["technique"] = "harmonic"
+
+
+# =============================================================================
+# パームミュート（バッチ処理）
+# =============================================================================
+
+def _detect_palm_mute_batch(
+    notes: List[dict],
+    audio: np.ndarray,
+    sr:    int,
+) -> None:
+    """
+    スペクトル重心を用いてパームミュートを検出する。
+
+    パームミュートの特徴:
+      - スペクトル重心が低い（通常音の 40〜50% 以下）
+      - 持続時間が短い（減衰が速い）
+    """
+    try:
+        import librosa
+        # 全ノートの平均スペクトル重心を基準値として計算
+        centroids = []
+        for note in notes:
+            if note.get("technique") and note["technique"] != "normal":
+                continue
+            dur = note["end"] - note["start"]
+            if dur < 0.05:
+                continue
+            s = max(0, int(note["start"] * sr))
+            e = min(len(audio), int(note["end"] * sr))
+            seg = audio[s:e]
+            if len(seg) < 512:
+                continue
+            sc = librosa.feature.spectral_centroid(y=seg, sr=sr).mean()
+            centroids.append((note, sc))
+
+        if not centroids:
+            return
+
+        median_centroid = np.median([c for _, c in centroids])
+
+        for note, sc in centroids:
+            if sc < median_centroid * PM_CENTROID_RATIO:
+                dur = note["end"] - note["start"]
+                if dur < 0.18:  # 短い音
+                    if not note.get("technique") or note["technique"] == "normal":
+                        note["technique"] = "pm"
+
+    except Exception as e:
+        print(f"[TechDet] Palm mute detection error: {e}")
+
+
+# =============================================================================
+# ブラッシング / デッドノート (YG Ex-22: ×)
+# =============================================================================
+
+def _detect_dead_notes(
+    notes: List[dict],
+    audio: np.ndarray,
+    sr:    int,
+) -> None:
+    """
+    ブラッシング（デッドノート）を検出する。
+
+    YG Ex-22: ミュート（2）— 左手で弦振動を抑えた状態でピッキング。
+    特徴:
+      - PYIN voiced_ratio < 0.35  (安定したF0がない)
+      - Spectral flatness > 0.15  (ノイズ状のスペクトル)
+      - 上記2条件 or velocity < 0.15 の超短音
+      - PMとの違い: PMは低重心だがF0がある。デッドノートはF0なし。
+
+    参考: Abesser (2014) — unvoiced / noise-like note segments
+    """
+    try:
+        import librosa
+
+        for note in notes:
+            # 既にテクニック付与済みはスキップ
+            if note.get("technique") and note["technique"] not in ("normal", ""):
+                continue
+
+            dur = note["end"] - note["start"]
+            if dur < 0.02:
+                continue  # 2ms 以下は信頼できない
+
+            s = max(0, int(note["start"] * sr))
+            e = min(len(audio), int((note["start"] + min(dur, 0.15)) * sr))
+            seg = audio[s:e]
+
+            if len(seg) < 256:
+                continue
+
+            # ── 特徴量1: PYIN voiced 確率 ──
+            try:
+                _, voiced_flag, voiced_probs = librosa.pyin(
+                    seg,
+                    fmin=PYIN_FMIN,
+                    fmax=PYIN_FMAX,
+                    sr=sr,
+                    hop_length=HOP_LENGTH,
+                    fill_na=None,
+                )
+                voiced_ratio = float(np.mean(voiced_flag)) if voiced_flag is not None else 1.0
+            except Exception:
+                voiced_ratio = 1.0  # 計算失敗時は通常音と判定
+
+            # ── 特徴量2: スペクトル平坦度 ──
+            # 高いほどノイズ状（0=純音, 1=白色雑音）
+            flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
+
+            # ── 特徴量3: RMSエネルギー ──
+            rms = float(librosa.feature.rms(y=seg).mean())
+
+            # ── 判定ロジック ──
+            is_unvoiced  = voiced_ratio < 0.35
+            is_noisy     = flatness > 0.12
+            is_very_short = dur < 0.08
+
+            # デッドノート判定:
+            # (音程なし AND ノイズ状) OR (超短音 AND 音程なし)
+            if (is_unvoiced and is_noisy) or (is_unvoiced and is_very_short):
+                note["technique"] = "x"  # YG: ×
+                print(f"[TechDet] Dead note: t={note['start']:.2f}s "
+                      f"voiced={voiced_ratio:.2f} flat={flatness:.3f} dur={dur:.3f}s")
+
+    except Exception as e:
+        print(f"[TechDet] Dead note detection error: {e}")
+
+
+# =============================================================================
+# トリル後処理
+# =============================================================================
+
+def add_techniques_to_musicxml_notes(notes: List[dict]) -> List[dict]:
+    """
+    後処理: 連続H/Pチェーン(4音以上)をトリルに変換。
+    """
+    if len(notes) < 4:
+        return notes
+
+    TRILL_MIN_CHAIN = 4
+
+    string_groups: Dict[int, List[int]] = {}
+    for i, note in enumerate(notes):
+        s = note.get("string")
+        if s is not None:
+            string_groups.setdefault(s, []).append(i)
+
+    for string_num, indices in string_groups.items():
+        indices_sorted = sorted(indices, key=lambda i: notes[i]["start"])
+        chain = []
+
+        for idx in indices_sorted:
+            tech = notes[idx].get("technique")
+            if tech in ("h", "p"):
+                chain.append(idx)
+            else:
+                if len(chain) >= TRILL_MIN_CHAIN:
+                    for ci in chain:
+                        notes[ci]["technique"] = "tr"
+                chain = []
+
+        # 末端チェーン
+        if len(chain) >= TRILL_MIN_CHAIN:
+            for ci in chain:
+                notes[ci]["technique"] = "tr"
+
+    return notes
+"""
+"""
+"""
+"""

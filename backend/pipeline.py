@@ -396,7 +396,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         # 最優先: BPとMoEの融合 (F1=0.89)
         fused_notes = []
         used_moe = set()
-        for bp_n in bp_notes_list:
+        used_bp = set()
+        for i, bp_n in enumerate(bp_notes_list):
             for j, moe_n in enumerate(moe_notes_list):
                 if j in used_moe:
                     continue
@@ -407,8 +408,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     boosted["velocity"] = min(1.0, float(moe_n.get("velocity", 0.8)) * 1.2)
                     fused_notes.append(boosted)
                     used_moe.add(j)
+                    used_bp.add(i)
                     break
 
+        # MoE独自ノート (BPに一致しなかった高確信度MoEノート)
         moe_only_added = 0
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
@@ -419,6 +422,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     fused_notes.append(downgraded)
                     moe_only_added += 1
 
+        # BP独自ノート (MoEに一致しなかったBPノート)
+        # 閾値を厳しく: MoEが確認していないノートは高velocityのもののみ採用
+        # 0.3は低すぎ → 1拍6ノート超 → 3連符量子化が崩壊
+        BP_ONLY_THRESHOLD = 0.65
+        bp_only_added = 0
+        for i, bp_n in enumerate(bp_notes_list):
+            if i not in used_bp:
+                bp_vel = float(bp_n.get("velocity", 0.5))
+                if bp_vel >= BP_ONLY_THRESHOLD:
+                    bp_note = dict(bp_n)
+                    bp_note["velocity"] = min(0.85, bp_vel * 0.9)
+                    bp_note["_bp_only"] = True  # テクニック検出スキップ用フラグ
+                    fused_notes.append(bp_note)
+                    bp_only_added += 1
+
+
         fused_notes.sort(key=lambda n: (n["start"], n["pitch"]))
 
         notes = fused_notes
@@ -428,8 +447,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             "moe_notes": len(moe_notes_list),
             "fused_notes": len(notes),
             "moe_only_added": moe_only_added,
+            "bp_only_added": bp_only_added,
         }
-        report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes (一致={len(notes)-moe_only_added}, MoE独自={moe_only_added})")
+        report("notes", f"融合完了: BP={len(bp_notes_list)} + MoE={len(moe_notes_list)} → {len(notes)} notes "
+               f"(一致={len(notes)-moe_only_added-bp_only_added}, MoE独自={moe_only_added}, BP独自={bp_only_added})")
     elif moe_notes_list:
         notes = moe_notes_list
         method = "pure_moe"
@@ -497,33 +518,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("chords", f"コード検出スキップ: {e}")
 
-    # --- テクニック検出 (h/p/slide/bend) ---
-    report("technique", "テクニック検出中 (h/p/slide/bend)...")
-    try:
-        from technique_detector import detect_techniques, add_techniques_to_musicxml_notes  # type: ignore
-        t0 = time.time()
-        notes = detect_techniques(notes, bpm=bpm)
-        notes = add_techniques_to_musicxml_notes(notes)
-        tech_count = sum(1 for n in notes if n.get("technique"))
-        report("technique", f"テクニック検出完了: {tech_count}件 ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        report("technique", f"テクニック検出スキップ: {e}")
-
-    # --- Palm Mute / Harmonic 検出 ---
-    report("technique_pm", "PM/NH検出中...")
-    try:
-        from technique_classifier_cnn import annotate_techniques
-        t0 = time.time()
-        pre_techs = {i: n.get("technique") for i, n in enumerate(notes) if n.get("technique")}
-        notes = annotate_techniques(str(guitar_wav), notes, report=lambda msg: report("technique_pm", msg))
-        for i, tech in pre_techs.items():
-            if i < len(notes) and tech in ("h", "p", "/", "\\"):
-                notes[i]["technique"] = tech
-        pm_count = sum(1 for n in notes if n.get("technique") == "palm_mute")
-        nh_count = sum(1 for n in notes if n.get("technique") == "harmonic")
-        report("technique_pm", f"PM/NH検出完了: PM={pm_count}, NH={nh_count} ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        report("technique_pm", f"PM/NH検出スキップ: {e}")
 
     # --- チューニング推定 ---
     tuning_suggestion = {"tuning": tuning_name, "confidence": 0}
@@ -626,13 +620,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             notes,
             tuning=dp_tuning,
             initial_position=initial_position,
-            chords=chords,  # 音楽理論エンジン: コード情報をViterbi DPに渡す
-            audio_path=str(wav_path),  # CNN弦分類器: 音声特徴量から弦推定
-            guitar_type=guitar_type,  # ナイロン弦検出: ポジション推定・開放弦閾値調整
+            chords=None,  # 音楽理論エンジン: 一時無効化 (DB照合コストが高いため)
+            # chords=chords,  # 再有効化する場合
+            audio_path=None,  # CNN弦分類器: CQT計算が2分以上かかるため無効化
+            guitar_type=guitar_type,
         )
         report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
+        import traceback
         report("assign", f"運指最適化スキップ（元出力をそのまま使用）: {e}")
+        report("assign", f"[TRACEBACK] {traceback.format_exc()}")
 
     # --- Step: LSTM運指リファインメント ---
     # 無効化: Viterbi DPのみの方がfret 12偏重が発生せず
@@ -647,11 +644,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # except Exception as e:
     #     report("assign", f"LSTMリファインメントスキップ: {e}")
 
-    # --- フレットクランプ: ハイポジション過多を抑制 ---
-    # Viterbiは15fまでで最適化するが、出力は12fまでにクランプ
     MAX_FRET = 12
     clamp_count = 0
-    for n in notes:
+    remove_high = []
+    for idx, n in enumerate(notes):
         if n.get("fret", 0) > MAX_FRET:
             pitch = n.get("pitch", 60)
             best_str, best_fret = None, 99
@@ -664,6 +660,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 n["string"] = best_str
                 n["fret"] = best_fret
                 clamp_count += 1
+            else:
+                # どの弦でも12f以内に収まらない音 → 削除（フレット19等の異常ノート）
+                remove_high.append(idx)
+    if remove_high:
+        notes = [n for i, n in enumerate(notes) if i not in remove_high]
+        report("assign", f"フレット超過ノート削除: {len(remove_high)}件 (fret>{MAX_FRET}で配置不可)")
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
 
@@ -675,6 +677,35 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"指番号割り当て完了: {len(notes)} notes ({time.time()-t0_finger:.1f}s)")
     except Exception as e:
         report("assign", f"指番号割り当てスキップ: {e}")
+
+    # --- テクニック検出 (h/p/slide/bend) ---
+    # 弦割り当て（Viterbi DP）完了後に実行することで、
+    # 正確なstring/fret情報に基づくテクニック検出が可能
+    report("technique", "テクニック検出中 (h/p/slide/bend)...")
+    try:
+        from technique_detector import detect_techniques, add_techniques_to_musicxml_notes  # type: ignore
+        t0 = time.time()
+        # BP独自ノートはstring/fret推定精度が低いためテクニック検出対象外
+        moe_notes  = [n for n in notes if not n.get("_bp_only")]
+        bp_only_ns = [n for n in notes if n.get("_bp_only")]
+        moe_notes = detect_techniques(moe_notes, bpm=bpm, audio_path=str(wav_path))
+        moe_notes = add_techniques_to_musicxml_notes(moe_notes)
+        notes = moe_notes + bp_only_ns
+        notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+        tech_count = sum(1 for n in notes if n.get("technique") and n["technique"] != "normal")
+        report("technique", f"テクニック検出完了: {tech_count}件 (BP独自{len(bp_only_ns)}件はスキップ) ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        import traceback
+        report("technique", f"テクニック検出スキップ: {e}")
+        traceback.print_exc()
+
+    # --- Palm Mute / Harmonic 検出 ---
+    # 無効化: technique_classifier_cnn.annotate_techniquesが
+    # 音声CQT処理でパイプライン全体を数分ブロックするため。
+    # PM/NH検出はスキップし、h/p/slideのViterbiベース検出のみで十分。
+    report("technique_pm", "PM/NH検出スキップ (高速化のため無効化中)")
+
+
 
     # --- 後処理1: ノート重複除去 ---
     # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.08秒）で重複検出される場合
@@ -695,6 +726,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             dedup_count += 1
         else:
             i += 1
+    # --- Step: PDF生成 ---
+    # パイプライン中はスキップ: MuseScore(timeout=120s)とreportlab両方が
+    # パイプラインをブロックするため。PDFは /result/{id}/pdf エンドポイントで
+    # オンデマンド生成する（ユーザーがボタンを押した時のみ）。
+    report("pdf", "PDF生成スキップ (オンデマンド生成: ダウンロードボタンから取得可能)")
 
     # Pass 2 は無効化: CRNNの0.2秒間隔重複はtriplet-eighth(0.224秒)と区別できないため、
     # タイムウィンドウベースの除去は正当な音を消すリスクが高い。
@@ -787,7 +823,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             time_signature=time_signature,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
-            noise_gate=0.20,
+            noise_gate=0.10,
         )
         gp5_path = session_dir / "tab.gp5"
         with open(gp5_path, "wb") as f:
@@ -821,36 +857,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         json.dump(_to_native(tech_map), f)
 
     report("musicxml", f"TAB譜生成完了 ({time.time()-t0:.1f}s)")
-
-    # --- Step: MuseScoreによる五線譜+TAB譜PDF生成 ---
-    try:
-        report("pdf", "五線譜+TAB譜PDF生成中 (MuseScore)...")
-        t0 = time.time()
-        pdf_path = session_dir / "tab.pdf"
-
-        from musescore_renderer import MUSESCORE_EXE
-        import subprocess as sp
-        if not Path(MUSESCORE_EXE).exists():
-            raise FileNotFoundError(f"MuseScore not found: {MUSESCORE_EXE}")
-        sp.run(
-            [MUSESCORE_EXE, "-o", str(pdf_path), str(gp5_path)],
-            capture_output=True, text=True, timeout=120,
-            encoding="utf-8", errors="replace"
-        )
-        if pdf_path.exists():
-            report("pdf", f"PDF生成完了 ({time.time()-t0:.1f}s)")
-        else:
-            raise RuntimeError("PDF file was not created")
-    except Exception as e:
-        report("pdf", f"MuseScore PDF生成スキップ: {e}")
-        # フォールバック: 旧reportlabレンダラー
-        try:
-            from pdf_renderer import musicxml_to_pdf
-            pdf_path = session_dir / "tab.pdf"
-            musicxml_to_pdf(str(musicxml_path), str(pdf_path), title=title or "Guitar TAB")
-            report("pdf", f"PDF生成完了 (reportlab fallback)")
-        except Exception as e2:
-            report("pdf", f"PDF生成失敗: {e2}")
 
     return {
         "bpm": bpm,

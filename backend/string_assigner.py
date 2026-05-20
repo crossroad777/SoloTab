@@ -718,8 +718,9 @@ def _transition_cost(s: int, f: int,
         # 開放弦への移動 = 指を離すだけ → フレット差によらず固定小コスト
         cost += WEIGHTS["w_movement"] * 0.15
     elif prev_f == 0:
-        # 開放弦からの移動 = 新しくポジションを取る
-        cost += f * WEIGHTS["w_movement"] * 0.8
+        # 開放弦からの移動 = 新しくポジションを取るが、手は前のフレットに残っている可能性が高い
+        # 1次マルコフモデルの限界を補うため、過剰なペナルティを避ける
+        cost += f * WEIGHTS["w_movement"] * 0.2
     else:
         # 押弦同士の移動
         fret_diff = abs(f - prev_f)
@@ -839,7 +840,8 @@ def _ergonomic_cost_chord(combo: Tuple[Tuple[int, int], ...]) -> float:
 # =============================================================================
 
 def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
-                          max_fret: int, initial_position: float) -> List[dict]:
+                          max_fret: int, initial_position: float,
+                          guitar_type: str = 'auto') -> List[dict]:
     """
     Viterbi DPでフレーズ内の単音列の最適パスを探索する。
     和音グループはそのまま通過させ、単音のみDPで最適化する。
@@ -874,7 +876,10 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 max_prob = max(cnn_probs.values())
                 if max_prob > 0.5:  # CNNが自信を持っている場合のみ
                     pruned = [(s, f) for s, f in positions
-                              if s in cnn_probs and cnn_probs[s] >= 0.05]
+                              if f == 0 or 
+                              (str(s) in cnn_probs and cnn_probs[str(s)] >= 0.05) or 
+                              (s in cnn_probs and cnn_probs[s] >= 0.05) or
+                              (guitar_type == 'nylon' and f <= 9)]
                     if len(pruned) >= 1:
                         positions = pruned
             
@@ -965,7 +970,9 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
                 if cnn_probs and s in cnn_probs:
                     _w = groups[gi][0].get('_cnn_weight', 30.0)
-                    emission -= cnn_probs[s] * _w  # ナイロン弦時は低重み
+                    emission -= cnn_probs[s] * _w
+            if f == 0:
+                emission -= 30.0  # ナイロン弦時は低重み
                 # ⑪ ソロギター用: コードフォーム内ポジション優先
                 chord_name = groups[gi][0].get("_chord_name", "")
                 if chord_name:
@@ -1092,9 +1099,11 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
         step_cost = _position_cost(s, f) + _timbre_cost(s, f, tuning)
         # CNN弦予測ボーナス
         cnn_probs = notes[0].get('cnn_string_probs')
-        if cnn_probs and s in cnn_probs:
-            step_cost -= cnn_probs[s] * 30.0
-        mm_trellis[0][(s, f)] = (step_cost, None)
+        if cnn_probs and str(s) in cnn_probs:
+            step_cost -= float(cnn_probs[str(s)]) * 30.0
+        elif cnn_probs and s in cnn_probs:
+            step_cost -= float(cnn_probs[s]) * 30.0
+        mm_trellis[0][(s, f)] = (step_cost, step_cost, None)
     
     # Forward pass (minimax semiring)
     for i in range(1, n):
@@ -1106,15 +1115,20 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
         
         for s, f in candidates_list[i]:
             best_max_cost = float('inf')
+            best_sum_cost = float('inf')
             best_prev = None
             
             emission = _position_cost(s, f) + _timbre_cost(s, f, tuning)
             # CNN弦予測ボーナス
             cnn_probs = notes[i].get('cnn_string_probs')
-            if cnn_probs and s in cnn_probs:
-                emission -= cnn_probs[s] * 30.0
+            if cnn_probs and str(s) in cnn_probs:
+                emission -= float(cnn_probs[str(s)]) * 30.0
+            elif cnn_probs and s in cnn_probs:
+                emission -= float(cnn_probs[s]) * 30.0
+            if f == 0:
+                emission -= 30.0
             
-            for (prev_s, prev_f), (prev_max, _) in mm_trellis[i - 1].items():
+            for (prev_s, prev_f), (prev_max, prev_sum, _) in mm_trellis[i - 1].items():
                 trans = _transition_cost(s, f, prev_s, prev_f)
                 
                 # IOI制約
@@ -1125,13 +1139,16 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
                 step_cost = emission + trans
                 # Minimax: パス上の最大ステップコストを追跡
                 path_max = max(prev_max, step_cost)
+                path_sum = prev_sum + step_cost
                 
-                if path_max < best_max_cost:
+                # Tie-breaking using sum-cost
+                if path_max < best_max_cost or (path_max == best_max_cost and path_sum < best_sum_cost):
                     best_max_cost = path_max
+                    best_sum_cost = path_sum
                     best_prev = (prev_s, prev_f)
             
             if best_prev is not None:
-                mm_trellis[i][(s, f)] = (best_max_cost, best_prev)
+                mm_trellis[i][(s, f)] = (best_max_cost, best_sum_cost, best_prev)
     
     if not mm_trellis[-1]:
         return notes
@@ -1143,7 +1160,7 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     mm_path[-1] = current
     
     for i in range(n - 1, 0, -1):
-        _, prev = mm_trellis[i][current]
+        _, _, prev = mm_trellis[i][current]
         if prev is None:
             break
         mm_path[i - 1] = prev
@@ -1300,6 +1317,22 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     全組み合わせを列挙し、_score_chord でスコアリング。
     音楽理論コスト（典型フォーム一致、ルート音制約）を統合。
     """
+    # ギターは6弦までしか同時に鳴らせないので、6音を超える場合はピッチで一意にし、それでも超える場合は削る
+    if len(notes) > 6:
+        unique_pitches = set()
+        filtered_notes = []
+        for n in notes:
+            if n["pitch"] not in unique_pitches:
+                unique_pitches.add(n["pitch"])
+                filtered_notes.append(n)
+        
+        if len(filtered_notes) > 6:
+            # ベース音(最低音)とメロディ(高音)を優先して残す
+            filtered_notes.sort(key=lambda x: x["pitch"], reverse=True)
+            filtered_notes = filtered_notes[:5] + [filtered_notes[-1]]
+            
+        notes = filtered_notes
+
     # 各ノートのポジション候補を取得
     note_positions = []
     for note in notes:
@@ -1316,6 +1349,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     if total_combos > 5000:
         # 候補を3つまでに制限 (低フレット順)
         note_positions = [sorted(p, key=lambda x: x[1])[:3] for p in note_positions]
+
 
     best_combo = None
     best_score = -float('inf')
@@ -1490,7 +1524,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         # Phase 1: CNN-firstで各ノートの弦を決定
         # スチール弦のみ適用。ナイロン弦（クラシック）は多声部や開放弦伴奏が多いため、
         # 単音ごとの貪欲法（CNN-first）ではなくViterbi DP（後段）に任せる。
-        OPEN_STRING_PROB_THRESHOLD = 0.01
+        OPEN_STRING_PROB_THRESHOLD = 0.0 if estimated_position <= 2.0 else 0.01
         cnn_assigned = 0
         
         for note in notes:
@@ -1518,7 +1552,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                     sorted_strings = sorted(cnn_probs.items(), key=lambda x: -x[1])
                     assigned = False
                     for s_cand, prob in sorted_strings:
-                        pos_for_string = [(s, f) for s, f in positions if s == s_cand]
+                        pos_for_string = [(s, f) for s, f in positions if s == int(s_cand)]
                         if pos_for_string:
                             note["string"] = pos_for_string[0][0]
                             note["fret"] = pos_for_string[0][1]
@@ -1572,7 +1606,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
 
         # Viterbi DPでフレーズ全体を最適化
         phrase_result = _viterbi_single_notes(
-            phrase, tuning, max_fret, initial_position
+            phrase, tuning, max_fret, initial_position, guitar_type
         )
         result.extend(phrase_result)
 

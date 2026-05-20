@@ -252,6 +252,232 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         return map.length > 0;
     };
 
+    // ============================================================
+    // Technique Overlay — YGヤング・ギター標準記法準拠
+    // H/P = TABスタッフ最上線直上・2音中間点
+    // S/g = スライド・グリス
+    // C   = チョーキング
+    // ============================================================
+    const buildTechniqueOverlay = (api) => {
+        if (!wrapperRef.current) return;
+        const parent = wrapperRef.current.parentElement;
+        if (!parent) return;
+
+        const old = parent.querySelector('.tech-overlay');
+        if (old) old.remove();
+
+        const notes  = notesDataRef.current;
+        const beatMap = beatMapRef.current;
+        if (!notes.length || !beatMap.length) return;
+
+        // YG全37パターン完全準拠ラベル
+        // https://youngguitar.jp/guitar-articulations
+        const LABELS = {
+            // レガート系 (Ex-15〜20)
+            'h':          'H',       // ハンマリング・オン
+            'p':          'P',       // プリング・オフ
+            'tr':         'tr',      // トリル
+            '/':          'S',       // スライドアップ
+            '\\':         'S',       // スライドダウン
+            'slide_up':   'S',
+            'slide_down': 'S',
+            'gliss_up':   'g',       // グリス（1）— 目標あり
+            'gliss_down': 'g',       // グリス（2）— 目標なし
+
+            // チョーキング系 (Ex-3〜13)
+            'b':          'C',       // 1音チョーキング (Ex-3)
+            'b_half':     'H.C',     // 半音チョーキング (Ex-4)
+            'b_1half':    '1H.C',    // 1音半チョーキング (Ex-5)
+            'b_2':        '2C',      // 2音チョーキング (Ex-6)
+            'b_port':     'Port.',   // ポルタメントチョーキング (Ex-7)
+            'b_quarter':  'Q.C',     // クォーターチョーキング (Ex-8)
+            'pre_bend':   'U',       // チョークアップ/プリベンド (Ex-9)
+            'release_bend': 'D',     // チョークダウン/リリースベンド (Ex-10)
+
+            // ビブラート (Ex-14)
+            '~':          '〜',      // ビブラート（波線）
+
+            // ピッキング系 (Ex-21〜26)
+            'pm':         'M',       // パームミュート (Ex-21)
+            'palm_mute':  'M',
+            'mute':       'M',
+            'dead_note':  '×',       // ブラッシング (Ex-22)
+            'x':          '×',
+            'staccato':   '·',       // スタッカート (Ex-23)
+            'harmonic':   'N.H',     // ナチュラルハーモニクス (Ex-25)
+            'p_harmonic': 'P.H',     // ピッキングハーモニクス (Ex-26)
+
+            // タッピング・その他 (Ex-27〜29)
+            'tap':        'T',       // タッピング
+            'tapping':    'T',
+
+            // 後方互換（旧テクニック名）
+            'vibrato':    '〜',
+            'staccato':   '·',
+            'accent':     '!',
+            'let_ring':   '⌒',
+            'hammer-on':  'H',
+            'pull-off':   'P',
+            'slide':      'S',
+            'bend':       'C',
+            'trill':      'tr',
+        };
+        const COLORS = {
+            // レガート: 暖色系
+            'h': '#c0392b',          // H: 赤
+            'p': '#1a6fa8',          // P: 青
+
+            // スライド: 緑系
+            '/':          '#1e8449',
+            '\\':         '#1e8449',
+            'slide_up':   '#1e8449',
+            'slide_down': '#1e8449',
+            'gliss_up':   '#148f77',
+            'gliss_down': '#148f77',
+
+            // チョーキング全種: オレンジ系
+            'b':          '#d35400',
+            'b_half':     '#e67e22',
+            'b_1half':    '#ca6f1e',
+            'b_2':        '#a04000',
+            'b_port':     '#d35400',
+            'b_quarter':  '#f39c12',
+            'pre_bend':   '#d68910',
+            'release_bend': '#b7950b',
+
+            // ビブラート: 紫
+            '~':          '#6c3483',
+
+            // ピッキング系: グレー/黒
+            'pm':         '#555555',
+            'palm_mute':  '#555555',
+            'mute':       '#555555',
+            'dead_note':  '#222222',
+            'x':          '#222222',
+            'staccato':   '#333333',
+            'harmonic':   '#1565c0',  // N.H: 濃青
+            'p_harmonic': '#0d47a1',  // P.H: 紺
+
+            // タッピング: マゼンタ
+            'tap':        '#880e4f',
+            'tapping':    '#880e4f',
+
+            // トリル
+            'tr':         '#6c3483',
+        };
+
+        // ── TABスタッフ上端Y座標をAlphaTab BoundsLookupから取得 ──
+        // パス: boundsLookup.masterBars[i].bars[0].bars[1].visualBounds.y
+        // (bars[0]=track0, bars[0].bars[0]=score stave, bars[0].bars[1]=TAB stave)
+        const bl = api?.renderer?.boundsLookup;
+        const masterBars = bl?.masterBars ?? [];
+
+        // sysVb.y → TABスタッフ上端Y (ラベルはその8px上)
+        const tabYMap = new Map();
+        for (const mb of masterBars) {
+            const sysY = mb.visualBounds?.y;
+            if (sysY == null || tabYMap.has(sysY)) continue;
+
+            // AlphaTab 1.x: bars[track].bars[stave]
+            const tabStaveVb = mb.bars?.[0]?.bars?.[1]?.visualBounds
+                            ?? mb.bars?.[0]?.bars?.[0]?.visualBounds; // fallback: score stave
+            if (tabStaveVb?.y != null) {
+                // 直接TABスタッフ上端から8px上
+                tabYMap.set(sysY, tabStaveVb.y - 8);
+            } else {
+                // フォールバック: ratio 0.77 = TABライン上端より25px上 = スラー弧頂点
+                tabYMap.set(sysY, sysY + (mb.visualBounds?.h ?? 0) * 0.77);
+            }
+        }
+
+        // beatのvb.yからシステムY→TAB Yを解決
+        const getTabY = (vbY, vbH) => {
+            // exact match
+            if (tabYMap.has(vbY)) return tabYMap.get(vbY);
+            // find nearest system
+            let best = null, bestDist = Infinity;
+            for (const [sy] of tabYMap) {
+                const d = Math.abs(sy - vbY);
+                if (d < bestDist) { bestDist = d; best = sy; }
+            }
+            return best != null ? tabYMap.get(best) : (vbY + vbH * 0.77);
+        };
+
+
+
+        const overlay = document.createElement('div');
+        overlay.className = 'tech-overlay';
+        overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;';
+
+        const techNotes = notes.filter(n => LABELS[n.technique]);
+        const usedKeys  = new Set();
+
+        for (const note of techNotes) {
+            const noteMs = note.start * 1000;
+
+            // 開始ビート
+            let beatS = null, dS = 300;
+            for (const b of beatMap) {
+                const d = Math.abs(b.startMs - noteMs);
+                if (d < dS) { dS = d; beatS = b; }
+            }
+            if (!beatS) continue;
+
+            // 重複排除
+            const key = `${Math.round(beatS.vb.x / 5) * 5}_${note.technique}`;
+            if (usedKeys.has(key)) continue;
+            usedKeys.add(key);
+
+            // YG準拠 X: 2音中間点
+            // 同弦・0.8秒以内の次ノートを探してペアにする
+            const nextNote = notes.find(n2 =>
+                n2 !== note &&
+                n2.string === note.string &&
+                n2.start > note.start &&
+                n2.start - note.start < 0.8
+            );
+            let beatE = beatS;
+            if (nextNote) {
+                const nMs = nextNote.start * 1000;
+                let dE = 500;
+                for (const b of beatMap) {
+                    const d = Math.abs(b.startMs - nMs);
+                    if (d < dE) { dE = d; beatE = b; }
+                }
+            }
+            const xS = beatS.vb.x + beatS.vb.w * 0.5;
+            const xE = beatE.vb.x + beatE.vb.w * 0.5;
+            const x  = (xS + xE) / 2;
+
+            // YG準拠 Y: TABスタッフ上端直上
+            const y = getTabY(beatS.vb.y, beatS.vb.h);
+
+            const el = document.createElement('span');
+            el.textContent = LABELS[note.technique];
+            el.style.cssText = [
+                'position:absolute',
+                `left:${x}px`,
+                `top:${y}px`,
+                'font-size:11px',
+                'font-weight:bold',
+                'font-style:italic',
+                `color:${COLORS[note.technique] || '#c0392b'}`,
+                'font-family:Arial,sans-serif',
+                'transform:translate(-50%,-100%)',  // ラベル下端をYに合わせる
+                'white-space:nowrap',
+                'line-height:1',
+                'text-shadow:0 0 3px #fff,0 0 3px #fff',
+                'pointer-events:none',
+                'user-select:none',
+            ].join(';');
+            overlay.appendChild(el);
+        }
+
+        parent.appendChild(overlay);
+        console.log(`[TechOverlay] ${overlay.childElementCount} labels placed`);
+    };
+
+
     const findBeat = (audioMs) => {
         const map = beatMapRef.current;
         if (!map || !map.length) return null;
@@ -283,6 +509,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         let destroyed = false;
         boundsReadyRef.current = false;
         beatMapRef.current = [];
+
+        // Clear technique overlay
+        if (wrapperRef.current?.parentElement) {
+            const old = wrapperRef.current.parentElement.querySelector('.tech-overlay');
+            if (old) old.remove();
+        }
 
         // Destroy old API
         if (apiRef.current) {
@@ -521,8 +753,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         if (destroyed || boundsReadyRef.current) return;
                         const ok = buildBeatMap(api);
                         boundsReadyRef.current = ok;
-                        if (ok) console.log("[TabView] BeatMap ready");
-                        else if (attempt < 4) {
+                        if (ok) {
+                            console.log("[TabView] BeatMap ready");
+                            // buildTechniqueOverlay(api); // 無効化: AlphaTabがGP5から直接描画
+                        } else if (attempt < 4) {
                             setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
                         }
                     };

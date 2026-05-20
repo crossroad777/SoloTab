@@ -13,7 +13,7 @@ export default function SoloTabApp() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
-  const [noiseGate, setNoiseGate] = useState(0.20);
+  const [noiseGate, setNoiseGate] = useState(0.10);
   const [loopA, setLoopA] = useState(null);
   const [loopB, setLoopB] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -115,7 +115,7 @@ export default function SoloTabApp() {
         detectedCapo: result.capo || 0,
         audioUrl: `${API_BASE}/files/${sid}/converted.wav`,
       });
-      if (result.capo > 0) setCapo(result.capo);
+      // カポは自動適用しない: ユーザーが手動で選択する
       if (result.noise_gate !== null && result.noise_gate !== undefined) setNoiseGate(result.noise_gate);
       setStatus(STATUS.COMPLETED);
     } catch {
@@ -179,7 +179,7 @@ export default function SoloTabApp() {
         fileName: result.filename || prev?.fileName,
         audioUrl: prev?.audioUrl || `${API_BASE}/files/${sid}/converted.wav`,
       }));
-      if (result.capo > 0) setCapo(result.capo);
+      // カポは自動適用しない: ユーザーが手動で選択する
       setStatus(STATUS.COMPLETED);
     } catch {
       setStatus(STATUS.FAILED);
@@ -241,7 +241,7 @@ export default function SoloTabApp() {
       const res = await fetch(`${API_BASE}/upload/youtube`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urlToUse.trim() }),
+        body: JSON.stringify({ url: urlToUse.trim(), guitar_type: guitarType }),
       });
       if (!res.ok) throw new Error("YouTube upload failed");
       const data = await res.json();
@@ -844,18 +844,45 @@ export default function SoloTabApp() {
                   <span style={{ fontSize: '9px', marginTop: '4px', fontWeight: 'bold' }}>ループ{loopA !== null && loopB === null ? ' (A)' : ''}</span>
                 </button>
 
-                {/* ======= NEW: NOISE CUT SLIDER ======= */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '0 10px', minWidth: '160px' }} title="AIのノイズ除去レベル。右にするほど細かい倍音ノイズが消えてシンプルになります">
+                {/* ======= NOISE CUT SLIDER ======= */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '0 10px', minWidth: '180px' }} title="AIのノイズ除去レベル。右にするほど低velocity音が消えてシンプルになります">
                   <span style={{ fontSize: '9px', color: '#a0a0a5', fontWeight: 'bold', marginBottom: '2px' }}>CUT: {Math.round(noiseGate * 100)}%</span>
-                  <input 
-                    type="range" min="0" max="0.8" step="0.05" 
-                    value={noiseGate} 
-                    onChange={(e) => setNoiseGate(parseFloat(e.target.value))}
-                    onMouseUp={(e) => handleRetune(null, null, parseFloat(e.target.value))}
-                    onTouchEnd={(e) => handleRetune(null, null, parseFloat(e.target.value))}
-                    style={{ width: '130px', accentColor: '#4da6ff', cursor: 'pointer' }}
-                  />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="range" min="0" max="0.8" step="0.05"
+                      value={noiseGate}
+                      onChange={(e) => setNoiseGate(parseFloat(e.target.value))}
+                      style={{ width: '100px', accentColor: '#4da6ff', cursor: 'pointer' }}
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!session?.id) return;
+                        try {
+                          const res = await fetch(`${API_BASE}/result/${session.id}/cut`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ noise_gate: noiseGate }),
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setSession(prev => ({ ...prev, totalNotes: data.total_notes }));
+                            await new Promise(r => setTimeout(r, 300));
+                            setRetuneKey(k => k + 1);
+                            _showToast(`CUT ${Math.round(noiseGate * 100)}% 適用`);
+                          }
+                        } catch (err) { console.error('CUT failed:', err); }
+                      }}
+                      style={{
+                        padding: '2px 8px', borderRadius: 6, border: 'none',
+                        background: noiseGate > 0 ? '#4da6ff' : '#334155',
+                        color: 'white', fontSize: 10, fontWeight: 700,
+                        cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}
+                    >適用</button>
+                  </div>
                 </div>
+
+
               </div>
             </div>
 

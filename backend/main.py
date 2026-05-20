@@ -167,6 +167,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── 静的ファイル配信 ──────────────────────────────────────────────────
+# gprotab_downloads: 本物のGP5ファイル群（検証・学習用）
+# http://localhost:8001/gprotab/{filename}
+from fastapi.staticfiles import StaticFiles
+
+_gprotab_dir = PROJECT_ROOT / "gprotab_downloads"
+if _gprotab_dir.exists():
+    app.mount("/gprotab", StaticFiles(directory=str(_gprotab_dir)), name="gprotab")
+    print(f"[SoloTab] GP files served: /gprotab/ -> {_gprotab_dir}")
+
+# backend/uploads: セッションファイル（GP5/JSON）
+_backend_uploads = PROJECT_ROOT / "backend" / "uploads"
+if _backend_uploads.exists():
+    app.mount("/backend-uploads", StaticFiles(directory=str(_backend_uploads)), name="backend-uploads")
+    print(f"[SoloTab] Backend uploads served: /backend-uploads/ -> {_backend_uploads}")
+
+# プロジェクトルート: test_techniques_verify.html等
+app.mount("/verify", StaticFiles(directory=str(PROJECT_ROOT), html=True), name="verify")
+print(f"[SoloTab] Verify page served: /verify/ -> {PROJECT_ROOT}")
+
 
 
 # --- Session Management ---
@@ -223,6 +243,7 @@ def load_all_sessions():
 class YouTubeRequest(BaseModel):
     url: str
     tuning: str = "standard"
+    guitar_type: str = "auto"
 
 class UploadResponse(BaseModel):
     session_id: str
@@ -384,6 +405,7 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
         "progress": "YouTube音声をダウンロード中...",
         "error": None,
         "tuning": request.tuning if request.tuning in TUNINGS else "standard",
+        "guitar_type": request.guitar_type if request.guitar_type in ("auto", "steel", "nylon") else "auto",
     }
     save_session(session_id)
 
@@ -531,6 +553,8 @@ async def stream_status(session_id: str):
             if progress_key != last_progress:
                 yield f"data: {json.dumps(current, ensure_ascii=False)}\n\n"
                 last_progress = progress_key
+            else:
+                yield ": keep-alive\n\n"
 
             if current["status"] in ("completed", "failed"):
                 if current["status"] == "failed":
@@ -892,10 +916,39 @@ def _regenerate_musicxml(session_id: str, notes: list,
     return xml_content, tech_map
 
 
+class CutRequest(BaseModel):
+    noise_gate: float = 0.0
+
+
+@app.post("/result/{session_id}/cut")
+async def cut_noise(session_id: str, request: CutRequest):
+    """ノイズゲート(CUT)のみ変更 — 弦割り当て再実行なし、GP5のみ再生成（高速）"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    s = sessions[session_id]
+    session_dir = Path(s["session_dir"])
+    assigned_path = session_dir / "notes_assigned.json"
+    if not assigned_path.exists():
+        raise HTTPException(status_code=404, detail="Notes not found")
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        notes = json.load(f)
+    if isinstance(notes, dict):
+        notes = notes.get("notes", [])
+
+    _regenerate_musicxml(session_id, notes, noise_gate=request.noise_gate)
+    s["noise_gate"] = request.noise_gate
+
+    from gp_renderer import _filter_noise
+    filtered_count = len(_filter_noise(notes, request.noise_gate))
+    s["total_notes"] = filtered_count
+    save_session(session_id)
+    return {"status": "ok", "noise_gate": request.noise_gate, "total_notes": filtered_count}
+
+
 class RetuneRequest(BaseModel):
     tuning: str
     capo: Optional[int] = 0
-    noise_gate: Optional[float] = 0.30
+    noise_gate: Optional[float] = 0.0  # デフォルト0（CUTなし）
 
 
 @app.post("/result/{session_id}/retune")
