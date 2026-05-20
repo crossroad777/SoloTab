@@ -279,6 +279,9 @@ async def upload_audio(file: UploadFile = File(...),
                        skip_demucs: bool = Form(False),
                        fast_moe: bool = Form(True),
                        guitar_type: str = Form("auto"),
+                       enable_technique_gp5: bool = Form(False),
+                       enable_technique_overlay: bool = Form(False),
+                       enable_technique_fingers: bool = Form(False),
                        background_tasks: BackgroundTasks = None):
     """音声ファイルをアップロードして解析開始"""
     session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -315,6 +318,9 @@ async def upload_audio(file: UploadFile = File(...),
         "skip_demucs": skip_demucs,
         "fast_moe": fast_moe,
         "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
+        "enable_technique_gp5": enable_technique_gp5,
+        "enable_technique_overlay": enable_technique_overlay,
+        "enable_technique_fingers": enable_technique_fingers,
     }
     save_session(session_id)
 
@@ -504,6 +510,9 @@ def _run_pipeline_bg(session_id: str):
             skip_demucs=session.get("skip_demucs", False),
             fast_moe=session.get("fast_moe", True),
             guitar_type=session.get("guitar_type", "auto"),
+            enable_technique_gp5=session.get("enable_technique_gp5", False),
+            enable_technique_overlay=session.get("enable_technique_overlay", False),
+            enable_technique_fingers=session.get("enable_technique_fingers", False),
         )
 
         session["status"] = SessionStatus.COMPLETED

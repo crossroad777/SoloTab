@@ -148,7 +148,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  progress_cb: Optional[Callable] = None,
                  skip_demucs: bool = False,
                  fast_moe: bool = True,
-                 guitar_type: str = "auto"):
+                 guitar_type: str = "auto",
+                 enable_technique_gp5: bool = False,
+                 enable_technique_overlay: bool = False,
+                 enable_technique_fingers: bool = False):
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
@@ -706,21 +709,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     report("technique_pm", "PM/NH検出スキップ (高速化のため無効化中)")
 
     # --- テクニック情報に基づく指番号の微調整 ---
-    try:
-        from finger_assigner import _apply_technique_constraints
-        # technique_detector が note['technique'] に設定するので _technique に変換
-        for n in notes:
-            tech = n.get('technique', 'normal')
-            if tech and tech != 'normal':
-                n['_technique'] = tech
-        tech_fixes = _apply_technique_constraints(notes)
-        # cleanup
-        for n in notes:
-            n.pop('_technique', None)
-        if tech_fixes > 0:
-            report("assign", f"テクニック反映指修正: {tech_fixes}件")
-    except Exception as e:
-        report("assign", f"テクニック指修正スキップ: {e}")
+    if enable_technique_fingers:
+        try:
+            from finger_assigner import _apply_technique_constraints
+            # technique_detector が note['technique'] に設定するので _technique に変換
+            for n in notes:
+                tech = n.get('technique', 'normal')
+                if tech and tech != 'normal':
+                    n['_technique'] = tech
+            tech_fixes = _apply_technique_constraints(notes)
+            # cleanup
+            for n in notes:
+                n.pop('_technique', None)
+            if tech_fixes > 0:
+                report("assign", f"テクニック反映指修正: {tech_fixes}件")
+        except Exception as e:
+            report("assign", f"テクニック指修正スキップ: {e}")
+    else:
+        report("assign", "テクニック指修正: OFF（トグル無効）")
 
 
 
@@ -841,6 +847,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
             noise_gate=0.10,
+            include_techniques=enable_technique_gp5,
         )
         gp5_path = session_dir / "tab.gp5"
         with open(gp5_path, "wb") as f:
@@ -888,6 +895,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         "effective_key": capo_result.get("effective_key", detected_key),
         "suggested_tuning": tuning_suggestion.get("tuning", tuning_name),
         "tuning_confidence": tuning_suggestion.get("confidence", 0),
+        "enable_technique_gp5": enable_technique_gp5,
+        "enable_technique_overlay": enable_technique_overlay,
+        "enable_technique_fingers": enable_technique_fingers,
     }
 
 if __name__ == "__main__":

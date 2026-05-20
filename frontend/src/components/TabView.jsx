@@ -755,7 +755,14 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         boundsReadyRef.current = ok;
                         if (ok) {
                             console.log("[TabView] BeatMap ready");
-                            // buildTechniqueOverlay(api); // 無効化: AlphaTabがGP5から直接描画
+                            // テクニックオーバーレイ: localStorageのトグルで制御
+                            try {
+                                const overlayEnabled = localStorage.getItem('solotab-tech-overlay') === 'true';
+                                if (overlayEnabled) {
+                                    buildTechniqueOverlay(api);
+                                    console.log("[TabView] Technique overlay enabled");
+                                }
+                            } catch (e) { console.warn("[TabView] Overlay check:", e); }
                         } else if (attempt < 4) {
                             setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
                         }

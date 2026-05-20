@@ -26,6 +26,15 @@ export default function SoloTabApp() {
   const [toast, setToast] = useState(null);
   const [soloGuitar, setSoloGuitar] = useState(true);
   const [guitarType, setGuitarType] = useState("auto");
+  const [techGp5, setTechGp5] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-gp5') === 'true'; } catch { return false; }
+  });
+  const [techOverlay, setTechOverlay] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-overlay') === 'true'; } catch { return false; }
+  });
+  const [techFingers, setTechFingers] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-fingers') === 'true'; } catch { return false; }
+  });
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
@@ -216,6 +225,9 @@ export default function SoloTabApp() {
     formData.append("skip_demucs", soloGuitar);
     formData.append("fast_moe", "true");
     formData.append("guitar_type", guitarType);
+    formData.append("enable_technique_gp5", techGp5);
+    formData.append("enable_technique_overlay", techOverlay);
+    formData.append("enable_technique_fingers", techFingers);
     try {
       const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
@@ -541,6 +553,34 @@ export default function SoloTabApp() {
               </select>
             </div>
 
+            {/* Technique Toggles (Experimental) */}
+            <div onClick={(e) => e.stopPropagation()} style={{
+              display: 'flex', flexDirection: 'column', gap: 4, margin: '12px auto 0',
+              fontSize: '0.8rem', color: 'var(--st-text-dim)',
+              userSelect: 'none', width: 'fit-content',
+              padding: '8px 12px', borderRadius: 8,
+              background: 'var(--st-surface-2)', border: '1px solid var(--st-border)',
+            }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--st-accent)', marginBottom: 2 }}>🧪 テクニック表示（実験的）</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techGp5}
+                  onChange={(e) => { setTechGp5(e.target.checked); localStorage.setItem('solotab-tech-gp5', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                TABに記号書込 (H/P/S/C)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techOverlay}
+                  onChange={(e) => { setTechOverlay(e.target.checked); localStorage.setItem('solotab-tech-overlay', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                オーバーレイ表示
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techFingers}
+                  onChange={(e) => { setTechFingers(e.target.checked); localStorage.setItem('solotab-tech-fingers', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                テクニック連動指修正
+              </label>
+            </div>
 
             {status === STATUS.FAILED && (
               <div className="error-message" style={{ marginTop: 16 }}>

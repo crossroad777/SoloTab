@@ -27,6 +27,7 @@ def notes_to_gp5(notes: List[dict], *,
                  noise_gate: float = 0.0,
                  rhythm_info: dict | None = None,
                  key_signature: str = "C",
+                 include_techniques: bool = True,
                  **kwargs) -> bytes:
     """
     ノートデータからGP5バイナリを生成する。
@@ -291,9 +292,9 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
             # ═══════════════════════════════════════════════════════════
             # YG全37パターン完全準拠 GP5テクニックエンコード
-            # PyGuitarPro API確認済み (2026-05) × AlphaTab 1.x 検証済み
+            # include_techniques=False の場合はスキップ
             # ═══════════════════════════════════════════════════════════
-            tech = entry.get("technique")
+            tech = entry.get("technique") if include_techniques else None
 
             # ── 1. レガート系 ──────────────────────────────────────────
             if tech in ("h", "hammer-on", "hammer_on"):
