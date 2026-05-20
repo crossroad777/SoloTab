@@ -528,5 +528,9 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output model path (default: models/technique_cnn.pth)")
     args = parser.parse_args()
+    if args.output:
+        MODEL_SAVE_PATH = Path(args.output)
     train(args)
