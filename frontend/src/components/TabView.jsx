@@ -313,7 +313,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
             // 後方互換（旧テクニック名）
             'vibrato':    '〜',
-            'staccato':   '·',
             'accent':     '!',
             'let_ring':   '⌒',
             'hammer-on':  'H',
