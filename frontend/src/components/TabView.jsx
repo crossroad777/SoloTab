@@ -509,8 +509,28 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     // ============================================================
-    // Chord Overlay — コード名をスコア上部に表示
+    // Chord Overlay — コード名をスコア上部に表示（カポ移調対応）
     // ============================================================
+    const NOTES_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const NOTES_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+    const transposeChord = (chordName, semitones) => {
+        if (!semitones || semitones === 0) return chordName;
+        // Parse: root (+ optional # or b) + quality
+        const m = chordName.match(/^([A-G][#b]?)(.*)/);
+        if (!m) return chordName;
+        const root = m[1];
+        const quality = m[2]; // m, 7, maj7, dim, sus4, etc.
+        // Find root index
+        let idx = NOTES_SHARP.indexOf(root);
+        if (idx < 0) idx = NOTES_FLAT.indexOf(root);
+        if (idx < 0) return chordName;
+        // Transpose down by semitones (capo raises pitch, so shape is lower)
+        const useFlat = root.includes('b');
+        const newIdx = ((idx - semitones) % 12 + 12) % 12;
+        const newRoot = useFlat ? NOTES_FLAT[newIdx] : NOTES_SHARP[newIdx];
+        return newRoot + quality;
+    };
+
     const buildChordOverlay = (api) => {
         if (!wrapperRef.current) return;
         const parent = wrapperRef.current.parentElement;
@@ -535,10 +555,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         for (const mb of masterBars) {
             const sysY = mb.visualBounds?.y;
             if (sysY == null || scoreYMap.has(sysY)) continue;
-            // スコアスタッフ(bars[0].bars[0])の上端
             const scoreVb = mb.bars?.[0]?.bars?.[0]?.visualBounds;
             if (scoreVb?.y != null) {
-                scoreYMap.set(sysY, scoreVb.y - 18); // スコア上端の18px上にコード名
+                scoreYMap.set(sysY, scoreVb.y - 18);
             } else {
                 scoreYMap.set(sysY, sysY - 4);
             }
@@ -553,6 +572,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             }
             return best != null ? scoreYMap.get(best) : (vbY - 4);
         };
+
+        // カポ値を取得
+        const currentCapo = capo || 0;
 
         let lastChord = '';
         let lastX = -100;
@@ -573,13 +595,16 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             const x = beatEntry.vb.x + 4;
             const y = getScoreY(beatEntry.vb.y);
 
+            // カポ移調: 原曲コードからカポ分だけ下げる
+            const displayChord = transposeChord(chord.chord, currentCapo);
+
             // 同じコードが近い位置に連続しないようフィルタ
-            if (chord.chord === lastChord && Math.abs(x - lastX) < 60) continue;
-            lastChord = chord.chord;
+            if (displayChord === lastChord && Math.abs(x - lastX) < 60) continue;
+            lastChord = displayChord;
             lastX = x;
 
             const el = document.createElement('span');
-            el.textContent = chord.chord;
+            el.textContent = displayChord;
             el.style.cssText = [
                 'position:absolute',
                 `left:${x}px`,
@@ -598,7 +623,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         }
 
         parent.appendChild(overlay);
-        console.log(`[ChordOverlay] ${overlay.childElementCount} chord labels placed`);
+        console.log(`[ChordOverlay] ${overlay.childElementCount} chords (capo=${currentCapo})`);
     };
 
     const findBeat = (audioMs) => {
