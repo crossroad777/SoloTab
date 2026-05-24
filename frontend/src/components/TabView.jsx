@@ -18,6 +18,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const playingRef = useRef(false);
     const initKeyRef = useRef(null);
     const beatsDataRef = useRef([]);
+    const chordsDataRef = useRef([]);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -507,6 +508,99 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         console.log(`[TechOverlay] ${overlay.childElementCount} labels placed`);
     };
 
+    // ============================================================
+    // Chord Overlay — コード名をスコア上部に表示
+    // ============================================================
+    const buildChordOverlay = (api) => {
+        if (!wrapperRef.current) return;
+        const parent = wrapperRef.current.parentElement;
+        if (!parent) return;
+
+        // 既存のコードオーバーレイを削除
+        const old = parent.querySelector('.chord-overlay');
+        if (old) old.remove();
+
+        const chords = chordsDataRef.current;
+        const beatMap = beatMapRef.current;
+        if (!chords.length || !beatMap.length) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'chord-overlay';
+        overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:14;';
+
+        // スコアスタッフ上端Yを取得
+        const bl = api?.renderer?.boundsLookup;
+        const masterBars = bl?.masterBars ?? [];
+        const scoreYMap = new Map();
+        for (const mb of masterBars) {
+            const sysY = mb.visualBounds?.y;
+            if (sysY == null || scoreYMap.has(sysY)) continue;
+            // スコアスタッフ(bars[0].bars[0])の上端
+            const scoreVb = mb.bars?.[0]?.bars?.[0]?.visualBounds;
+            if (scoreVb?.y != null) {
+                scoreYMap.set(sysY, scoreVb.y - 18); // スコア上端の18px上にコード名
+            } else {
+                scoreYMap.set(sysY, sysY - 4);
+            }
+        }
+
+        const getScoreY = (vbY) => {
+            if (scoreYMap.has(vbY)) return scoreYMap.get(vbY);
+            let best = null, bestDist = Infinity;
+            for (const [sy] of scoreYMap) {
+                const d = Math.abs(sy - vbY);
+                if (d < bestDist) { bestDist = d; best = sy; }
+            }
+            return best != null ? scoreYMap.get(best) : (vbY - 4);
+        };
+
+        let lastChord = '';
+        let lastX = -100;
+
+        for (const chord of chords) {
+            if (!chord.chord || chord.chord === 'N.C.') continue;
+
+            const chordMs = chord.start * 1000;
+
+            // BeatMapから位置を検索
+            let beatEntry = null, bestDist = 500;
+            for (const b of beatMap) {
+                const d = Math.abs(b.startMs - chordMs);
+                if (d < bestDist) { bestDist = d; beatEntry = b; }
+            }
+            if (!beatEntry) continue;
+
+            const x = beatEntry.vb.x + 4;
+            const y = getScoreY(beatEntry.vb.y);
+
+            // 同じコードが近い位置に連続しないようフィルタ
+            if (chord.chord === lastChord && Math.abs(x - lastX) < 60) continue;
+            lastChord = chord.chord;
+            lastX = x;
+
+            const el = document.createElement('span');
+            el.textContent = chord.chord;
+            el.style.cssText = [
+                'position:absolute',
+                `left:${x}px`,
+                `top:${y}px`,
+                'font-size:12px',
+                'font-weight:bold',
+                'color:#3b82f6',
+                'font-family:Arial,Helvetica,sans-serif',
+                'white-space:nowrap',
+                'line-height:1',
+                'text-shadow:0 0 3px rgba(0,0,0,0.7),0 0 3px rgba(0,0,0,0.7)',
+                'pointer-events:none',
+                'user-select:none',
+                'letter-spacing:0.5px',
+            ].join(';');
+            overlay.appendChild(el);
+        }
+
+        parent.appendChild(overlay);
+        console.log(`[ChordOverlay] ${overlay.childElementCount} chord labels placed`);
+    };
 
     const findBeat = (audioMs) => {
         const map = beatMapRef.current;
@@ -599,9 +693,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 // ノートデータ + beatsデータを取得（カーソル同期用）
                 try {
-                    const [notesRes, beatsRes] = await Promise.all([
+                    const [notesRes, beatsRes, chordsRes] = await Promise.all([
                         fetch(`${apiBase}/result/${sessionId}/notes`),
                         fetch(`${apiBase}/files/${sessionId}/beats.json`),
+                        fetch(`${apiBase}/files/${sessionId}/chords.json`),
                     ]);
                     if (notesRes.ok) {
                         const notesData = await notesRes.json();
@@ -614,6 +709,11 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         if (beats.length > 0 && typeof beats[0] === 'object') beats = beats.map(b => b.time);
                         beatsDataRef.current = beats;
                         console.log(`[TabView] Loaded ${beats.length} beats for piecewise cursor sync`);
+                    }
+                    if (chordsRes && chordsRes.ok) {
+                        const chordsData = await chordsRes.json();
+                        chordsDataRef.current = Array.isArray(chordsData) ? chordsData : [];
+                        console.log(`[TabView] Loaded ${chordsDataRef.current.length} chords`);
                     }
                 } catch { /* ignore */ }
 
@@ -803,6 +903,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     console.log("[TabView] Technique overlay enabled");
                                 }
                             } catch (e) { console.warn("[TabView] Overlay check:", e); }
+                            // コードオーバーレイ: 常に表示
+                            try {
+                                buildChordOverlay(api);
+                            } catch (e) { console.warn("[TabView] Chord overlay:", e); }
                         } else if (attempt < 4) {
                             setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
                         }
