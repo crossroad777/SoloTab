@@ -1208,20 +1208,7 @@ export default function SoloTabApp() {
                     <button
                       onClick={async () => {
                         if (!session?.id) return;
-                        try {
-                          const res = await fetch(`${API_BASE}/result/${session.id}/cut`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ noise_gate: noiseGate }),
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            setSession(prev => ({ ...prev, totalNotes: data.total_notes }));
-                            await new Promise(r => setTimeout(r, 300));
-                            setRetuneKey(k => k + 1);
-                            _showToast(`CUT ${Math.round(noiseGate * 100)}% 適用`);
-                          }
-                        } catch (err) { console.error('CUT failed:', err); }
+                        handleRetune(null, null, noiseGate);
                       }}
                       style={{
                         padding: '2px 8px', borderRadius: 6, border: 'none',
