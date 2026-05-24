@@ -703,10 +703,11 @@ async def get_gp5(session_id: str):
         cd = f'attachment; filename="{safe_filename}"'
     except UnicodeEncodeError:
         cd = f"attachment; filename*=UTF-8''{quote(safe_filename)}"
-    return FileResponse(
-        str(gp5_path),
+    from starlette.responses import Response
+    gp5_bytes = gp5_path.read_bytes()
+    return Response(
+        content=gp5_bytes,
         media_type="application/octet-stream",
-        stat_result=False,
         headers={
             "Content-Disposition": cd,
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
