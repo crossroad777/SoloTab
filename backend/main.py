@@ -35,6 +35,10 @@ import logging
 logging.getLogger().setLevel(logging.ERROR)
 # uvicornのロガーは独立なので影響なし
 
+# TensorFlow oneDNN警告を抑制
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 # プロジェクトルート
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -147,6 +151,21 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             loaded.append(f"CNN-Str FAIL: {e}")
 
+        # --- 6. BasicPitch ONNX (~2s, CPU) ---
+        try:
+            t0 = time.time()
+            from basic_pitch.inference import predict as bp_predict, Model as BPModel
+            import basic_pitch
+            onnx_model_path = os.path.join(
+                os.path.dirname(basic_pitch.__file__),
+                'saved_models', 'icassp_2022', 'nmp.onnx'
+            )
+            if os.path.exists(onnx_model_path):
+                _bp_model = BPModel(onnx_model_path)
+            loaded.append(f"BasicPitch ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            loaded.append(f"BasicPitch FAIL: {e}")
+
         print(f"[Preload] All models ready in {time.time()-t_total:.1f}s: {', '.join(loaded)}", flush=True)
 
     threading.Thread(target=_preload_all, daemon=True).start()
@@ -257,6 +276,7 @@ class StatusResponse(BaseModel):
     progress: Optional[str] = None
     error: Optional[str] = None
     filename: Optional[str] = None
+    steps_done: int = 0
 
 class ResultResponse(BaseModel):
     session_id: str
@@ -279,6 +299,9 @@ async def upload_audio(file: UploadFile = File(...),
                        skip_demucs: bool = Form(False),
                        fast_moe: bool = Form(True),
                        guitar_type: str = Form("auto"),
+                       enable_technique_gp5: bool = Form(False),
+                       enable_technique_overlay: bool = Form(False),
+                       enable_technique_fingers: bool = Form(False),
                        background_tasks: BackgroundTasks = None):
     """音声ファイルをアップロードして解析開始"""
     session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -315,6 +338,9 @@ async def upload_audio(file: UploadFile = File(...),
         "skip_demucs": skip_demucs,
         "fast_moe": fast_moe,
         "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
+        "enable_technique_gp5": enable_technique_gp5,
+        "enable_technique_overlay": enable_technique_overlay,
+        "enable_technique_fingers": enable_technique_fingers,
     }
     save_session(session_id)
 
@@ -466,22 +492,25 @@ def _run_pipeline_bg(session_id: str):
     wav_path = Path(session["wav_path"])
     tuning_name = session.get("tuning", "standard")
 
-    # パイプライン内部ステップ → フロントエンド5ステップのマッピング
     STEP_MAP = {
         "beats": 1, "key": 1, "capo": 1,
-        "demucs": 2, "preprocess": 2,
+        "demucs": 1, "preprocess": 1,
+        "parallel": 2,
         "notes": 2, "spectral": 2,
         "filter": 3, "assign": 3, "note_filter": 3, "quantize": 3,
-        "technique": 3, "technique_pm": 3, "tuning_detect": 3, "chords": 3,
-        "musicxml": 4,
+        "technique": 3, "technique_pm": 3, "technique_cnn": 3,
+        "tuning_detect": 3, "chords": 3, "theory": 3,
+        "musicxml": 4, "pdf": 4,
     }
 
     def progress_cb(step: str, msg: str):
         session["progress"] = msg
         session["_current_step"] = step
-        # steps_done = 完了済みフロントエンドステップ数
+        # steps_done only increases (never regresses) — critical for parallel execution
         mapped = STEP_MAP.get(step, session.get("steps_done", 0))
-        session["steps_done"] = mapped
+        current = session.get("steps_done", 0)
+        if mapped > current:
+            session["steps_done"] = mapped
 
     try:
         session["status"] = SessionStatus.PROCESSING
@@ -504,6 +533,9 @@ def _run_pipeline_bg(session_id: str):
             skip_demucs=session.get("skip_demucs", False),
             fast_moe=session.get("fast_moe", True),
             guitar_type=session.get("guitar_type", "auto"),
+            enable_technique_gp5=session.get("enable_technique_gp5", False),
+            enable_technique_overlay=session.get("enable_technique_overlay", False),
+            enable_technique_fingers=session.get("enable_technique_fingers", False),
         )
 
         session["status"] = SessionStatus.COMPLETED
@@ -582,6 +614,7 @@ async def get_status(session_id: str):
         progress=s.get("progress"),
         error=s.get("error"),
         filename=s.get("filename"),
+        steps_done=s.get("steps_done", 0),
     )
 
 

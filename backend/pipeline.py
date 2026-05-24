@@ -148,7 +148,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  progress_cb: Optional[Callable] = None,
                  skip_demucs: bool = False,
                  fast_moe: bool = True,
-                 guitar_type: str = "auto"):
+                 guitar_type: str = "auto",
+                 enable_technique_gp5: bool = False,
+                 enable_technique_overlay: bool = False,
+                 enable_technique_fingers: bool = False):
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
@@ -157,94 +160,162 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         except UnicodeEncodeError:
             print(f"[{session_id}] [{step}] {msg.encode('ascii', 'replace').decode()}")
 
-    print(f"DEBUG: run_pipeline started. session_id: {session_id}, session_dir: {session_dir}")
     tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
     tuning_pitches = _get_open_string_pitches(tuning)
 
-    # --- Step 1: Beat Detection ---
-    report("beats", "ビート検出中...")
-    t0 = time.time()
-    try:
-        beat_result = detect_beats(str(wav_path))
-    except Exception as e:
-        report("beats", f"[FAIL] ビート検出致命的エラー: {e}")
-        # フォールバック: 空の値を返して続行を試みるか、あるいは明示的に例外を投げる
-        import traceback
-        traceback.print_exc()
-        raise RuntimeError(f"Beat detection failed: {e}. Please check if ffmpeg is installed and in PATH.")
+    # --- PARALLEL PHASE: Beat/Key + Note Detection ---
+    # Beat detection and note detection are independent.
+    # We run them concurrently to save ~15-20 seconds.
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
 
-    beats = beat_result["beats"]
-    bpm = beat_result["bpm"]
-    time_signature = beat_result.get("time_signature", "4/4")
-    downbeats = beat_result.get("downbeats", [])
-    report("beats", f"完了: {len(beats)} beats, BPM={bpm}, 拍子={time_signature} ({time.time()-t0:.1f}s)")
+    # Shared results (thread-safe via GIL for simple assignments)
+    _beat_result = {}
+    _key_result_holder = [None, 0.0, 0.5]  # [detected_key, initial_position, key_confidence]
+    _capo_result_holder = [{"capo": 0, "effective_key": "C", "confidence": 0}]
+    _crnn_notes = []
+    _moe_notes = []
+    _bp_notes = []
+    _guitar_type_detected = [guitar_type]  # mutable for thread
+    _moe_vote_threshold = [21]
 
-    # --- ビートグリッド整合性チェック ---
-    # madmomがBPMとは異なる粒度のパルスを検出する場合がある
-    # (例: 89 BPM報告だがビート配列は132 BPM間隔)
-    # BPMから期待される4分音符間隔と、実際のビート間隔を比較し、
-    # 乖離が大きい場合はBPMベースで等間隔ビートグリッドを再構築する
-    if len(beats) >= 4 and bpm > 0:
-        expected_interval = 60.0 / bpm
-        actual_intervals = [beats[i+1] - beats[i] for i in range(min(20, len(beats)-1))]
-        actual_avg = sum(actual_intervals) / len(actual_intervals)
-        ratio = expected_interval / actual_avg if actual_avg > 0 else 1.0
-
-        if ratio > 1.3 or ratio < 0.7:
-            # ビート間隔がBPMと乖離 → BPMベースで再構築
-            first_beat = beats[0]
-            last_beat = beats[-1]
-            num_true_beats = int(round((last_beat - first_beat) / expected_interval)) + 1
-            new_beats = [first_beat + i * expected_interval for i in range(num_true_beats)]
-            new_beats = [b for b in new_beats if b <= last_beat + expected_interval * 0.5]
-            report("beats", f"ビートグリッド補正: {len(beats)}→{len(new_beats)} beats "
-                   f"(検出間隔={actual_avg:.3f}s → BPM基準={expected_interval:.3f}s, ratio={ratio:.2f})")
-            beats = new_beats
-            downbeats = [beats[i] for i in range(0, len(beats), 3 if time_signature == "3/4" else 4)]
-
-    with open(session_dir / "beats.json", "w", encoding="utf-8") as f:
-        json.dump(_to_native({
-            "beats": beats, "bpm": bpm,
-            "time_signature": time_signature, "downbeats": downbeats,
-            "rhythm_info": None,  # 後で音楽理論解析後に更新される
-        }), f, ensure_ascii=False)
-
-    # --- Step 1.5: Key Detection ---
-    detected_key = None
-    initial_position = 0.0
-    key_confidence = 0.5
-    try:
-        from key_analyzer import detect_key  # type: ignore
-        report("key", "キー検出中...")
+    def _do_beats_and_key():
+        """Thread 1: Beat detection + Key detection + Capo estimation"""
+        nonlocal beats, bpm, time_signature, downbeats
+        report("beats", "ビート検出中...")
         t0 = time.time()
-        key_result = detect_key(str(wav_path))
-        detected_key = key_result["key"]
-        initial_position = float(key_result["position"])
-        key_confidence = key_result.get("confidence", 0.5)
-        report("key", f"キー: {detected_key} (確信度: {key_confidence:.2f}), 推奨ポジション: {initial_position} ({time.time()-t0:.1f}s)")
+        try:
+            result = detect_beats(str(wav_path))
+        except Exception as e:
+            report("beats", f"[FAIL] ビート検出致命的エラー: {e}")
+            import traceback; traceback.print_exc()
+            raise RuntimeError(f"Beat detection failed: {e}")
+        _beat_result.update(result)
+        report("beats", f"完了: {len(result['beats'])} beats, BPM={result['bpm']}, "
+               f"拍子={result.get('time_signature', '4/4')} ({time.time()-t0:.1f}s)")
 
-        with open(session_dir / "key.json", "w", encoding="utf-8") as f:
-            json.dump(_to_native(key_result), f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        report("key", f"キー検出スキップ: {e}")
+        # Key detection
+        try:
+            from key_analyzer import detect_key
+            report("key", "キー検出中...")
+            t0 = time.time()
+            kr = detect_key(str(wav_path))
+            _key_result_holder[0] = kr["key"]
+            _key_result_holder[1] = float(kr["position"])
+            _key_result_holder[2] = kr.get("confidence", 0.5)
+            report("key", f"キー: {kr['key']} (確信度: {_key_result_holder[2]:.2f}) ({time.time()-t0:.1f}s)")
+            with open(session_dir / "key.json", "w", encoding="utf-8") as f:
+                json.dump(_to_native(kr), f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            report("key", f"キー検出スキップ: {e}")
 
-    # --- Step 1.6: カポ推定 ---
-    capo_result = {"capo": 0, "effective_key": detected_key or "C", "confidence": 0}
-    try:
-        from capo_detector import detect_capo  # type: ignore
-        if detected_key:
-            capo_result = detect_capo(detected_key, confidence=key_confidence)
-            if capo_result["capo"] > 0:
-                report("capo", f"カポ推定: {capo_result['capo']}フレット (実質キー: {capo_result['effective_key']})")
+        # Capo estimation
+        try:
+            from capo_detector import detect_capo
+            dk = _key_result_holder[0]
+            if dk:
+                cr = detect_capo(dk, confidence=_key_result_holder[2])
+                _capo_result_holder[0] = cr
+                if cr["capo"] > 0:
+                    report("capo", f"カポ推定: {cr['capo']}フレット")
+                else:
+                    report("capo", "カポ不要")
+                with open(session_dir / "capo.json", "w", encoding="utf-8") as f:
+                    json.dump(_to_native(cr), f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            report("capo", f"カポ推定スキップ: {e}")
+
+    def _do_note_detection(transcription_wav_path: str):
+        """Thread 2: CRNN + MoE + BasicPitch (sequential within thread, uses GPU)"""
+        # Guitar type detection (spectral analysis)
+        moe_vt = 21
+        gt = guitar_type
+        try:
+            import librosa as _lr
+            _y, _sr = _lr.load(str(wav_path), sr=22050, duration=30)
+            _S = np.abs(_lr.stft(_y))
+            _freqs = _lr.fft_frequencies(sr=_sr)
+            _total = np.sum(_S) + 1e-10
+            _hf4k = float(np.sum(_S[_freqs > 4000, :]) / _total)
+            _hf6k = float(np.sum(_S[_freqs > 6000, :]) / _total)
+            _bw = float(np.mean(_lr.feature.spectral_bandwidth(S=_S, sr=_sr)))
+            _votes = (1 if _hf4k < 0.057 else 0) + (1 if _hf6k < 0.057 else 0) + (1 if _bw < 1386 else 0)
+            is_nylon = _votes >= 2
+            if gt == "nylon" or (gt == "auto" and is_nylon):
+                moe_vt = 15
+                gt = "nylon"
+                report("notes", f"弦種: ナイロン弦 → vote_threshold={moe_vt}/35")
             else:
-                report("capo", "カポ不要")
+                report("notes", f"弦種: スチール弦 → vote_threshold={moe_vt}/35")
+        except Exception as e:
+            report("notes", f"弦種検出スキップ: {e}")
 
-            with open(session_dir / "capo.json", "w", encoding="utf-8") as f:
-                json.dump(_to_native(capo_result), f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        report("capo", f"カポ推定スキップ: {e}")
+        if gt == "nylon":
+            moe_vt = 15
+        elif gt == "steel":
+            moe_vt = 21
+        _guitar_type_detected[0] = gt
+        _moe_vote_threshold[0] = moe_vt
 
-    # --- Step 1.7: Demucs ギタートラック分離 ---
+        # MoE (primary — 35モデルの合議制推論, F1=0.89)
+        try:
+            from pure_moe_transcriber import transcribe_pure_moe
+            report("notes", "MoEアンサンブル推論中...")
+            t0 = time.time()
+            mn = transcribe_pure_moe(
+                str(transcription_wav_path),
+                vote_threshold=moe_vt,
+                onset_threshold=0.5,
+                vote_prob_threshold=0.5,
+                fast_mode=False,  # 35モデル固定（21モデルとの一致率44%のため精度優先）
+            )
+            _moe_notes.extend(mn)
+            report("notes", f"MoE: {len(_moe_notes)} notes ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            report("notes", f"MoE失敗: {e}")
+
+        # CRNN (fallback — MoE失敗時のみ)
+        if not _moe_notes:
+            try:
+                from guitar_transcriber import transcribe_guitar, is_model_available
+                if is_model_available():
+                    report("notes", "CRNN推論中 (フォールバック)...")
+                    t0 = time.time()
+                    cr = transcribe_guitar(str(transcription_wav_path), onset_threshold=0.5)
+                    _crnn_notes.extend(cr.get("notes", []))
+                    report("notes", f"CRNN: {len(_crnn_notes)} notes ({time.time()-t0:.1f}s)")
+            except Exception as e:
+                report("notes", f"CRNN失敗: {e}")
+
+        # BasicPitch (MoE成功時は融合用に実行、ただしMoE単独でも十分な精度)
+        try:
+            from basic_pitch.inference import predict as bp_predict, Model as BPModel
+            import basic_pitch
+            onnx_model_path = os.path.join(
+                os.path.dirname(basic_pitch.__file__),
+                'saved_models', 'icassp_2022', 'nmp.onnx'
+            )
+            if os.path.exists(onnx_model_path):
+                bp_model = BPModel(onnx_model_path)
+                report("notes", "BasicPitch推論中 (ONNX)...")
+            else:
+                bp_model = None
+                report("notes", "BasicPitch推論中...")
+            t0 = time.time()
+            _, midi_data, _ = bp_predict(str(transcription_wav_path),
+                                          model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH)
+            for inst in midi_data.instruments:
+                for note in inst.notes:
+                    _bp_notes.append({
+                        "start": float(note.start),
+                        "end": float(note.end),
+                        "pitch": int(note.pitch),
+                    })
+            report("notes", f"BasicPitch: {len(_bp_notes)} notes ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            report("notes", f"BasicPitch失敗: {e}")
+
+    # --- Demucs (must complete before note detection) ---
     guitar_wav = str(wav_path)
     is_solo_guitar = False
     if skip_demucs:
@@ -256,134 +327,84 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         except Exception as e:
             report("demucs", f"分離スキップ (元音声を使用): {e}")
 
-    # --- Step 2: 音声前処理 (Domain Adaptation) ---
+    # Preprocessing
     if is_solo_guitar:
-        # ソロギター: 前処理EQをスキップ（HPFがE2=82Hzを減衰、lowシェルフがさらに低音カット）
         transcription_wav = guitar_wav
-        report("preprocess", f"[SOLO] ソロギター → 前処理スキップ（元音声を直接使用）")
+        report("preprocess", f"[SOLO] ソロギター → 前処理スキップ")
     else:
-        report("preprocess", "音声前処理中 (ラウドネス正規化・ノイズ除去)...")
+        report("preprocess", "音声前処理中...")
         t0 = time.time()
         preprocessed_path = session_dir / "preprocessed.wav"
         try:
             from audio_preprocessor import preprocess_audio_for_transcription
             preprocess_audio_for_transcription(guitar_wav, str(preprocessed_path))
             transcription_wav = str(preprocessed_path)
-            report("preprocess", f"前処理適用（メロディ強調・ベース抑制） ({time.time()-t0:.1f}s)")
+            report("preprocess", f"前処理完了 ({time.time()-t0:.1f}s)")
         except Exception as e:
             print(f"[pipeline] Preprocessing failed, using original: {e}")
             transcription_wav = guitar_wav
 
-    # --- Step 3: Note Detection (Priority: CRNN → MoE → Basic Pitch) ---
-    # CRNN: guitar_transcriber.py — ギター専用モデル（弦/フレット付き直接出力）
-    # MoE: 35モデルアンサンブル（高精度だがモジュール未インストールの場合あり）
-    # Basic Pitch: 汎用ピアノモデル（最終フォールバック）
+    # --- Launch parallel tasks ---
+    report("beats", "並列処理開始: ビート検出 + ノート検出を同時実行...")
+    t_parallel = time.time()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_beats = executor.submit(_do_beats_and_key)
+        fut_notes = executor.submit(_do_note_detection, transcription_wav)
+
+        # Wait for both to complete
+        for fut in as_completed([fut_beats, fut_notes]):
+            try:
+                fut.result()  # raise any exceptions
+            except Exception as e:
+                report("parallel", f"並列タスクエラー: {e}")
+                import traceback; traceback.print_exc()
+
+    report("parallel", f"並列処理完了 ({time.time()-t_parallel:.1f}s)")
+
+    # --- Collect results ---
+    beats = _beat_result.get("beats", [])
+    bpm = _beat_result.get("bpm", 120)
+    time_signature = _beat_result.get("time_signature", "4/4")
+    downbeats = _beat_result.get("downbeats", [])
+    detected_key = _key_result_holder[0]
+    initial_position = _key_result_holder[1]
+    key_confidence = _key_result_holder[2]
+    capo_result = _capo_result_holder[0]
+    guitar_type = _guitar_type_detected[0]
+    crnn_notes_list = _crnn_notes
+    moe_notes_list = _moe_notes
+    bp_notes_list = _bp_notes
+
+    # --- Beat grid consistency check ---
+    if len(beats) >= 4 and bpm > 0:
+        expected_interval = 60.0 / bpm
+        actual_intervals = [beats[i+1] - beats[i] for i in range(min(20, len(beats)-1))]
+        actual_avg = sum(actual_intervals) / len(actual_intervals)
+        ratio = expected_interval / actual_avg if actual_avg > 0 else 1.0
+        if ratio > 1.3 or ratio < 0.7:
+            first_beat = beats[0]
+            last_beat = beats[-1]
+            num_true_beats = int(round((last_beat - first_beat) / expected_interval)) + 1
+            new_beats = [first_beat + i * expected_interval for i in range(num_true_beats)]
+            new_beats = [b for b in new_beats if b <= last_beat + expected_interval * 0.5]
+            report("beats", f"ビートグリッド補正: {len(beats)}→{len(new_beats)} beats")
+            beats = new_beats
+            downbeats = [beats[i] for i in range(0, len(beats), 3 if time_signature == "3/4" else 4)]
+
+    with open(session_dir / "beats.json", "w", encoding="utf-8") as f:
+        json.dump(_to_native({
+            "beats": beats, "bpm": bpm,
+            "time_signature": time_signature, "downbeats": downbeats,
+            "rhythm_info": None,
+        }), f, ensure_ascii=False)
+
+    # --- Note fusion setup ---
     ensemble_success = False
     notes = []
     method = "none"
     model_stats = {}
 
-    # --- 3a-0: CRNN ギター専用モデル ---
-    crnn_notes_list = []
-    try:
-        from guitar_transcriber import transcribe_guitar, is_model_available
-        if is_model_available():
-            report("notes", "CRNN推論中（ギター専用モデル）...")
-            t0 = time.time()
-            crnn_result = transcribe_guitar(
-                str(transcription_wav),
-                onset_threshold=0.5,
-            )
-            crnn_notes_list = crnn_result.get("notes", [])
-            report("notes", f"CRNN抽出完了: {len(crnn_notes_list)} notes ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        report("notes", f"CRNN失敗: {e}")
-
-    # --- 3a: MoEアンサンブル ---
-    # ナイロン弦/スチール弦自動検出 → vote_threshold適応
-    # 論文§12.6: ナイロン弦はRecall=0.6635と低い → vote_threshold緩和が必要
-    # 検証: hf_ratio(>4kHz) — ナイロン≤0.03, スチール≥0.077, 閾値0.05で完全分離
-    moe_vote_threshold = 21  # デフォルト: スチール弦最適値
-    if guitar_type == "nylon":
-        moe_vote_threshold = 15
-        report("notes", f"弦種: ナイロン弦 (ユーザー指定) → vote_threshold={moe_vote_threshold}/35")
-    elif guitar_type == "steel":
-        moe_vote_threshold = 21
-        report("notes", f"弦種: スチール弦 (ユーザー指定) → vote_threshold={moe_vote_threshold}/35")
-    else:
-        # 自動検出: 3特徴量多数決 (100サンプルベンチマーク精度93%)
-        # 単一hf_ratio(0.05)では86.7%だった誤判定を軽減
-        try:
-            import librosa as _lr
-            # 元音声を使用（前処理後はHFブーストでhf_ratioが変化するため）
-            _y, _sr = _lr.load(str(wav_path), sr=22050, duration=30)
-            _S = np.abs(_lr.stft(_y))
-            _freqs = _lr.fft_frequencies(sr=_sr)
-            _total = np.sum(_S) + 1e-10
-            # Feature 1: >4kHz energy ratio
-            _hf4k = float(np.sum(_S[_freqs > 4000, :]) / _total)
-            # Feature 2: >6kHz energy ratio
-            _hf6k = float(np.sum(_S[_freqs > 6000, :]) / _total)
-            # Feature 3: spectral bandwidth
-            _bw = float(np.mean(_lr.feature.spectral_bandwidth(S=_S, sr=_sr)))
-            # 多数決: 3特徴量中2つ以上がナイロン判定 → ナイロン
-            _votes = (1 if _hf4k < 0.057 else 0) + (1 if _hf6k < 0.057 else 0) + (1 if _bw < 1386 else 0)
-            is_nylon = _votes >= 2
-            _hf_ratio = _hf4k  # ログ表示用
-            if is_nylon:
-                moe_vote_threshold = 15
-                guitar_type = "nylon"  # assign_strings_dpにも伝播
-                report("notes", f"弦種検出: ナイロン弦 (hf4k={_hf4k:.3f}, hf6k={_hf6k:.3f}, bw={_bw:.0f}, votes={_votes}/3) → vote_threshold={moe_vote_threshold}/35")
-            else:
-                report("notes", f"弦種検出: スチール弦 (hf4k={_hf4k:.3f}, hf6k={_hf6k:.3f}, bw={_bw:.0f}, votes={_votes}/3) → vote_threshold={moe_vote_threshold}/35")
-        except Exception as e:
-            report("notes", f"弦種検出スキップ: {e}")
-
-    moe_notes_list = []
-    try:
-        from pure_moe_transcriber import transcribe_pure_moe
-        report("notes", "MoEアンサンブル推論中...")
-        t0 = time.time()
-        moe_notes_list = transcribe_pure_moe(
-            str(transcription_wav),
-            vote_threshold=moe_vote_threshold,  # 弦種適応: スチール21, ナイロン15
-            onset_threshold=0.5,    # ベンチマーク最適値
-            vote_prob_threshold=0.5, # 偽陽性抑制 (0.4→0.5): G3共鳴音等の除去
-            fast_mode=False,        # フルモード（利用可能なモデルを全て使用）
-        )
-        report("notes", f"MoE抽出完了: {len(moe_notes_list)} notes ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        report("notes", f"MoE失敗: {e}")
-
-    # --- 3b: Basic Pitch ---
-    bp_notes_list = []
-    try:
-        from basic_pitch.inference import predict as bp_predict, Model as BPModel
-        import basic_pitch
-        # TF 2.20とbasic-pitch 0.4.0のSavedModel非互換を回避:
-        # ONNXモデル(nmp.onnx)を明示的に指定してTFバイパス
-        onnx_model_path = os.path.join(
-            os.path.dirname(basic_pitch.__file__),
-            'saved_models', 'icassp_2022', 'nmp.onnx'
-        )
-        if os.path.exists(onnx_model_path):
-            bp_model = BPModel(onnx_model_path)
-            report("notes", "Basic Pitch推論中 (ONNXバックエンド)...")
-        else:
-            bp_model = None
-            report("notes", "Basic Pitch推論中 (デフォルトバックエンド)...")
-        t0 = time.time()
-        _, midi_data, _ = bp_predict(str(transcription_wav), model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH)
-        for inst in midi_data.instruments:
-            for note in inst.notes:
-                bp_notes_list.append({
-                    "start": float(note.start),
-                    "end": float(note.end),
-                    "pitch": int(note.pitch),
-                })
-        report("notes", f"BasicPitch抽出完了: {len(bp_notes_list)} notes ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        report("notes", f"BasicPitch失敗（MoE単独モードに切替）: {e}")
 
     # --- 3c: 融合 (優先順位: MoE融合 > MoE単独 > CRNN > BasicPitch) ---
     # MoE+BP融合 F1=0.8916 (GuitarSet TEST 36曲で検証済み)
@@ -569,11 +590,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 three_ratio = sum(1 for c in notes_per_beat if c == 3) / len(notes_per_beat)
                 two_or_three = sum(1 for c in notes_per_beat if 2 <= c <= 4) / len(notes_per_beat)
                 print(f"[theory] 3/4 arpeggio check: avg_npb={avg_npb:.1f}, 2-4_ratio={two_or_three:.2f}, beats_checked={len(notes_per_beat)}")
-                if avg_npb >= 2.0 and two_or_three >= 0.7:
+                # 厳格化: 3音/拍が過半数（>50%）かつ平均2.5以上の場合のみ
+                if avg_npb >= 2.5 and three_ratio >= 0.5 and two_or_three >= 0.7:
                     rhythm_info["subdivision"] = "triplet"
                     rhythm_info["triplet_ratio"] = three_ratio
                     report("theory", f"3/4アルペジオ3連符パターン検出 "
-                           f"(avg={avg_npb:.1f} notes/beat, 2or3-note ratio={two_or_three:.0%})")
+                           f"(avg={avg_npb:.1f} notes/beat, 3-note ratio={three_ratio:.0%})")
         
         report("theory", f"音楽理論解析完了: rhythm={rhythm_info['subdivision']} "
                f"(triplet_ratio={rhythm_info.get('triplet_ratio', 0):.2f}), "
@@ -673,37 +695,78 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     try:
         from finger_assigner import assign_fingers
         t0_finger = time.time()
-        notes = assign_fingers(notes)
+        notes = assign_fingers(notes, detected_key=detected_key_sig)
         report("assign", f"指番号割り当て完了: {len(notes)} notes ({time.time()-t0_finger:.1f}s)")
     except Exception as e:
         report("assign", f"指番号割り当てスキップ: {e}")
 
     # --- テクニック検出 (h/p/slide/bend) ---
-    # 弦割り当て（Viterbi DP）完了後に実行することで、
-    # 正確なstring/fret情報に基づくテクニック検出が可能
-    report("technique", "テクニック検出中 (h/p/slide/bend)...")
-    try:
-        from technique_detector import detect_techniques, add_techniques_to_musicxml_notes  # type: ignore
-        t0 = time.time()
-        # BP独自ノートはstring/fret推定精度が低いためテクニック検出対象外
-        moe_notes  = [n for n in notes if not n.get("_bp_only")]
-        bp_only_ns = [n for n in notes if n.get("_bp_only")]
-        moe_notes = detect_techniques(moe_notes, bpm=bpm, audio_path=str(wav_path))
-        moe_notes = add_techniques_to_musicxml_notes(moe_notes)
-        notes = moe_notes + bp_only_ns
-        notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
-        tech_count = sum(1 for n in notes if n.get("technique") and n["technique"] != "normal")
-        report("technique", f"テクニック検出完了: {tech_count}件 (BP独自{len(bp_only_ns)}件はスキップ) ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        import traceback
-        report("technique", f"テクニック検出スキップ: {e}")
-        traceback.print_exc()
+    # トグルが全てOFFなら完全スキップ（37秒の短縮）
+    if enable_technique_overlay or enable_technique_gp5:
+        report("technique", "テクニック検出中 (h/p/slide/bend)...")
+        try:
+            from technique_detector import detect_techniques, add_techniques_to_musicxml_notes  # type: ignore
+            t0 = time.time()
+            # BP独自ノートはstring/fret推定精度が低いためテクニック検出対象外
+            moe_notes  = [n for n in notes if not n.get("_bp_only")]
+            bp_only_ns = [n for n in notes if n.get("_bp_only")]
+            moe_notes = detect_techniques(moe_notes, bpm=bpm, audio_path=str(wav_path))
+            moe_notes = add_techniques_to_musicxml_notes(moe_notes)
+            notes = moe_notes + bp_only_ns
+            notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+            tech_count = sum(1 for n in notes if n.get("technique") and n["technique"] != "normal")
+            report("technique", f"テクニック検出完了: {tech_count}件 (BP独自{len(bp_only_ns)}件はスキップ) ({time.time()-t0:.1f}s)")
+        except Exception as e:
+            import traceback
+            report("technique", f"テクニック検出スキップ: {e}")
+            traceback.print_exc()
+    else:
+        report("technique", "テクニック検出スキップ（トグルOFF → 高速モード）")
 
-    # --- Palm Mute / Harmonic 検出 ---
-    # 無効化: technique_classifier_cnn.annotate_techniquesが
-    # 音声CQT処理でパイプライン全体を数分ブロックするため。
-    # PM/NH検出はスキップし、h/p/slideのViterbiベース検出のみで十分。
-    report("technique_pm", "PM/NH検出スキップ (高速化のため無効化中)")
+    # --- CNN-based technique detection (PM/Harmonic/Bend/Slide/Vibrato) ---
+    if enable_technique_gp5:
+        report("technique_cnn", "CNN technique detection...")
+        try:
+            from technique_classifier_cnn import annotate_techniques_cnn
+            t0 = time.time()
+            moe_notes = [n for n in notes if not n.get("_bp_only")]
+            bp_only_ns = [n for n in notes if n.get("_bp_only")]
+            moe_notes = annotate_techniques_cnn(
+                moe_notes, str(wav_path), confidence_threshold=0.90
+            )
+            notes = moe_notes + bp_only_ns
+            notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+            cnn_count = sum(1 for n in notes
+                           if n.get("technique_source") == "cnn")
+            report("technique_cnn",
+                   f"CNN detection done: {cnn_count} techniques "
+                   f"({time.time()-t0:.1f}s)")
+        except Exception as e:
+            import traceback
+            report("technique_cnn", f"CNN detection skipped: {e}")
+            traceback.print_exc()
+    else:
+        report("technique_cnn", "CNN detection OFF (toggle disabled)")
+
+    # --- テクニック情報に基づく指番号の微調整 ---
+    if enable_technique_fingers:
+        try:
+            from finger_assigner import _apply_technique_constraints
+            # technique_detector が note['technique'] に設定するので _technique に変換
+            for n in notes:
+                tech = n.get('technique', 'normal')
+                if tech and tech != 'normal':
+                    n['_technique'] = tech
+            tech_fixes = _apply_technique_constraints(notes)
+            # cleanup
+            for n in notes:
+                n.pop('_technique', None)
+            if tech_fixes > 0:
+                report("assign", f"テクニック反映指修正: {tech_fixes}件")
+        except Exception as e:
+            report("assign", f"テクニック指修正スキップ: {e}")
+    else:
+        report("assign", "テクニック指修正: OFF（トグル無効）")
 
 
 
@@ -824,6 +887,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
             noise_gate=0.10,
+            include_techniques=enable_technique_gp5,
         )
         gp5_path = session_dir / "tab.gp5"
         with open(gp5_path, "wb") as f:
@@ -871,6 +935,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         "effective_key": capo_result.get("effective_key", detected_key),
         "suggested_tuning": tuning_suggestion.get("tuning", tuning_name),
         "tuning_confidence": tuning_suggestion.get("confidence", 0),
+        "enable_technique_gp5": enable_technique_gp5,
+        "enable_technique_overlay": enable_technique_overlay,
+        "enable_technique_fingers": enable_technique_fingers,
     }
 
 if __name__ == "__main__":

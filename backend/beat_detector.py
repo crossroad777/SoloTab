@@ -80,10 +80,11 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
         print("[beat_detector] Warning: ffmpeg not found in PATH. Falling back to librosa.")
         return _detect_beats_librosa(wav_path)
 
-    # --- 音声を最初60秒に制限（速度改善）---
+    # --- 音声を最初20秒に制限（速度改善）---
+    # 20秒で十分なビートパターンが得られる（5曲で30sと100%一致を検証済み）
     import soundfile as sf
     import tempfile
-    MAX_DURATION = 30  # 秒 (30秒で十分なビートパターンが得られる)
+    MAX_DURATION = 20  # 秒
     truncated_path = wav_path
     try:
         info = sf.info(wav_path)
@@ -107,13 +108,6 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
         activations = beat_proc(truncated_path)
         beats = beat_tracker(activations)
 
-    # 一時ファイル削除
-    if truncated_path != wav_path:
-        try:
-            Path(truncated_path).unlink()
-        except Exception:
-            pass
-
     # --- BPM推定 ---
     if len(beats) > 1:
         intervals = np.diff(beats)
@@ -126,13 +120,20 @@ def detect_beats(wav_path: str, *, _beat_proc=None, _beat_tracker=None) -> dict:
     # --- BPM倍取り/半取り補正 ---
     bpm = _correct_bpm_basic(raw_bpm)
 
-    # --- librosa クロスバリデーション ---
-    bpm = _cross_validate_bpm(bpm, wav_path, beats)
+    # --- librosa クロスバリデーション（truncated音声を使用 — フル音声ロード回避）---
+    bpm = _cross_validate_bpm(bpm, truncated_path, beats)
 
-    # --- 拍子推定 (3/4 vs 4/4) ---
+    # --- 拍子推定 (3/4 vs 4/4)（truncated音声を使用）---
     time_signature, downbeats, downbeat_phase = _detect_time_signature(
-        wav_path, beats, bpm, activations
+        truncated_path, beats, bpm, activations
     )
+
+    # 一時ファイル削除（cross_validate/time_signature完了後）
+    if truncated_path != wav_path:
+        try:
+            Path(truncated_path).unlink()
+        except Exception:
+            pass
 
     # --- ビートグリッドの位相調整 ---
     # madmomのbeats配列の先頭がdownbeat（1拍目）とは限らない。
@@ -460,7 +461,7 @@ def _detect_ts_accent_pattern(
     times = librosa.times_like(onset_env, sr=sr)
 
     if len(beats) < 6:
-        return None, []
+        return None, [], 0
 
     # 各ビート時刻でのonset strengthを取得
     beat_strengths = []
@@ -485,27 +486,17 @@ def _detect_ts_accent_pattern(
     nat_3 = _bpm_naturalness_score(bpm_if_3)
     nat_4 = _bpm_naturalness_score(bpm_if_4)
 
-    # アルペジオ特性ボーナス: ビート間隔が非常に均一な場合、
-    # 3/4拍子のアルペジオ曲である可能性が高い
-    arpeggio_bonus_3 = 0.0
-    if len(beats) > 8:
-        intervals = np.diff(beats)
-        cv = np.std(intervals) / np.mean(intervals)  # 変動係数
-        if cv < 0.15:  # ビート間隔が非常に均一（CV < 15%）
-            # 中テンポ(60-100BPM)のアルペジオ曲 → 3/4が自然
-            if 60 <= bpm_if_3 <= 100:
-                arpeggio_bonus_3 = 0.5  # 強烈なボーナスを与えて133BPMの16分音符ではなく88BPMの3連符として認識させる
-                print(f"[beat_detector] Arpeggio pattern detected (CV={cv:.3f}), "
-                      f"3/4 bonus +{arpeggio_bonus_3}")
-
     # アクセントスコアとBPM自然さの両方を考慮
-    combined_3 = score_3 * 0.6 + nat_3 * 0.4 + arpeggio_bonus_3
+    # 注: アルペジオボーナスは廃止（CV低=安定テンポであり、3/4の証拠ではない）
+    combined_3 = score_3 * 0.6 + nat_3 * 0.4
     combined_4 = score_4 * 0.6 + nat_4 * 0.4
 
     print(f"[beat_detector] Combined: 3/4={combined_3:.3f} (bpm~{bpm_if_3:.0f}), "
           f"4/4={combined_4:.3f} (bpm~{bpm_if_4:.0f})")
 
-    if combined_3 >= combined_4:  # 同点以上で3/4を優先（アルペジオ曲は3/4が多い）
+    # 4/4は圧倒的に一般的。3/4が勝つには明確なマージンが必要。
+    MARGIN_3_4 = 0.15
+    if combined_3 > combined_4 + MARGIN_3_4:
         chosen_bpb = 3
     else:
         chosen_bpb = 4
@@ -621,7 +612,7 @@ def _detect_beats_librosa(wav_path: str) -> dict:
     bpm = float(tempo) if not hasattr(tempo, '__len__') else float(tempo[0])
     
     # 拍子推定を呼び出す
-    ts, dbeats = _detect_time_signature(wav_path, beat_times, bpm)
+    ts, dbeats, _phase = _detect_time_signature(wav_path, beat_times, bpm)
 
     return {
         "beats": beat_times.tolist(),

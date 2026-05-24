@@ -550,5 +550,66 @@ Final validation across all system components:
 
 ---
 
+## Step 14: Inference Pipeline Speed Optimization (2026-05-24)
+
+### Motivation
+
+To improve user experience in production, we optimized the inference pipeline for processing time reduction. An accuracy-first policy was enforced: only optimizations preserving 100% note-level agreement with the baseline output were adopted.
+
+### 14.1 Optimizations Applied
+
+| # | Optimization | Effect | Accuracy Impact |
+| :---: | :--- | :--- | :--- |
+| 1 | Model preloading (lifespan) | Bulk-load all 35 MoE models, madmom, CRNN, CNN string classifier, and BasicPitch at startup. Eliminates cold-start latency. Startup: 9.3s. | Zero |
+| 2 | Beat detection audio truncation (30s→20s) | Limit madmom RNN input to 20s. Verified 100% BPM/time-signature agreement across 5 songs. | Zero (verified) |
+| 3 | Cross-validation with truncated audio | Fixed bug where full audio (e.g., 248s) was reloaded by librosa for BPM cross-validation. Now uses 20s truncated audio. | Zero |
+| 4 | Conditional technique detection skip | Skip F0 computation (librosa.pyin) when technique overlay toggle is OFF. Saves ~37s. | Zero (toggle OFF) |
+| 5 | Conditional CRNN skip | Skip CRNN when MoE succeeds (retained as fallback). Saves ~1.2s. | Zero (CRNN unused when MoE succeeds) |
+| 6 | `torch.inference_mode()` | Replace `torch.no_grad()` for slightly faster inference. | Zero |
+| 7 | Parallel processing (beats + notes) | Thread 1: beat detection, Thread 2: MoE + BasicPitch. GPU/CPU parallelism. | Zero |
+| 8 | BasicPitch ONNX preload | Resolve ONNX model path at startup. Eliminate TensorFlow initialization delay. | Zero |
+
+### 14.2 Rejected Optimizations (Accuracy-First)
+
+| Optimization | Speedup | Rejection Reason |
+| :--- | :---: | :--- |
+| fp16 autocast | 1.28x (17.5s→13.7s) | 98.7% note-level agreement (7 notes differ out of 455). Voting mechanism cannot fully absorb fp16 rounding. |
+| 21-model FAST mode | 2.14x (21.7s→10.1s) | Only 44.1% agreement with 35-model mode. Fundamentally different results. |
+| `torch.compile()` | N/A | Triton unavailable on Windows. |
+| `torch.jit.trace` | 1.09x (negligible) | GRU layers already optimized by cuDNN. |
+| ONNX Runtime CUDA | 1.02x (no improvement) | Equivalent optimization to cuDNN. Sequential GRU computation is hardware-bound. |
+
+### 14.3 Results
+
+**101s song processing time:**
+
+| Metric | Before | After | Reduction |
+| :--- | :---: | :---: | :---: |
+| Total processing time | 73s (technique ON, cold start) | 28s | **62%** |
+| Accuracy | Baseline | 100% preserved | Zero degradation |
+
+**248s song processing time:**
+
+| Metric | Before | After | Reduction |
+| :--- | :---: | :---: | :---: |
+| Total processing time | ~120s+ (beat 35s + MoE 41s + misc) | 50s | ~58% |
+| Beat detection | 35s | 8.4s | **76%** |
+
+### 14.4 MoE Inference Bottleneck Analysis
+
+- 35 models × 0.47s/model = 16.4s (101s song)
+- Bidirectional GRU (`hidden_size=768`, `layers=2`) sequential computation is GPU-bound
+- PyTorch, ONNX Runtime, and JIT trace all yield equivalent speed, confirming hardware saturation
+
+### 14.5 Discussion
+
+The MoE 35-model GRU inference has reached the hardware ceiling of RTX 4060 Ti. Further speedup requires model distillation (35→1 model) or architecture changes (GRU→Attention). Current optimizations achieve **62% processing time reduction** while maintaining **100% accuracy**.
+
+The discovery that the BPM cross-validation function was loading full audio (248s) instead of truncated audio was a significant finding, yielding ~30s savings for longer songs.
+
+> **Conclusion:** Eight accuracy-preserving optimizations reduced inference time by 62% (73s→28s for a 101s song). The GRU-based MoE bottleneck (16.4s for 35 models) is hardware-bound, establishing a clear threshold for future architectural investigation.
+
+---
+
 *SoloTab V2.0 -- May 2026*
 

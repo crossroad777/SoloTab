@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import librosa
 from scipy import stats
+from contextlib import nullcontext
 
 project_root = os.path.dirname(os.path.abspath(__file__))
 mt_python_dir = os.path.join(project_root, "..", "music-transcription", "python")
@@ -131,7 +132,7 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
     all_fret_preds = []
     
     t_infer = _time.time()
-    with torch.no_grad():
+    with torch.inference_mode():
         for i, (name, model) in enumerate(models_loaded):
             onset_logits, fret_logits = model(features)
             onset_probs = torch.sigmoid(onset_logits[0]).cpu().numpy()

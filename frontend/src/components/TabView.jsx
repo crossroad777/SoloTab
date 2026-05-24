@@ -17,6 +17,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const timeRef = useRef(0);
     const playingRef = useRef(false);
     const initKeyRef = useRef(null);
+    const beatsDataRef = useRef([]);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -60,8 +61,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
         const notes = notesDataRef.current;
         const bpm = api.score.tempo || 120;
-        // AlphaTab MIDI ticks per quarter note (standard = 960)
         const ticksPerBeat = 960;
+        const beatsArr = beatsDataRef.current; // beats.json実時刻(秒)
 
         // ===================================================================
         // Strategy 1: tick-based mapping using AlphaTab beat model
@@ -100,20 +101,47 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         }
 
         if (tickEntries.length > 0) {
-            // Sort by tick time (should already be in order, but ensure)
             tickEntries.sort((a, b) => a.timeMs - b.timeMs);
 
-            // If we have notes data, calibrate the tick-based times to actual audio times.
-            // The GP5 places notes at quantized tick positions. The actual audio may differ.
-            // Use the first and last note to establish a linear mapping.
+            // =====================================================
+            // Piecewise calibration using beats.json
+            // Each GP5 beat (fixed BPM tick) maps to a real audio
+            // time from beats.json, handling rubato/tempo variation.
+            // =====================================================
+            const tickToRealMs = (tickMs) => {
+                if (beatsArr.length < 2) {
+                    // Fallback: linear from notes
+                    return tickMs;
+                }
+                // tickMs → which beat index in GP5 (fixed tempo)
+                const beatDurMs = 60000 / bpm; // ms per beat at fixed tempo
+                const beatIdx = tickMs / beatDurMs; // fractional beat index
+                const lo = Math.floor(beatIdx);
+                const frac = beatIdx - lo;
+
+                // Clamp to available beats
+                if (lo >= beatsArr.length - 1) {
+                    // Past last beat: extrapolate from last interval
+                    const lastIdx = beatsArr.length - 1;
+                    const lastInterval = (beatsArr[lastIdx] - beatsArr[Math.max(0, lastIdx - 1)]) * 1000;
+                    return beatsArr[lastIdx] * 1000 + (beatIdx - lastIdx) * lastInterval;
+                }
+                if (lo < 0) return beatsArr[0] * 1000;
+
+                // Interpolate between beat[lo] and beat[lo+1]
+                const tLo = beatsArr[lo] * 1000;
+                const tHi = beatsArr[Math.min(lo + 1, beatsArr.length - 1)] * 1000;
+                return tLo + frac * (tHi - tLo);
+            };
+
+            // Apply note-based offset if beats.json not available
+            let useBeats = beatsArr.length >= 2;
             let offsetMs = 0;
-            let scale = 1;
-            if (notes.length > 0) {
+            let linearScale = 1;
+            if (!useBeats && notes.length > 0) {
                 const sorted = [...notes].sort((a, b) => a.start - b.start);
                 const firstNoteMs = sorted[0].start * 1000;
                 const lastNoteMs = sorted[sorted.length - 1].start * 1000;
-
-                // Find first and last non-rest tick entries
                 const nonRests = tickEntries.filter(e => !e.isRest);
                 if (nonRests.length >= 2) {
                     const firstTickMs = nonRests[0].timeMs;
@@ -121,24 +149,27 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     const tickSpan = lastTickMs - firstTickMs;
                     const noteSpan = lastNoteMs - firstNoteMs;
                     if (tickSpan > 0 && noteSpan > 0) {
-                        scale = noteSpan / tickSpan;
-                        offsetMs = firstNoteMs - firstTickMs * scale;
-                        console.log(`[TabView] Tick calibration: offset=${offsetMs.toFixed(0)}ms, scale=${scale.toFixed(3)}`);
+                        linearScale = noteSpan / tickSpan;
+                        offsetMs = firstNoteMs - firstTickMs * linearScale;
                     }
                 }
             }
 
             const map = [];
             for (let i = 0; i < tickEntries.length; i++) {
-                const startMs = tickEntries[i].timeMs * scale + offsetMs;
+                const startMs = useBeats
+                    ? tickToRealMs(tickEntries[i].timeMs)
+                    : tickEntries[i].timeMs * linearScale + offsetMs;
                 const endMs = i + 1 < tickEntries.length
-                    ? tickEntries[i + 1].timeMs * scale + offsetMs
+                    ? (useBeats
+                        ? tickToRealMs(tickEntries[i + 1].timeMs)
+                        : tickEntries[i + 1].timeMs * linearScale + offsetMs)
                     : startMs + 1000;
                 map.push({ startMs, endMs, vb: tickEntries[i].vb });
             }
 
             beatMapRef.current = map;
-            console.log(`[TabView] BeatMap (tick-based): ${map.length} entries, ` +
+            console.log(`[TabView] BeatMap (${useBeats ? 'beats.json piecewise' : 'linear'}): ${map.length} entries, ` +
                 `range: ${(map[0].startMs/1000).toFixed(2)}s → ${(map[map.length-1].startMs/1000).toFixed(2)}s`);
             return true;
         }
@@ -313,7 +344,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
             // 後方互換（旧テクニック名）
             'vibrato':    '〜',
-            'staccato':   '·',
             'accent':     '!',
             'let_ring':   '⌒',
             'hammer-on':  'H',
@@ -567,13 +597,23 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 console.log(`[TabView] Loaded ${useGp5 ? 'GP5' : 'MusicXML'}: ${scoreData.length} bytes (key=${key})`);
 
-                // ノートデータを取得（カーソル同期用 — 各ノートのstart時刻を使用）
+                // ノートデータ + beatsデータを取得（カーソル同期用）
                 try {
-                    const notesRes = await fetch(`${apiBase}/result/${sessionId}/notes`);
+                    const [notesRes, beatsRes] = await Promise.all([
+                        fetch(`${apiBase}/result/${sessionId}/notes`),
+                        fetch(`${apiBase}/files/${sessionId}/beats.json`),
+                    ]);
                     if (notesRes.ok) {
                         const notesData = await notesRes.json();
                         notesDataRef.current = notesData.notes || [];
                         console.log(`[TabView] Loaded ${notesDataRef.current.length} notes for cursor sync`);
+                    }
+                    if (beatsRes.ok) {
+                        const beatsData = await beatsRes.json();
+                        let beats = Array.isArray(beatsData) ? beatsData : (beatsData.beats || []);
+                        if (beats.length > 0 && typeof beats[0] === 'object') beats = beats.map(b => b.time);
+                        beatsDataRef.current = beats;
+                        console.log(`[TabView] Loaded ${beats.length} beats for piecewise cursor sync`);
                     }
                 } catch { /* ignore */ }
 
@@ -755,7 +795,14 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         boundsReadyRef.current = ok;
                         if (ok) {
                             console.log("[TabView] BeatMap ready");
-                            // buildTechniqueOverlay(api); // 無効化: AlphaTabがGP5から直接描画
+                            // テクニックオーバーレイ: localStorageのトグルで制御
+                            try {
+                                const overlayEnabled = localStorage.getItem('solotab-tech-overlay') === 'true';
+                                if (overlayEnabled) {
+                                    buildTechniqueOverlay(api);
+                                    console.log("[TabView] Technique overlay enabled");
+                                }
+                            } catch (e) { console.warn("[TabView] Overlay check:", e); }
                         } else if (attempt < 4) {
                             setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
                         }

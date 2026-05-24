@@ -26,6 +26,15 @@ export default function SoloTabApp() {
   const [toast, setToast] = useState(null);
   const [soloGuitar, setSoloGuitar] = useState(true);
   const [guitarType, setGuitarType] = useState("auto");
+  const [techGp5, setTechGp5] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-gp5') === 'true'; } catch { return false; }
+  });
+  const [techOverlay, setTechOverlay] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-overlay') === 'true'; } catch { return false; }
+  });
+  const [techFingers, setTechFingers] = useState(() => {
+    try { return localStorage.getItem('solotab-tech-fingers') === 'true'; } catch { return false; }
+  });
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
@@ -36,6 +45,11 @@ export default function SoloTabApp() {
   const scrollTimerRef = useRef(null);
   const scrollStartRef = useRef(null);
   const [scrollOnly, setScrollOnly] = useState(false);
+  const [tipIndex, setTipIndex] = useState(0);
+  const [tipVisible, setTipVisible] = useState(true);
+  const [processingAudioPlaying, setProcessingAudioPlaying] = useState(false);
+  const [serverOnline, setServerOnline] = useState(true);
+  const uploadLockRef = useRef(false);
   // alphaTabApiRef removed (AlphaTab排除済み)
 
   useEffect(() => {
@@ -55,9 +69,71 @@ export default function SoloTabApp() {
 
   useEffect(() => { if (status === STATUS.IDLE) fetchHistory(); }, [status]);
 
-  // 起動時に履歴を取得（トップページ表示）
+  // サーバー接続確認（処理中はスキップ：SSE/ポーリングで接続確認済み）
   useEffect(() => {
-    fetchHistory();
+    const checkServer = async () => {
+      // 処理中・アップロード中はGPU負荷でタイムアウトしやすいのでスキップ
+      if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+        setServerOnline(true); // SSEが動いている=接続OK
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE}/sessions`, { signal: AbortSignal.timeout(15000) });
+        setServerOnline(res.ok);
+      } catch {
+        setServerOnline(false);
+      }
+    };
+    checkServer();
+    const iv = setInterval(checkServer, 60000);
+    return () => clearInterval(iv);
+  }, [status]);
+
+  // 処理中にブラウザを閉じる/リロードする場合の警告
+  useEffect(() => {
+    const handler = (e) => {
+      if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+        e.preventDefault();
+        e.returnValue = '処理中です。ページを離れますか？';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [status]);
+
+  // 起動時: 処理中セッションがあれば復元、なければ履歴取得
+  useEffect(() => {
+    const savedSid = localStorage.getItem('solotab-processing-session');
+    if (savedSid) {
+      // サーバーにセッション状態を確認
+      fetch(`${API_BASE}/status/${savedSid}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'processing') {
+            // まだ処理中 → SSE再接続
+            setSession({ id: savedSid, fileName: data.filename || 'Restoring...',
+              audioUrl: `${API_BASE}/files/${savedSid}/converted.wav` });
+            setStatus(STATUS.PROCESSING);
+            setStepsDone(data.steps_done || 0);
+            setProgressMsg(data.progress || '復元中...');
+            startStatusStream(savedSid);
+          } else if (data.status === 'completed') {
+            // 完了していた → 結果表示
+            localStorage.removeItem('solotab-processing-session');
+            restoreSession(savedSid);
+          } else {
+            // 失敗 or 不明 → クリーンアップ
+            localStorage.removeItem('solotab-processing-session');
+            fetchHistory();
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem('solotab-processing-session');
+          fetchHistory();
+        });
+    } else {
+      fetchHistory();
+    }
   }, []);
 
   // Audio sync & loop logic
@@ -151,21 +227,44 @@ export default function SoloTabApp() {
 
     es.onerror = () => {
       es.close(); sseRef.current = null;
-      // fallback polling
+      setProgressMsg("接続が切れました。再接続中...");
+      // fallback polling with retry limit
+      let retries = 0;
+      const MAX_RETRIES = 60; // 2s × 60 = 2分間リトライ
       const poll = setInterval(async () => {
+        retries++;
+        if (retries > MAX_RETRIES) {
+          clearInterval(poll);
+          // 最終確認: 完了しているかも
+          try {
+            const res = await fetch(`${API_BASE}/status/${sid}`);
+            const data = await res.json();
+            if (data.status === "completed") { handleCompleted(sid); return; }
+          } catch {}
+          setStatus(STATUS.FAILED);
+          setProgressMsg("サーバーとの接続がタイムアウトしました。ページをリロードしてください。");
+          localStorage.removeItem('solotab-processing-session');
+          return;
+        }
         try {
           const res = await fetch(`${API_BASE}/status/${sid}`);
           const data = await res.json();
           setProgressMsg(data.progress || "解析中...");
           if (typeof data.steps_done === 'number') setStepsDone(data.steps_done);
           if (data.status === "completed") { clearInterval(poll); handleCompleted(sid); }
-          else if (data.status === "failed") { clearInterval(poll); setStatus(STATUS.FAILED); setProgressMsg(data.error || "エラー"); }
+          else if (data.status === "failed") {
+            clearInterval(poll);
+            setStatus(STATUS.FAILED);
+            setProgressMsg(data.error || "解析に失敗しました");
+            localStorage.removeItem('solotab-processing-session');
+          }
         } catch { /* polling error, retry next interval */ }
       }, 2000);
     };
   };
 
   const handleCompleted = async (sid) => {
+    localStorage.removeItem('solotab-processing-session');
     try {
       const res = await fetch(`${API_BASE}/result/${sid}`);
       const result = await res.json();
@@ -179,7 +278,6 @@ export default function SoloTabApp() {
         fileName: result.filename || prev?.fileName,
         audioUrl: prev?.audioUrl || `${API_BASE}/files/${sid}/converted.wav`,
       }));
-      // カポは自動適用しない: ユーザーが手動で選択する
       setStatus(STATUS.COMPLETED);
     } catch {
       setStatus(STATUS.FAILED);
@@ -188,8 +286,23 @@ export default function SoloTabApp() {
   };
 
   // Upload
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
   const handleUpload = async (file) => {
     if (!file) return;
+    // 二重送信防止
+    if (uploadLockRef.current) return;
+    // サーバー接続チェック
+    if (!serverOnline) {
+      setStatus(STATUS.FAILED);
+      setProgressMsg('サーバーに接続できません。quick_start.bat でサーバーを起動してください。');
+      return;
+    }
+    // ファイルサイズチェック
+    if (file.size > MAX_FILE_SIZE) {
+      setStatus(STATUS.FAILED);
+      setProgressMsg(`ファイルが大きすぎます (${(file.size / 1024 / 1024).toFixed(0)}MB)。200MB以下のファイルを使用してください。`);
+      return;
+    }
     const isAudio = file.name.match(/\.(mp3|wav|m4a|flac)$/i);
     if (!isAudio) {
       // Try reading as text for YouTube URL (shortcut files etc.)
@@ -208,14 +321,22 @@ export default function SoloTabApp() {
       reader.readAsText(file);
       return;
     }
+    // 前の処理が走っていたらSSEを切断
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+    uploadLockRef.current = true;
     setStatus(STATUS.UPLOADING);
     setProgressMsg("アップロード中...");
     setStepsDone(0);
+    setIsPlaying(false);
+    setProcessingAudioPlaying(false);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("skip_demucs", soloGuitar);
     formData.append("fast_moe", "true");
     formData.append("guitar_type", guitarType);
+    formData.append("enable_technique_gp5", techGp5);
+    formData.append("enable_technique_overlay", techOverlay);
+    formData.append("enable_technique_fingers", techFingers);
     try {
       const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
       if (!res.ok) throw new Error("Upload failed");
@@ -224,10 +345,13 @@ export default function SoloTabApp() {
       setStatus(STATUS.PROCESSING);
       setStepsDone(1); // アップロード完了 = 20%
       setProgressMsg("ビート検出中...");
+      localStorage.setItem('solotab-processing-session', data.session_id);
       startStatusStream(data.session_id);
     } catch (err) {
       setStatus(STATUS.FAILED);
       setProgressMsg(err.message || "アップロードに失敗しました");
+    } finally {
+      uploadLockRef.current = false;
     }
   };
 
@@ -261,6 +385,10 @@ export default function SoloTabApp() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+    // 処理中に新しいファイルをドロップ → 確認
+    if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+      if (!confirm('現在解析中です。新しいファイルでやり直しますか？')) return;
+    }
     // Check for YouTube URL in dropped text
     const dt = e.dataTransfer;
     let droppedText = dt.getData("text/plain") || dt.getData("text/uri-list") || dt.getData("text");
@@ -322,12 +450,19 @@ export default function SoloTabApp() {
   };
 
   const goHome = () => {
+    // 処理中にホームに戻る → 確認
+    if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+      if (!confirm('解析中です。ホームに戻りますか？\n(バックグラウンドで処理は続行します)')) return;
+    }
     stopScrollOnly();
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     setIsPlaying(false);
+    setProcessingAudioPlaying(false);
     setCurrentTime(0);
     setSession(null);
     setStatus(STATUS.IDLE);
+    setStepsDone(0);
     fetchHistory();
   };
 
@@ -445,6 +580,53 @@ export default function SoloTabApp() {
     { key: 'tab', label: 'TAB譜生成', icon: '📄' },
   ];
 
+  // Processing tips
+  const TIPS = [
+    { icon: '🎵', text: 'ビート検出にはRNNを使用。人間のように拍を感じます' },
+    { icon: '🧠', text: 'ノート検出は35のAIモデルのアンサンブル投票で行います' },
+    { icon: '🎸', text: '弦の割り当てはViterbi DPで最適化。ギタリストの手の動きを再現' },
+    { icon: '🤚', text: '運指はCNN + Viterbi DPのハイブリッド。精度79.9%' },
+    { icon: '📊', text: '33,378ノートのデータセットで検証済み' },
+    { icon: '🎼', text: 'キー検出・コード検出・拍子推定も自動で行います' },
+    { icon: '⚡', text: 'GPU加速で処理を高速化しています' },
+    { icon: '🎯', text: 'テクニック検出: ハンマリング、プリング、スライド、ベンドを自動認識' },
+  ];
+
+
+
+  // Tip rotation effect
+  useEffect(() => {
+    if (status !== STATUS.PROCESSING && status !== STATUS.UPLOADING) return;
+    const interval = setInterval(() => {
+      setTipVisible(false);
+      setTimeout(() => {
+        setTipIndex(prev => (prev + 1) % TIPS.length);
+        setTipVisible(true);
+      }, 400);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [status]);
+
+  // Reset tip when entering processing
+  useEffect(() => {
+    if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+      setTipIndex(0);
+      setTipVisible(true);
+      setProcessingAudioPlaying(false);
+    }
+  }, [status]);
+
+  const toggleProcessingAudio = () => {
+    if (!audioRef.current || !session?.audioUrl) return;
+    if (processingAudioPlaying) {
+      audioRef.current.pause();
+      setProcessingAudioPlaying(false);
+    } else {
+      audioRef.current.play();
+      setProcessingAudioPlaying(true);
+    }
+  };
+
   return (
     <div
       onDragOver={handleDragOver}
@@ -452,16 +634,70 @@ export default function SoloTabApp() {
       onDrop={handleDrop}
       style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--st-bg)', color: 'var(--st-text)', position: 'relative' }}
     >
-      {session?.audioUrl && <audio ref={audioRef} src={session.audioUrl} preload="auto" crossOrigin="anonymous" onEnded={() => setIsPlaying(false)} />}
+      {/* Processing screen keyframes */}
+      <style>{`
+        @keyframes processingPulse1 {
+          0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.15; }
+          50% { transform: translate(-50%, -50%) scale(1.3); opacity: 0.05; }
+        }
+        @keyframes processingPulse2 {
+          0%, 100% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.10; }
+          50% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.03; }
+        }
+        @keyframes processingPulse3 {
+          0%, 100% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.07; }
+          50% { transform: translate(-50%, -50%) scale(1.7); opacity: 0.01; }
+        }
+        @keyframes waveBar {
+          0%, 100% { transform: scaleY(0.3); }
+          50% { transform: scaleY(1); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .proc-tip-enter {
+          opacity: 1;
+          transform: translateY(0);
+          transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        .proc-tip-exit {
+          opacity: 0;
+          transform: translateY(8px);
+          transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .proc-mini-play:hover {
+          transform: scale(1.1) !important;
+          box-shadow: 0 0 20px rgba(245, 158, 11, 0.4) !important;
+        }
+        .proc-mini-play:active {
+          transform: scale(0.95) !important;
+        }
+      `}</style>
+      {session?.audioUrl && <audio ref={audioRef} src={session.audioUrl} preload="auto" crossOrigin="anonymous" onEnded={() => { setIsPlaying(false); setProcessingAudioPlaying(false); }} />}
       <input ref={fileInputRef} type="file" accept=".mp3,.wav,.m4a,.flac" hidden
         onChange={(e) => { if (e.target.files?.[0]) handleUpload(e.target.files[0]); }} />
 
-      {/* Full-screen D&D Overlay */}
       {isDragging && (
         <div className="drag-overlay">
           <UploadCloud size={120} className="drag-icon" />
           <h2>Drop to analyze</h2>
           <p>音声ファイルをドロップ</p>
+        </div>
+      )}
+
+      {/* Server offline banner */}
+      {!serverOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+          background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+          color: 'white', padding: '10px 20px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          fontSize: 14, fontWeight: 600,
+          boxShadow: '0 2px 12px rgba(220,38,38,0.4)',
+        }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          サーバーに接続できません。quick_start.bat でサーバーを起動してください。
         </div>
       )}
 
@@ -541,6 +777,34 @@ export default function SoloTabApp() {
               </select>
             </div>
 
+            {/* Technique Toggles (Experimental) */}
+            <div onClick={(e) => e.stopPropagation()} style={{
+              display: 'flex', flexDirection: 'column', gap: 4, margin: '12px auto 0',
+              fontSize: '0.8rem', color: 'var(--st-text-dim)',
+              userSelect: 'none', width: 'fit-content',
+              padding: '8px 12px', borderRadius: 8,
+              background: 'var(--st-surface-2)', border: '1px solid var(--st-border)',
+            }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--st-accent)', marginBottom: 2 }}>🧪 テクニック表示（実験的）</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techGp5}
+                  onChange={(e) => { setTechGp5(e.target.checked); localStorage.setItem('solotab-tech-gp5', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                TABに記号書込 (H/P/S/C)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techOverlay}
+                  onChange={(e) => { setTechOverlay(e.target.checked); localStorage.setItem('solotab-tech-overlay', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                オーバーレイ表示
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={techFingers}
+                  onChange={(e) => { setTechFingers(e.target.checked); localStorage.setItem('solotab-tech-fingers', e.target.checked); }}
+                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
+                テクニック連動指修正
+              </label>
+            </div>
 
             {status === STATUS.FAILED && (
               <div className="error-message" style={{ marginTop: 16 }}>
@@ -553,6 +817,10 @@ export default function SoloTabApp() {
                 <h3><History size={12} /> 最近の解析</h3>
                 {history.slice(0, 5).map(h => (
                   <div key={h.session_id} className="history-item" onClick={() => {
+                    if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+                      if (!confirm('解析中です。別の曲に切り替えますか？')) return;
+                      if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+                    }
                     setSession({ id: h.session_id, fileName: h.filename });
                     restoreSession(h.session_id);
                   }}>
@@ -570,10 +838,11 @@ export default function SoloTabApp() {
           </div>
         )}
 
-        {/* ── PROCESSING: Step-based Checklist (NextChord style) ── */}
+        {/* ── PROCESSING: Enhanced Step-based Checklist ── */}
         {(status === STATUS.UPLOADING || status === STATUS.PROCESSING) && (() => {
           const doneCount = stepsDone;
           const pct = Math.round((doneCount / STEPS.length) * 100);
+          const currentTip = TIPS[tipIndex];
 
           return (
             <div className="processing-screen">
@@ -586,25 +855,107 @@ export default function SoloTabApp() {
                 </div>
               )}
 
-              {/* Circular progress */}
-              <div className="circular-progress">
-                <svg width="100" height="100" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="var(--st-surface-3)" strokeWidth="6" />
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="url(#stProgressGradient)" strokeWidth="6"
-                    strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 42}`}
-                    strokeDashoffset={`${2 * Math.PI * 42 * (1 - pct / 100)}`}
-                    transform="rotate(-90 50 50)"
-                    style={{ transition: 'stroke-dashoffset 0.6s ease' }}
-                  />
-                  <defs>
-                    <linearGradient id="stProgressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#f59e0b" />
-                      <stop offset="100%" stopColor="#fb923c" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-                <div className="pct">{pct}%</div>
+              {/* Circular progress with wave animation */}
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+                {/* Pulsing wave rings */}
+                <div style={{
+                  position: 'absolute', width: 140, height: 140, borderRadius: '50%',
+                  border: '2px solid rgba(245, 158, 11, 0.15)',
+                  animation: 'processingPulse1 3s ease-in-out infinite',
+                  top: '50%', left: '50%',
+                }} />
+                <div style={{
+                  position: 'absolute', width: 170, height: 170, borderRadius: '50%',
+                  border: '1.5px solid rgba(251, 146, 60, 0.10)',
+                  animation: 'processingPulse2 3.5s ease-in-out infinite',
+                  top: '50%', left: '50%',
+                }} />
+                <div style={{
+                  position: 'absolute', width: 200, height: 200, borderRadius: '50%',
+                  border: '1px solid rgba(245, 158, 11, 0.06)',
+                  animation: 'processingPulse3 4s ease-in-out infinite',
+                  top: '50%', left: '50%',
+                }} />
+
+                <div className="circular-progress" style={{ position: 'relative', zIndex: 2, marginBottom: 0 }}>
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--st-surface-3)" strokeWidth="5" />
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="url(#stProgressGradient)" strokeWidth="5"
+                      strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 50}`}
+                      strokeDashoffset={`${2 * Math.PI * 50 * (1 - pct / 100)}`}
+                      transform="rotate(-90 60 60)"
+                      style={{ transition: 'stroke-dashoffset 0.6s ease', filter: 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.3))' }}
+                    />
+                    <defs>
+                      <linearGradient id="stProgressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#f59e0b" />
+                        <stop offset="100%" stopColor="#fb923c" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="pct" style={{ fontSize: 24 }}>{pct}%</div>
+                </div>
               </div>
+
+              {/* Step progress message */}
+              <div style={{
+                fontSize: 13, fontWeight: 600, color: 'var(--st-accent)',
+                marginBottom: 8, letterSpacing: '0.02em',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <span style={{ fontSize: 14 }}>⏱</span>
+                ステップ {doneCount}/{STEPS.length}
+              </div>
+
+              {/* Mini audio player */}
+              {session?.audioUrl && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '10px 20px', borderRadius: 16,
+                  background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+                  marginBottom: 16, minWidth: 200,
+                }}>
+                  <button
+                    className="proc-mini-play"
+                    onClick={toggleProcessingAudio}
+                    style={{
+                      width: 36, height: 36, borderRadius: '50%',
+                      background: 'var(--st-gradient-brand)',
+                      border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'white', flexShrink: 0,
+                      transition: 'all 0.2s',
+                      boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
+                    }}
+                    title={processingAudioPlaying ? '一時停止' : '待ち時間に曲を聴く'}
+                  >
+                    {processingAudioPlaying ? <Pause size={16} /> : <Play size={16} style={{ marginLeft: 2 }} />}
+                  </button>
+                  {/* Waveform bars animation */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 24 }}>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                      <div key={i} style={{
+                        width: 3, borderRadius: 2,
+                        height: processingAudioPlaying ? '100%' : 8,
+                        background: processingAudioPlaying
+                          ? `linear-gradient(to top, #f59e0b, #fb923c)`
+                          : 'var(--st-surface-3)',
+                        animation: processingAudioPlaying
+                          ? `waveBar ${0.4 + (i % 3) * 0.15}s ease-in-out ${i * 0.05}s infinite alternate`
+                          : 'none',
+                        transition: 'height 0.3s ease, background 0.3s ease',
+                        transformOrigin: 'bottom',
+                      }} />
+                    ))}
+                  </div>
+                  <span style={{
+                    fontSize: 11, color: 'var(--st-text-dim)', fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {processingAudioPlaying ? '再生中 🎧' : '曲を聴く'}
+                  </span>
+                </div>
+              )}
 
               {/* Step checklist */}
               <div className="step-checklist">
@@ -624,7 +975,7 @@ export default function SoloTabApp() {
                 })}
               </div>
 
-              <p className="processing-footer">AI powered analysis</p>
+
             </div>
           );
         })()}

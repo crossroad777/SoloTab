@@ -27,6 +27,7 @@ def notes_to_gp5(notes: List[dict], *,
                  noise_gate: float = 0.0,
                  rhythm_info: dict | None = None,
                  key_signature: str = "C",
+                 include_techniques: bool = True,
                  **kwargs) -> bytes:
     """
     ノートデータからGP5バイナリを生成する。
@@ -57,18 +58,29 @@ def notes_to_gp5(notes: List[dict], *,
     # Noise gate filter
     filtered = _filter_noise(notes, noise_gate)
 
-    # Assign notes to bars (reuse tab_renderer logic)
-    from tab_renderer import _assign_to_bars, _group_by_time
-    note_entries = _assign_to_bars(filtered, beats, beats_per_bar, rhythm_info=rhythm_info)
-
-    # Quantize durations
+    # --- 量子化: music21ベース (新) or tab_renderer (旧フォールバック) ---
     try:
-        from music_theory import quantize_note_durations
-        note_entries = quantize_note_durations(
-            note_entries, is_triplet_mode=is_triplet, beats_per_bar=beats_per_bar
+        from music_quantizer import quantize_notes_music21
+        note_entries = quantize_notes_music21(
+            filtered, beats, bpm,
+            time_signature=time_signature,
+            beats_per_bar=beats_per_bar,
+            rhythm_subdivision=(rhythm_info or {}).get("subdivision", "straight"),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[gp_renderer] music21 quantizer failed, falling back: {e}")
+        from tab_renderer import _assign_to_bars
+        note_entries = _assign_to_bars(filtered, beats, beats_per_bar, rhythm_info=rhythm_info)
+        try:
+            from music_theory import quantize_note_durations
+            note_entries = quantize_note_durations(
+                note_entries, is_triplet_mode=is_triplet, beats_per_bar=beats_per_bar
+            )
+        except Exception:
+            pass
+
+    # _group_by_time is still needed for voice beat building
+    from tab_renderer import _group_by_time
 
     # Calculate total bars
     total_bars = 1
@@ -128,10 +140,24 @@ def notes_to_gp5(notes: List[dict], *,
     track.measures = measures
 
     # --- Fill each measure with notes ---
-    bar_total_divs = beats_per_bar * DIVISIONS  # e.g. 36 for 3/4
+    # For denom=4: each beat = quarter note = DIVISIONS divs
+    # For denom=8: each beat = eighth note = DIVISIONS//2 divs
+    divs_per_beat = DIVISIONS if beat_type == 4 else DIVISIONS // 2
+    bar_total_divs = beats_per_bar * divs_per_beat  # e.g. 36 for 3/4, 36 for 6/8
 
-    # Voice分離 (split_pitch = 52 は E3)
-    split_pitch = 52
+    # Voice分離: 弦ベース（弦4-6=ベース, 弦1-3=メロディ）優先、フォールバックはpitch
+    # ギターのフィンガースタイルでは親指(p)がベース弦(4-6)を担当
+    split_pitch = 52  # E3: フォールバック用
+
+    def _is_bass(n):
+        """弦情報があれば弦4-6をベース、なければpitch<=52"""
+        s = int(n.get("string", 0))
+        if s >= 4:  # 弦4,5,6 = ベース
+            return True
+        if s >= 1:  # 弦1,2,3 = メロディ
+            return False
+        # 弦情報なし → pitch fallback
+        return int(n.get("pitch", 60)) <= split_pitch
 
     # --- Pre-pass: ベース音(Voice 2)の後処理 ---
     # 1) 各小節のベース音をbeat_pos=0にスナップ（各小節の最初のベース音のみ保持）
@@ -139,8 +165,8 @@ def notes_to_gp5(notes: List[dict], *,
     bars_data = []
     for bar_num in range(total_bars):
         bar_notes = [e for e in note_entries if e["bar"] == bar_num]
-        melody = [n for n in bar_notes if int(n.get("pitch", 60)) > split_pitch]
-        bass = [n for n in bar_notes if int(n.get("pitch", 60)) <= split_pitch]
+        melody = [n for n in bar_notes if not _is_bass(n)]
+        bass = [n for n in bar_notes if _is_bass(n)]
         bars_data.append({"melody": melody, "bass": bass})
 
     # ベース音スナップ＋補完
@@ -148,7 +174,9 @@ def notes_to_gp5(notes: List[dict], *,
     for bar_num in range(total_bars):
         bd = bars_data[bar_num]
         if bd["bass"]:
-            # 小節内の最初のベース音を1拍目にスナップ
+            # ベース音のポジション処理:
+            # - 拍の先頭近く（1拍目の範囲内）のベース音は1拍目にスナップ
+            # - それ以外のベース音は元の位置を維持
             # 同一pitch のベース音が複数ある場合は1つに統合
             seen_pitches = set()
             snapped = []
@@ -157,7 +185,9 @@ def notes_to_gp5(notes: List[dict], *,
                 if p not in seen_pitches:
                     seen_pitches.add(p)
                     snap = dict(b)
-                    snap["beat_pos"] = 0
+                    # 最初のビート範囲内（1拍=12divs）のベース音のみ1拍目にスナップ
+                    if float(snap.get("beat_pos", 0)) < 12:
+                        snap["beat_pos"] = 0
                     snapped.append(snap)
             bd["bass"] = snapped
             last_bass_template = snapped
@@ -173,28 +203,28 @@ def notes_to_gp5(notes: List[dict], *,
         bass = bd["bass"]
 
         if not melody and not bass:
-            # Empty bar: whole rest
-            rest_beat = gp.Beat(m.voices[0], status=gp.BeatStatus.rest)
-            rest_beat.duration.value = gp.Duration.whole
-            m.voices[0].beats = [rest_beat]
+            # Empty bar: bar-length rest (3/4等ではwhole restは長すぎる)
+            m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
             continue
 
         # Voice 1 (Melody)
         if melody:
+            # NOTE: threshold=0.1s may split chords at slow tempos (e.g. notes 0.11s apart)
+            # Consider increasing threshold for BPM < 80 if chord splitting is observed.
             groups1 = _group_by_time(melody, threshold=0.1)
             m.voices[0].beats = _build_voice_beats(
-                groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet
+                groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet,
+                include_techniques=include_techniques
             )
         else:
-            rest_beat = gp.Beat(m.voices[0], status=gp.BeatStatus.rest)
-            rest_beat.duration.value = gp.Duration.whole
-            m.voices[0].beats = [rest_beat]
+            m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
 
         # Voice 2 (Bass)
         if bass and len(m.voices) > 1:
             groups2 = _group_by_time(bass, threshold=0.1)
             m.voices[1].beats = _build_voice_beats(
-                groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True
+                groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True,
+                include_techniques=include_techniques
             )
 
     # --- Voice integrity check ---
@@ -203,9 +233,7 @@ def notes_to_gp5(notes: List[dict], *,
     for m in track.measures:
         for v in m.voices:
             if not v.beats:
-                rest_beat = gp.Beat(v, status=gp.BeatStatus.rest)
-                rest_beat.duration.value = gp.Duration.whole
-                v.beats = [rest_beat]
+                v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
 
     # --- Write to bytes ---
     import io
@@ -216,7 +244,7 @@ def notes_to_gp5(notes: List[dict], *,
 
 # ─── Helper Functions ───
 
-def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_legato=False):
+def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_legato=False, include_techniques=True):
     """グループ化されたノートからGP Beatリストを構築する。"""
     gp_beats = []
     current_pos = 0
@@ -233,6 +261,10 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
         raw_pos = int(float(group[0]["beat_pos"]))
         # グリッドにスナップ
         target_pos = min(snap_grid, key=lambda x: abs(x - raw_pos))
+
+        # 小節末に達していたら残りグループをスキップ
+        if current_pos >= bar_total_divs or target_pos >= bar_total_divs:
+            break
 
         # Rest gap before this group
         gap = target_pos - current_pos
@@ -257,8 +289,9 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
         # Duration: CRNNが検出した実際の音の長さ(duration_divs)を使用
         if force_legato:
-            # ベース音などは次のノートまで音価を伸ばす
-            dur_divs = gap_to_next
+            # ベース音などは次のノートまで音価を伸ばす（小節境界でキャップ）
+            dur_divs = min(gap_to_next, bar_total_divs - target_pos)
+            dur_divs = max(1, dur_divs)
         else:
             dur_divs = int(group[0].get("duration_divs", gap_to_next))
             dur_divs = min(dur_divs, gap_to_next, bar_total_divs - target_pos)
@@ -268,10 +301,16 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
             normal_durs = [48, 36, 24, 18, 12, 9, 6, 3, 2, 1]
             dur_divs = min(normal_durs, key=lambda x: abs(x - dur_divs))
         else:
-            if force_legato:
-                # 3連符グリッドでのレガート用音価
-                triplet_durs = [48, 36, 24, 18, 12, 8, 4]
-                dur_divs = min(triplet_durs, key=lambda x: abs(x - dur_divs))
+            triplet_durs = [48, 36, 24, 18, 12, 8, 4, 3, 2, 1]
+            dur_divs = min(triplet_durs, key=lambda x: abs(x - dur_divs))
+
+        # Post-snap cap: スナップで上方向に丸められた場合、小節からはみ出さないようキャップ
+        remaining_in_bar = bar_total_divs - target_pos
+        if dur_divs > remaining_in_bar:
+            # はみ出すので、remaining以下の最大VALID値に切り下げ
+            valid = normal_durs if not is_triplet else triplet_durs
+            candidates = [d for d in valid if d <= remaining_in_bar]
+            dur_divs = max(candidates) if candidates else 1
 
         # Create beat with all notes in this chord group
         beat = gp.Beat(voice, status=gp.BeatStatus.normal)
@@ -291,9 +330,9 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
             # ═══════════════════════════════════════════════════════════
             # YG全37パターン完全準拠 GP5テクニックエンコード
-            # PyGuitarPro API確認済み (2026-05) × AlphaTab 1.x 検証済み
+            # include_techniques=False の場合はスキップ
             # ═══════════════════════════════════════════════════════════
-            tech = entry.get("technique")
+            tech = entry.get("technique") if include_techniques else None
 
             # ── 1. レガート系 ──────────────────────────────────────────
             if tech in ("h", "hammer-on", "hammer_on"):
@@ -457,6 +496,7 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
         gp_beats.append(beat)
         current_pos = target_pos + dur_divs
+        current_pos = min(current_pos, bar_total_divs)
 
 
 
@@ -468,7 +508,12 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
             # ギターのlet ring（音が自然に伸びる）に合致
             last_beat = gp_beats[-1]
             old_dur = last_beat.duration.value
-            new_divs = dur_divs + remaining  # 直前のdur_divsに余りを加算
+            # Compute actual last beat duration from its GP duration instead of
+            # using the loop's dur_divs which may be stale if the last group was
+            # skipped by the bar-end guard.
+            last_beat_divs = _gp_duration_to_divs(old_dur, last_beat.duration.isDotted,
+                                                   hasattr(last_beat.duration, 'tuplet') and last_beat.duration.tuplet is not None and last_beat.duration.tuplet.enters == 3)
+            new_divs = last_beat_divs + remaining
             new_gp_dur, new_dotted, new_tuplet = _divs_to_gp_duration(new_divs, is_triplet)
             last_beat.duration.value = new_gp_dur
             last_beat.duration.isDotted = new_dotted
@@ -610,8 +655,30 @@ def _divs_to_gp_duration(divs: int, is_triplet: bool) -> tuple[int, bool, bool]:
     return exact[best_key]
 
 
+def _gp_duration_to_divs(gp_dur: int, is_dotted: bool, is_triplet_beat: bool) -> int:
+    """Reverse lookup: GP Duration value + flags -> divs count.
+    Used to recover the actual duration of a beat for trailing rest extension."""
+    base_map = {
+        gp.Duration.whole: 48,
+        gp.Duration.half: 24,
+        gp.Duration.quarter: 12,
+        gp.Duration.eighth: 6,
+        gp.Duration.sixteenth: 3,
+        gp.Duration.thirtySecond: 2,
+        gp.Duration.sixtyFourth: 1,
+    }
+    divs = base_map.get(gp_dur, 12)
+    if is_dotted:
+        divs = divs * 3 // 2  # e.g. 12 -> 18
+    if is_triplet_beat:
+        divs = divs * 2 // 3  # e.g. 12 -> 8, 6 -> 4
+    return max(1, divs)
+
+
 def _divs_to_gp_beats_rest(divs: int, voice, is_triplet: bool) -> list:
     """Rest duration expressed as one or more GP rest beats."""
+    if divs <= 0:
+        return []
     beats_out = []
     remaining = divs
 
@@ -640,8 +707,8 @@ def _divs_to_gp_beats_rest(divs: int, voice, is_triplet: bool) -> list:
 
 
 def _vel_to_gp(v) -> int:
-    """velocity (0-1 or 0-127) to GP velocity (ppp=15 ... fff=127)."""
+    """velocity (0-1 or 0-127) to GP velocity (valid GP5 range: 1-127)."""
     v = float(v)
     if v <= 1.0:
         v = v * 127
-    return max(15, min(127, int(v)))
+    return max(1, min(127, int(v)))

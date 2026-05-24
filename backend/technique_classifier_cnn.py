@@ -1,149 +1,258 @@
 """
-technique_classifier_cnn.py — CNNベースのテクニック分類
-=======================================================
-ノートにtechnique属性 (normal / palm_mute / harmonic) を付与。
+technique_classifier_cnn.py - CNN-based technique classifier (inference only)
+==============================================================================
+Trained on IDMT-SMT-GUITAR_V2. Uses mel+delta+delta2 patches around each note
+onset to classify: normal, muted, bend, slide, harmonic, vibrato.
 
-旧 ensemble_transcriber.py L509-582 + technique_classifier.py L45-115 から統合。
+Usage in pipeline:
+    from technique_classifier_cnn import annotate_techniques_cnn
+    notes = annotate_techniques_cnn(notes, audio_path, confidence_threshold=0.90)
 """
-
+from __future__ import annotations
+import os
 import numpy as np
-import librosa
-from typing import List, Dict, Optional, Callable
-from pathlib import Path
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pathlib import Path
+from typing import List, Optional
 
+# ── Model architecture (must match training) ──
 
-# --- Technique classes (technique_classifier.py L45-53 より) ---
-TECHNIQUE_CLASSES = [
-    'normal',        # 0: Standard picking
-    'palm_mute',     # 1: Palm mute
-    'harmonic',      # 2: Natural/artificial harmonics
-    'bend',          # 3: Bend
-    'slide',         # 4: Slide
-    'vibrato',       # 5: Vibrato
-    'dead_note',     # 6: Dead/ghost note
-]
-NUM_CLASSES = len(TECHNIQUE_CLASSES)
-
-
-# --- CNN Model (technique_classifier.py L77-115 より) ---
-class TechniqueClassifierCNN(nn.Module):
-    """
-    Small CNN for guitar technique classification from Mel spectrograms.
-    Input: [B, 1, N_MELS, time_frames]
-    Output: [B, NUM_CLASSES]
-    """
-    def __init__(self, num_classes=NUM_CLASSES):
+class SEBlock(nn.Module):
+    def __init__(self, channels, reduction=4):
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1),
+        self.fc1 = nn.Linear(channels, channels // reduction)
+        self.fc2 = nn.Linear(channels // reduction, channels)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        s = x.view(b, c, -1).mean(dim=2)
+        s = F.relu(self.fc1(s))
+        s = torch.sigmoid(self.fc2(s))
+        return x * s.view(b, c, 1, 1)
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_ch)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_ch)
+        self.se = SEBlock(out_ch)
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_ch != out_ch:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_ch, out_ch, 1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_ch),
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out = self.se(out)
+        out += self.shortcut(x)
+        return F.relu(out)
+
+
+class TechniqueCNN(nn.Module):
+    def __init__(self, num_classes=6):
+        super().__init__()
+        self.stem = nn.Sequential(
+            nn.Conv2d(3, 32, 3, padding=1, bias=False),
             nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Dropout(0.2),
-
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Dropout(0.2),
-
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),
-            nn.Dropout(0.3),
+            nn.ReLU(inplace=True),
         )
+        self.layer1 = ResBlock(32, 64, stride=2)
+        self.layer2 = ResBlock(64, 128, stride=2)
+        self.layer3 = ResBlock(128, 256, stride=2)
+        self.layer4 = ResBlock(256, 256, stride=2)
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
-            nn.Linear(128 * 4 * 4, 256),
-            nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(256, num_classes),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(128, num_classes),
         )
 
     def forward(self, x):
-        x = self.features(x)
+        x = self.stem(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.pool(x)
         x = x.view(x.size(0), -1)
-        x = self.classifier(x)
-        return x
+        return self.classifier(x)
 
 
-# --- Inference ---
-def annotate_techniques(wav_path: str, notes: List[Dict],
-                        report: Optional[Callable] = None) -> List[Dict]:
+# ── Globals (loaded once) ──
+_model = None
+_device = None
+_ckpt_meta = None
+MODEL_PATH = Path(__file__).parent / "models" / "technique_cnn.pth"
+
+# CNN label -> pipeline technique name mapping
+_CNN_TO_TECHNIQUE = {
+    "normal":   "normal",
+    "muted":    "pm",        # palm mute
+    "bend":     "b",         # bend
+    "slide":    "/",         # slide up (default)
+    "harmonic": "harmonic",  # natural harmonic
+    "vibrato":  "~",         # vibrato
+}
+
+
+def _load_model():
+    """Load model (cached singleton)."""
+    global _model, _device, _ckpt_meta
+    if _model is not None:
+        return
+
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(f"Technique CNN model not found: {MODEL_PATH}")
+
+    _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _ckpt_meta = torch.load(str(MODEL_PATH), map_location=_device, weights_only=False)
+
+    num_classes = len(_ckpt_meta["label_names"])
+    _model = TechniqueCNN(num_classes).to(_device)
+    _model.load_state_dict(_ckpt_meta["model_state_dict"])
+    _model.eval()
+    print(f"[TechCNN] Model loaded: {MODEL_PATH.name} "
+          f"(epoch={_ckpt_meta.get('epoch')}, "
+          f"val_f1={_ckpt_meta.get('val_f1', 0):.3f}, "
+          f"device={_device})")
+
+
+def _extract_patches(notes: List[dict], audio_path: str) -> np.ndarray:
+    """Extract 3-channel mel patches for all notes in batch."""
+    import librosa
+
+    cfg = _ckpt_meta.get("config", _ckpt_meta)  # V4 nests in config, V2 is flat
+    sr = cfg["sr"]
+    n_mels = cfg["n_mels"]
+    hop = cfg["hop_length"]
+    n_fft = cfg.get("n_fft", 1024)
+    patch_frames = cfg["patch_frames"]
+
+    # Load audio once
+    y, _ = librosa.load(audio_path, sr=sr, mono=True)
+
+    # Compute features once
+    mel = librosa.feature.melspectrogram(
+        y=y, sr=sr, n_fft=n_fft, hop_length=hop,
+        n_mels=n_mels, fmin=50, fmax=8000,
+    )
+    mel_db = librosa.power_to_db(mel, ref=np.max).astype(np.float32)
+    delta = librosa.feature.delta(mel_db, order=1).astype(np.float32)
+    delta2 = librosa.feature.delta(mel_db, order=2).astype(np.float32)
+
+    total_frames = mel_db.shape[1]
+    half = patch_frames // 2
+    patches = []
+
+    for note in notes:
+        onset = float(note.get("start", 0))
+        onset_frame = int(onset * sr / hop)
+        start = max(0, onset_frame - half)
+        end = start + patch_frames
+        if end > total_frames:
+            end = total_frames
+            start = max(0, end - patch_frames)
+
+        channels = []
+        for feat in [mel_db, delta, delta2]:
+            p = feat[:, start:end]
+            if p.shape[1] < patch_frames:
+                pad = np.zeros((n_mels, patch_frames - p.shape[1]), dtype=np.float32)
+                p = np.concatenate([p, pad], axis=1)
+            # Normalize
+            m, s = p.mean(), p.std() + 1e-6
+            p = (p - m) / s
+            channels.append(p)
+
+        patches.append(np.stack(channels, axis=0))  # [3, n_mels, patch_frames]
+
+    return np.array(patches, dtype=np.float32)
+
+
+def annotate_techniques_cnn(
+    notes: List[dict],
+    audio_path: str,
+    confidence_threshold: float = 0.90,
+) -> List[dict]:
     """
-    テクニック分類器でノートにtechnique属性を付与。
-    technique: normal / palm_mute / harmonic / bend / slide / vibrato / dead_note
+    CNN-based technique annotation.
+
+    Parameters
+    ----------
+    notes : list of dict with 'start', 'end', 'pitch', 'string', 'fret'
+    audio_path : path to WAV/MP3 file
+    confidence_threshold : minimum confidence to assign technique (default 0.90)
+
+    Returns
+    -------
+    notes : same list with 'technique' and 'technique_confidence' added
     """
-    model_path = Path(__file__).parent.parent / "generated" / "technique_classifier" / "best_model.pt"
-    if not model_path.exists():
-        if report:
-            report("テクニック分類: モデル未検出、スキップ")
+    if not notes or not audio_path:
         return notes
 
     try:
-        checkpoint = torch.load(str(model_path), map_location='cpu', weights_only=False)
-        # チェックポイントにクラス数が含まれている場合はそれを使用
-        n_classes = len(checkpoint.get('classes', TECHNIQUE_CLASSES))
-        classes = checkpoint.get('classes', TECHNIQUE_CLASSES)
-        model = TechniqueClassifierCNN(n_classes)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
-
-        # Load audio once
-        y, sr = librosa.load(wav_path, sr=22050, mono=True)
-
-        tech_counts = {}
-        seg_dur = 0.3
-        seg_samples = int(seg_dur * 22050)
-
-        for note in notes:
-            onset = note.get('start', 0)
-            start_sample = max(0, int(onset * 22050) - int(0.02 * 22050))
-            end_sample = start_sample + seg_samples
-
-            if end_sample > len(y):
-                note['technique'] = 'normal'
-                continue
-
-            segment = y[start_sample:end_sample]
-            if len(segment) < seg_samples:
-                segment = np.pad(segment, (0, seg_samples - len(segment)))
-
-            mel = librosa.feature.melspectrogram(
-                y=segment.astype(np.float32), sr=22050,
-                n_mels=64, n_fft=1024, hop_length=256
-            )
-            mel_db = librosa.power_to_db(mel, ref=np.max)
-            mel_db = (mel_db - mel_db.min()) / (mel_db.max() - mel_db.min() + 1e-8)
-
-            x = torch.FloatTensor(mel_db).unsqueeze(0).unsqueeze(0)
-
-            with torch.no_grad():
-                out = model(x)
-                probs = torch.softmax(out, dim=1)[0]
-                pred = probs.argmax().item()
-                confidence = probs[pred].item()
-
-            tech_name = classes[pred] if pred < len(classes) else 'normal'
-            # 信頼度閾値: normal以外は高確信(>0.95)の場合のみ採用
-            if tech_name != 'normal' and confidence < 0.95:
-                tech_name = 'normal'
-            note['technique'] = tech_name
-            note['technique_confidence'] = round(confidence, 3)
-            tech_counts[tech_name] = tech_counts.get(tech_name, 0) + 1
-
-        tech_str = ', '.join(f'{k}:{v}' for k, v in sorted(tech_counts.items()))
-        if report:
-            report(f"テクニック推定完了: {tech_str}")
-
+        _load_model()
     except Exception as e:
-        if report:
-            report(f"テクニック推定エラー: {e}")
-        for note in notes:
-            note['technique'] = 'normal'
+        print(f"[TechCNN] Model load failed: {e}")
+        return notes
+
+    label_names = _ckpt_meta["label_names"]
+
+    # Batch extract patches
+    print(f"[TechCNN] Processing {len(notes)} notes...")
+    import time
+    t0 = time.time()
+    patches = _extract_patches(notes, audio_path)
+    t_extract = time.time() - t0
+
+    # Batch inference
+    t0 = time.time()
+    batch_size = 256
+    all_probs = []
+    with torch.no_grad():
+        for i in range(0, len(patches), batch_size):
+            batch = torch.from_numpy(patches[i:i+batch_size]).to(_device)
+            logits = _model(batch)
+            probs = F.softmax(logits, dim=1).cpu().numpy()
+            all_probs.append(probs)
+    all_probs = np.concatenate(all_probs, axis=0)
+    t_infer = time.time() - t0
+
+    # Apply predictions
+    stats = {"total": len(notes), "annotated": 0, "by_class": {}}
+    for i, note in enumerate(notes):
+        pred_class = int(all_probs[i].argmax())
+        confidence = float(all_probs[i].max())
+        label = label_names[pred_class]
+
+        # Only assign if confidence exceeds threshold AND not "normal"
+        if label != "normal" and confidence >= confidence_threshold:
+            technique = _CNN_TO_TECHNIQUE.get(label, label)
+            note["technique"] = technique
+            note["technique_confidence"] = round(confidence, 3)
+            note["technique_source"] = "cnn"
+            stats["annotated"] += 1
+            stats["by_class"][label] = stats["by_class"].get(label, 0) + 1
+        else:
+            # Keep existing technique if set by rule-based detector
+            if not note.get("technique") or note["technique"] == "normal":
+                note["technique"] = "normal"
+                note["technique_confidence"] = round(confidence, 3)
+
+    print(f"[TechCNN] Done: {stats['annotated']}/{stats['total']} annotated "
+          f"(threshold={confidence_threshold}) "
+          f"extract={t_extract:.1f}s, infer={t_infer:.1f}s")
+    for cls, cnt in sorted(stats["by_class"].items()):
+        print(f"  {cls}: {cnt}")
 
     return notes
