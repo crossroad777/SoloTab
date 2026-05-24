@@ -832,31 +832,44 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 // --- ノートクリック → 編集UI ---
                 api.noteMouseDown.on((note, evt) => {
                     if (!note || !containerRef.current) return;
-                    let noteIdx = 0;
-                    let found = false;
                     const score = api.score;
                     if (!score) return;
-                    for (const track of score.tracks) {
-                        for (const staff of track.staves) {
-                            for (const bar of staff.bars) {
-                                for (const voice of bar.voices) {
-                                    for (const beat of voice.beats) {
-                                        if (beat.isRest) continue;
-                                        for (const n of beat.notes) {
-                                            if (n === note) { found = true; break; }
-                                            noteIdx++;
-                                        }
-                                        if (found) break;
-                                    }
-                                    if (found) break;
-                                }
-                                if (found) break;
+
+                    // BeatのtickからオーディオMSを推算
+                    const beat = note.beat;
+                    const ticksPerBeat = 960; // AlphaTab standard
+                    const bpm = score.tempo?.value || 120;
+                    const approxTimeSec = (beat.absolutePlaybackStart / ticksPerBeat) * (60 / bpm);
+
+                    // notesDataRef (= notes_assigned.json と同じ順序) から
+                    // (string, fret, 近い時刻) でマッチするノートを検索
+                    let backendIdx = -1;
+                    const backendNotes = notesDataRef.current;
+                    if (backendNotes.length > 0) {
+                        let bestDist = Infinity;
+                        for (let i = 0; i < backendNotes.length; i++) {
+                            const bn = backendNotes[i];
+                            if (Number(bn.string) === Number(note.string) && Number(bn.fret) === Number(note.fret)) {
+                                const d = Math.abs(bn.start - approxTimeSec);
+                                if (d < bestDist) { bestDist = d; backendIdx = i; }
                             }
-                            if (found) break;
                         }
-                        if (found) break;
+                        // フォールバック: string+fretが一致しない場合は時刻のみで検索
+                        if (backendIdx < 0) {
+                            let bestDist2 = Infinity;
+                            for (let i = 0; i < backendNotes.length; i++) {
+                                const d = Math.abs(backendNotes[i].start - approxTimeSec);
+                                if (d < bestDist2 && Number(backendNotes[i].string) === Number(note.string)) {
+                                    bestDist2 = d; backendIdx = i;
+                                }
+                            }
+                        }
                     }
-                    if (!found) return;
+                    if (backendIdx < 0) {
+                        console.warn('[TabView] Could not find matching backend note');
+                        return;
+                    }
+                    console.log(`[TabView] noteClick: alphaTab fret=${note.fret} str=${note.string} t≈${approxTimeSec.toFixed(2)}s → backend[${backendIdx}] start=${backendNotes[backendIdx]?.start}`);
 
                     const rect = containerRef.current.getBoundingClientRect();
                     let px, py;
@@ -864,12 +877,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         px = (evt.pageX || evt.clientX) - rect.left;
                         py = (evt.pageY || evt.clientY) - rect.top + containerRef.current.scrollTop;
                     } else {
-                        // AlphaTab 1.3.0: evt is undefined, use boundsLookup for note position
                         const bl = api.renderer?.boundsLookup;
                         let noteBounds = null;
                         if (bl) {
                             try {
-                                // Try to find note bounds through boundsLookup
                                 const groups = bl.staffSystems || bl.staveGroups || [];
                                 outer: for (const sys of groups) {
                                     const bars = sys.bars || sys.masterBars || [];
@@ -895,13 +906,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             px = noteBounds.x + noteBounds.w / 2;
                             py = noteBounds.y;
                         } else {
-                            // Last resort: center of visible area
                             px = rect.width / 2;
                             py = containerRef.current.scrollTop + rect.height / 3;
                         }
                     }
 
-                    setEditNote({ noteIndex: noteIdx, fret: note.fret, string: note.string, x: px, y: py, alphaNote: note });
+                    setEditNote({ noteIndex: backendIdx, fret: note.fret, string: note.string, x: px, y: py, alphaNote: note });
                     setEditInput(String(note.fret));
                     setTimeout(() => editInputRef.current?.focus(), 50);
                 });
