@@ -341,6 +341,7 @@ async def upload_audio(file: UploadFile = File(...),
         "enable_technique_gp5": enable_technique_gp5,
         "enable_technique_overlay": enable_technique_overlay,
         "enable_technique_fingers": enable_technique_fingers,
+        "steps_done": 1,
     }
     save_session(session_id)
 
@@ -705,9 +706,12 @@ async def get_gp5(session_id: str):
     return FileResponse(
         str(gp5_path),
         media_type="application/octet-stream",
+        stat_result=False,
         headers={
             "Content-Disposition": cd,
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
         },
     )
 

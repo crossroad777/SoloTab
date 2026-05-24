@@ -211,7 +211,7 @@ export default function SoloTabApp() {
       try {
         const data = JSON.parse(event.data);
         setProgressMsg(data.progress || "解析中...");
-        if (typeof data.steps_done === 'number') setStepsDone(data.steps_done);
+        if (typeof data.steps_done === 'number') setStepsDone(prev => Math.max(prev, data.steps_done));
         if (data.filename) setSession(prev => prev ? { ...prev, fileName: data.filename } : prev);
 
         if (data.status === "completed") {
@@ -250,7 +250,7 @@ export default function SoloTabApp() {
           const res = await fetch(`${API_BASE}/status/${sid}`);
           const data = await res.json();
           setProgressMsg(data.progress || "解析中...");
-          if (typeof data.steps_done === 'number') setStepsDone(data.steps_done);
+          if (typeof data.steps_done === 'number') setStepsDone(prev => Math.max(prev, data.steps_done));
           if (data.status === "completed") { clearInterval(poll); handleCompleted(sid); }
           else if (data.status === "failed") {
             clearInterval(poll);
