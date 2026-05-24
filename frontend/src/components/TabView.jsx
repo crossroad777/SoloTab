@@ -584,16 +584,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 'position:absolute',
                 `left:${x}px`,
                 `top:${y}px`,
-                'font-size:12px',
+                'font-size:13px',
                 'font-weight:bold',
-                'color:#3b82f6',
+                'color:#2563eb',
                 'font-family:Arial,Helvetica,sans-serif',
                 'white-space:nowrap',
                 'line-height:1',
-                'text-shadow:0 0 3px rgba(0,0,0,0.7),0 0 3px rgba(0,0,0,0.7)',
                 'pointer-events:none',
                 'user-select:none',
-                'letter-spacing:0.5px',
+                'letter-spacing:0.3px',
             ].join(';');
             overlay.appendChild(el);
         }
