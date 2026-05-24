@@ -310,6 +310,341 @@ STRING_FINGER_PENALTY = {
     (1, 2): 5.0,
 }
 
+# ---------------------------------------------------------------------------
+# Pentatonic minor boxes (Am pentatonic, 5 CAGED boxes)
+# Each box: list of (string, offset_from_box_start, finger)
+#   string: 1–6 (1=high E, 6=low E)
+#   offset_from_box_start: fret offset relative to the box's starting fret
+#   finger: 1=index, 2=middle, 3=ring, 4=pinky, 0=open
+# Standard fingerings matching classical/jazz guitar pedagogy.
+# ---------------------------------------------------------------------------
+PENTATONIC_MINOR_BOXES: dict[int, list[tuple[int, int, int]]] = {
+    # Box 1 — "E shape": root on 6th string (e.g. Am at fret 5)
+    1: [
+        (6, 0, 1), (6, 3, 4),
+        (5, 0, 1), (5, 3, 4),
+        (4, 0, 1), (4, 2, 3),
+        (3, 0, 1), (3, 2, 3),
+        (2, 0, 1), (2, 3, 4),
+        (1, 0, 1), (1, 3, 4),
+    ],
+    # Box 2 — "D shape": root on 4th string
+    2: [
+        (6, 0, 1), (6, 2, 3),
+        (5, 0, 1), (5, 2, 3),
+        (4, 0, 1), (4, 2, 4),
+        (3, 0, 1), (3, 2, 3),
+        (2, 0, 1), (2, 2, 3),
+        (1, 0, 1), (1, 2, 3),
+    ],
+    # Box 3 — "C shape"
+    3: [
+        (6, 0, 1), (6, 3, 4),
+        (5, 0, 1), (5, 2, 3),
+        (4, 0, 1), (4, 2, 3),
+        (3, 0, 1), (3, 2, 4),
+        (2, 0, 1), (2, 3, 4),
+        (1, 0, 1), (1, 3, 4),
+    ],
+    # Box 4 — "A shape": root on 5th string
+    4: [
+        (6, 0, 1), (6, 2, 3),
+        (5, 0, 1), (5, 2, 3),
+        (4, 0, 1), (4, 2, 4),
+        (3, 0, 2), (3, 2, 4),
+        (2, 0, 1), (2, 2, 3),
+        (1, 0, 1), (1, 2, 3),
+    ],
+    # Box 5 — "G shape": root on 3rd string
+    5: [
+        (6, 0, 1), (6, 2, 4),
+        (5, 0, 1), (5, 3, 4),
+        (4, 0, 1), (4, 2, 3),
+        (3, 0, 1), (3, 2, 3),
+        (2, 0, 1), (2, 3, 4),
+        (1, 0, 1), (1, 2, 4),
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Major scale — 3-note-per-string (3NPS), 7 positions
+# Each position: list of (string, offset_from_position, finger)
+# Fingerings follow the Satriani / modern-rock 3NPS convention:
+#   1-2-4 for whole-whole, 1-3-4 for whole-half, 1-2-3 for half-whole
+# ---------------------------------------------------------------------------
+MAJOR_SCALE_3NPS: dict[int, list[tuple[int, int, int]]] = {
+    # Position 1 (Ionian) — e.g. C major starting fret 8 on 6th string
+    1: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),   # W W
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),   # W W
+        (4, 0, 1), (4, 1, 2), (4, 3, 4),   # H W
+        (3, 0, 1), (3, 2, 3), (3, 4, 4),   # W W  (shift for 3rd-string offset)
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),   # H W
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),   # W W
+    ],
+    # Position 2 (Dorian)
+    2: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),   # W W
+        (5, 0, 1), (5, 1, 2), (5, 3, 4),   # H W
+        (4, 0, 1), (4, 2, 3), (4, 4, 4),   # W W
+        (3, 0, 1), (3, 1, 2), (3, 3, 4),   # H W
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),   # W W
+        (1, 0, 1), (1, 2, 2), (1, 3, 3),   # W H
+    ],
+    # Position 3 (Phrygian)
+    3: [
+        (6, 0, 1), (6, 1, 2), (6, 3, 4),   # H W
+        (5, 0, 1), (5, 2, 3), (5, 4, 4),   # W W
+        (4, 0, 1), (4, 1, 2), (4, 3, 4),   # H W
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),   # W W
+        (2, 0, 1), (2, 2, 2), (2, 3, 3),   # W H
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),   # W W
+    ],
+    # Position 4 (Lydian)
+    4: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),   # W W
+        (5, 0, 1), (5, 1, 2), (5, 3, 4),   # H W
+        (4, 0, 1), (4, 2, 2), (4, 4, 4),   # W W
+        (3, 0, 1), (3, 2, 2), (3, 3, 3),   # W H
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),   # W W
+        (1, 0, 1), (1, 1, 2), (1, 3, 4),   # H W
+    ],
+    # Position 5 (Mixolydian)
+    5: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),   # W W
+        (5, 0, 1), (5, 2, 3), (5, 4, 4),   # W W
+        (4, 0, 1), (4, 2, 2), (4, 3, 3),   # W H
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),   # W W
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),   # H W
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),   # W W
+    ],
+    # Position 6 (Aeolian / natural minor)
+    6: [
+        (6, 0, 1), (6, 2, 2), (6, 3, 3),   # W H
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),   # W W
+        (4, 0, 1), (4, 1, 2), (4, 3, 4),   # H W
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),   # W W
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),   # H W
+        (1, 0, 1), (1, 2, 2), (1, 3, 3),   # W H
+    ],
+    # Position 7 (Locrian)
+    7: [
+        (6, 0, 1), (6, 1, 2), (6, 3, 4),   # H W
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),   # W W
+        (4, 0, 1), (4, 2, 3), (4, 3, 4),   # W H
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),   # W W
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),   # H W
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),   # W W
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Natural minor scale — 3NPS, 7 positions
+# The natural minor is the Aeolian mode. We rotate the major 3NPS patterns
+# so that position 1 starts from the minor root (= major position 6).
+# Providing explicit data for clarity and independent maintenance.
+# ---------------------------------------------------------------------------
+NATURAL_MINOR_SCALE_3NPS: dict[int, list[tuple[int, int, int]]] = {
+    # Position 1 (Aeolian root)
+    1: [
+        (6, 0, 1), (6, 2, 2), (6, 3, 3),
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),
+        (4, 0, 1), (4, 1, 2), (4, 3, 4),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),
+        (1, 0, 1), (1, 2, 2), (1, 3, 3),
+    ],
+    # Position 2
+    2: [
+        (6, 0, 1), (6, 1, 2), (6, 3, 4),
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),
+        (4, 0, 1), (4, 2, 3), (4, 3, 4),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),
+    ],
+    # Position 3
+    3: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),
+        (5, 0, 1), (5, 2, 2), (5, 3, 3),
+        (4, 0, 1), (4, 2, 2), (4, 4, 4),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),
+    ],
+    # Position 4
+    4: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),
+        (5, 0, 1), (5, 1, 2), (5, 3, 4),
+        (4, 0, 1), (4, 2, 3), (4, 4, 4),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),
+        (1, 0, 1), (1, 1, 2), (1, 3, 4),
+    ],
+    # Position 5
+    5: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),
+        (5, 0, 1), (5, 2, 3), (5, 4, 4),
+        (4, 0, 1), (4, 2, 2), (4, 4, 4),
+        (3, 0, 1), (3, 2, 2), (3, 3, 3),
+        (2, 0, 1), (2, 2, 2), (2, 4, 4),
+        (1, 0, 1), (1, 1, 2), (1, 3, 4),
+    ],
+    # Position 6
+    6: [
+        (6, 0, 1), (6, 2, 2), (6, 4, 4),
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),
+        (4, 0, 1), (4, 2, 2), (4, 3, 3),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),
+        (1, 0, 1), (1, 2, 2), (1, 4, 4),
+    ],
+    # Position 7
+    7: [
+        (6, 0, 1), (6, 2, 2), (6, 3, 3),
+        (5, 0, 1), (5, 2, 2), (5, 4, 4),
+        (4, 0, 1), (4, 2, 3), (4, 3, 4),
+        (3, 0, 1), (3, 2, 2), (3, 4, 4),
+        (2, 0, 1), (2, 1, 2), (2, 3, 4),
+        (1, 0, 1), (1, 2, 2), (1, 3, 3),
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Arpeggio patterns — standard shapes with pedagogical fingerings
+# Each pattern: list of (string, offset_from_root, finger)
+# ---------------------------------------------------------------------------
+ARPEGGIO_PATTERNS: dict[str, list[tuple[int, int, int]]] = {
+    # --- Major triad ---
+    "major_root": [
+        # Root-position major triad, root on 6th string (E-shape barre base)
+        (6, 0, 1), (5, 2, 3), (4, 2, 4),
+        (3, 1, 2), (2, 0, 1), (1, 0, 1),
+    ],
+    "major_1st_inv": [
+        # 1st inversion, root on 4th string
+        (5, 0, 1), (4, 2, 3),
+        (3, 1, 2), (2, 0, 1), (1, 0, 1),
+    ],
+    "major_2nd_inv": [
+        # 2nd inversion, root on 3rd string
+        (5, 0, 1), (4, 1, 1),
+        (3, 0, 1), (2, 1, 2), (1, 0, 1),
+    ],
+    # --- Minor triad ---
+    "minor_root": [
+        # Root-position minor triad, root on 6th string (Em-shape barre base)
+        (6, 0, 1), (5, 2, 3), (4, 2, 4),
+        (3, 0, 1), (2, 0, 1), (1, 0, 1),
+    ],
+    "minor_1st_inv": [
+        (5, 0, 1), (4, 2, 3),
+        (3, 0, 1), (2, 1, 2), (1, 0, 1),
+    ],
+    "minor_2nd_inv": [
+        (5, 0, 1), (4, 1, 1),
+        (3, 0, 1), (2, 0, 1), (1, 1, 2),
+    ],
+    # --- Dominant 7th ---
+    "dom7_root": [
+        # Root-position dominant 7th, root on 6th string (E7-shape barre)
+        (6, 0, 1), (5, 2, 3), (4, 0, 1),
+        (3, 1, 2), (2, 0, 1), (1, 0, 1),
+    ],
+    "dom7_drop2": [
+        # Drop-2 voicing, root on 5th string
+        (5, 0, 1), (4, 2, 2), (3, 1, 1),
+        (2, 3, 4), (1, 0, 1),
+    ],
+    "dom7_drop3": [
+        # Drop-3 voicing, root on 6th string
+        (6, 0, 1), (4, 1, 1), (3, 2, 2),
+        (2, 1, 1), (1, 0, 1),
+    ],
+}
+
+# --- すべてのスケール/アルペジオパターンを統合インデックスに ---
+_ALL_SCALE_BOXES: list[tuple[str, list[tuple[int, int, int]]]] = []
+
+
+def _build_scale_index() -> list[tuple[str, list[tuple[int, int, int]]]]:
+    """Lazily build a flat index of all scale/arpeggio patterns for matching."""
+    global _ALL_SCALE_BOXES
+    if _ALL_SCALE_BOXES:
+        return _ALL_SCALE_BOXES
+
+    for box_num, notes in PENTATONIC_MINOR_BOXES.items():
+        _ALL_SCALE_BOXES.append((f"pentatonic_minor_box{box_num}", notes))
+    for pos_num, notes in MAJOR_SCALE_3NPS.items():
+        _ALL_SCALE_BOXES.append((f"major_3nps_pos{pos_num}", notes))
+    for pos_num, notes in NATURAL_MINOR_SCALE_3NPS.items():
+        _ALL_SCALE_BOXES.append((f"natural_minor_3nps_pos{pos_num}", notes))
+    for name, notes in ARPEGGIO_PATTERNS.items():
+        _ALL_SCALE_BOXES.append((f"arpeggio_{name}", notes))
+
+    return _ALL_SCALE_BOXES
+
+
+def match_scale_box(notes: list, key: str = None) -> list:
+    """Try to match a sequence of notes to a known scale box pattern.
+
+    Args:
+        notes: List of note dicts with 'string', 'fret', 'pitch' keys
+        key: Optional detected key (e.g. 'Am', 'C', 'G')
+
+    Returns:
+        List of (note_index, suggested_finger, box_name) or empty list
+    """
+    if len(notes) < 4:
+        return []
+
+    # Filter to fretted notes only and build (index, string, fret) triples
+    fretted: list[tuple[int, int, int]] = []
+    for i, n in enumerate(notes):
+        s = n.get('string', 0)
+        f = n.get('fret', 0)
+        if s > 0 and f > 0:
+            fretted.append((i, s, f))
+
+    if len(fretted) < 4:
+        return []
+
+    # Extract (string, fret) pairs for the fretted notes
+    sf_pairs = [(s, f) for _, s, f in fretted]
+
+    # Determine the fret range to limit transposition search
+    min_fret = min(f for _, f in sf_pairs)
+    max_fret = max(f for _, f in sf_pairs)
+
+    all_boxes = _build_scale_index()
+    best_result: list[tuple[int, int, str]] = []
+    best_match_ratio = 0.0
+
+    for box_name, pattern in all_boxes:
+        # Determine max offset in this pattern to compute transposition range
+        max_pattern_offset = max(off for _, off, _ in pattern) if pattern else 0
+
+        # Build a lookup: (string, offset) -> finger
+        pattern_lookup: dict[tuple[int, int], int] = {}
+        for s, off, finger in pattern:
+            pattern_lookup[(s, off)] = finger
+
+        # Try all transpositions (shift = the absolute fret that offset 0 maps to)
+        for shift in range(max(0, min_fret - max_pattern_offset), max_fret + 1):
+            matched: list[tuple[int, int, str]] = []
+            for idx, s, f in fretted:
+                offset = f - shift
+                if (s, offset) in pattern_lookup:
+                    matched.append((idx, pattern_lookup[(s, offset)], box_name))
+
+            match_ratio = len(matched) / len(fretted) if fretted else 0
+            if match_ratio >= 0.80 and match_ratio > best_match_ratio:
+                best_match_ratio = match_ratio
+                best_result = matched
+
+    return best_result
+
+
 # --- 手動スケールパターン（Segovia式） ---
 SCALE_PATTERNS = {
     ("Em", 0): [
