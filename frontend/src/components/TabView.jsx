@@ -910,8 +910,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             py = containerRef.current.scrollTop + rect.height / 3;
                         }
                     }
-
-                    setEditNote({ noteIndex: backendIdx, fret: note.fret, string: note.string, x: px, y: py, alphaNote: note });
+                    const matchedNote = backendNotes[backendIdx];
+                    setEditNote({ noteIndex: backendIdx, fret: note.fret, string: note.string, startTime: matchedNote?.start, x: px, y: py, alphaNote: note });
                     setEditInput(String(note.fret));
                     setTimeout(() => editInputRef.current?.focus(), 50);
                 });
@@ -1193,7 +1193,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                             const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                                 method: "PATCH",
                                                 headers: { "Content-Type": "application/json" },
-                                                body: JSON.stringify({ fret: newFret, string: newString }),
+                                                body: JSON.stringify({ fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret }),
                                             });
                                             if (res.ok) {
                                                 console.log('[TabView] Note edited:', await res.json());
@@ -1227,7 +1227,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ fret: newFret, string: newString }),
+                                            body: JSON.stringify({ fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret }),
                                         });
                                         if (res.ok) {
                                             console.log('[TabView] Note edited:', await res.json());
@@ -1255,7 +1255,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ delete: true }),
+                                            body: JSON.stringify({ delete: true, start_time: editNote.startTime, string: editNote.string, old_fret: editNote.fret }),
                                         });
                                         if (res.ok) {
                                             setEditNote(null);

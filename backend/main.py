@@ -1172,11 +1172,14 @@ class NoteEditRequest(BaseModel):
     fret: Optional[int] = None
     string: Optional[int] = None
     delete: Optional[bool] = False
+    start_time: Optional[float] = None   # 時刻ベース検索用
+    old_fret: Optional[int] = None       # 元のフレット（照合用）
 
 
 @app.patch("/result/{session_id}/notes/{note_index}")
 async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     """ノートを編集（フレット/弦変更 or 削除）→ MusicXML再生成"""
+    print(f"[edit_note] session={session_id}, note_index={note_index}, fret={request.fret}, string={request.string}, delete={request.delete}, start_time={request.start_time}, old_fret={request.old_fret}")
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -1189,28 +1192,61 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     with open(assigned_path, "r", encoding="utf-8") as f:
         notes = json.load(f)
 
-    if note_index < 0 or note_index >= len(notes):
-        raise HTTPException(status_code=400, detail=f"Invalid note index: {note_index}")
+    # 時刻ベース検索: start_time + string で正確なノートを特定
+    actual_index = note_index
+    if request.start_time is not None and request.string is not None:
+        best_idx = -1
+        best_dist = float('inf')
+        target_str = request.string if request.string else (request.old_fret if request.old_fret else None)
+        for i, n in enumerate(notes):
+            if int(n.get('string', 0)) == int(request.string):
+                d = abs(n.get('start', 0) - request.start_time)
+                if d < best_dist:
+                    best_dist = d
+                    best_idx = i
+        if best_idx >= 0 and best_dist < 2.0:  # 2秒以内
+            actual_index = best_idx
+            print(f"[edit_note] Time-based match: note[{actual_index}] start={notes[actual_index].get('start')}, dist={best_dist:.3f}s")
+        else:
+            print(f"[edit_note] WARNING: No time-based match found, using index {note_index}")
+
+    if actual_index < 0 or actual_index >= len(notes):
+        raise HTTPException(status_code=400, detail=f"Invalid note index: {actual_index}")
 
     if request.delete:
-        notes.pop(note_index)
+        notes.pop(actual_index)
         action = "deleted"
     else:
-        note = notes[note_index]
+        note = notes[actual_index]
+        old_val = f"fret={note.get('fret')} string={note.get('string')}"
         if request.fret is not None:
             note["fret"] = request.fret
         if request.string is not None:
             note["string"] = request.string
-        action = f"edited fret={note.get('fret')} string={note.get('string')}"
+        action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')}"
 
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
+
+    # Verify write
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        verify = json.load(f)
+    if not request.delete and note_index < len(verify):
+        v = verify[note_index]
+        print(f"[edit_note] VERIFY: note[{note_index}] fret={v.get('fret')}, string={v.get('string')}")
 
     try:
         _regenerate_musicxml(session_id, notes)
     except Exception as e:
         print(f"[edit_note] Regeneration failed: {e}")
         import traceback; traceback.print_exc()
+
+    # Verify file not overwritten by _regenerate_musicxml
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        verify2 = json.load(f)
+    if not request.delete and note_index < len(verify2):
+        v2 = verify2[note_index]
+        print(f"[edit_note] AFTER REGEN: note[{note_index}] fret={v2.get('fret')}, string={v2.get('string')}")
 
     s["total_notes"] = len(notes)
     save_session(session_id)
