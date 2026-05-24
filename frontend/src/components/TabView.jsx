@@ -1180,13 +1180,19 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                         setEditSaving(true);
                                         try {
-                                            await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                            const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                                 method: "PATCH",
                                                 headers: { "Content-Type": "application/json" },
                                                 body: JSON.stringify({ fret: newFret, string: newString }),
                                             });
-                                            setEditNote(null);
-                                            setReloadKey(k => k + 1);
+                                            if (res.ok) {
+                                                console.log('[TabView] Note edited:', await res.json());
+                                                setEditNote(null);
+                                                await new Promise(r => setTimeout(r, 300));
+                                                setReloadKey(k => k + 1);
+                                            } else {
+                                                console.error('[TabView] Edit failed:', res.status);
+                                            }
                                         } catch (err) { console.error("Edit failed:", err); }
                                         setEditSaving(false);
                                     } else if (e.key === "Escape") {
@@ -1208,13 +1214,19 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                     setEditSaving(true);
                                     try {
-                                        await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                        const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ fret: newFret, string: newString }),
                                         });
-                                        setEditNote(null);
-                                        setReloadKey(k => k + 1);
+                                        if (res.ok) {
+                                            console.log('[TabView] Note edited:', await res.json());
+                                            setEditNote(null);
+                                            await new Promise(r => setTimeout(r, 300));
+                                            setReloadKey(k => k + 1);
+                                        } else {
+                                            console.error('[TabView] Edit failed:', res.status);
+                                        }
                                     } catch (err) { console.error("Edit failed:", err); }
                                     setEditSaving(false);
                                 }}
@@ -1230,13 +1242,16 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     if (!confirm("このノートを削除しますか？")) return;
                                     setEditSaving(true);
                                     try {
-                                        await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                        const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
                                             method: "PATCH",
                                             headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ delete: true }),
                                         });
-                                        setEditNote(null);
-                                        setReloadKey(k => k + 1);
+                                        if (res.ok) {
+                                            setEditNote(null);
+                                            await new Promise(r => setTimeout(r, 300));
+                                            setReloadKey(k => k + 1);
+                                        }
                                     } catch (err) { console.error("Delete failed:", err); }
                                     setEditSaving(false);
                                 }}
