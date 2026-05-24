@@ -1259,6 +1259,7 @@ export default function SoloTabApp() {
                 isPlaying={isPlaying || scrollOnly}
                 transpose={transpose}
                 capo={capo}
+                onNoteEdited={() => setRetuneKey(k => k + 1)}
               />
             </div>
           </>

@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
  * - カスタムBeatMapでtick→座標マッピング
  * - カスタム青カーソルバー + オートスクロール
  */
-const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady }) => {
+const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady, onNoteEdited }) => {
     const containerRef = useRef(null);
     const wrapperRef = useRef(null);
     const cursorRef = useRef(null);
@@ -1199,7 +1199,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                                 console.log('[TabView] Note edited:', await res.json());
                                                 setEditNote(null);
                                                 await new Promise(r => setTimeout(r, 300));
-                                                setReloadKey(k => k + 1);
+                                                onNoteEdited?.();
                                             } else {
                                                 console.error('[TabView] Edit failed:', res.status);
                                             }
@@ -1233,7 +1233,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                             console.log('[TabView] Note edited:', await res.json());
                                             setEditNote(null);
                                             await new Promise(r => setTimeout(r, 300));
-                                            setReloadKey(k => k + 1);
+                                            onNoteEdited?.();
                                         } else {
                                             console.error('[TabView] Edit failed:', res.status);
                                         }
@@ -1260,7 +1260,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         if (res.ok) {
                                             setEditNote(null);
                                             await new Promise(r => setTimeout(r, 300));
-                                            setReloadKey(k => k + 1);
+                                            onNoteEdited?.();
                                         }
                                     } catch (err) { console.error("Delete failed:", err); }
                                     setEditSaving(false);
