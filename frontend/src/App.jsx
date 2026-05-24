@@ -996,7 +996,11 @@ export default function SoloTabApp() {
                 {session.detectedKey && <span className="badge" style={{ color: '#10b981', fontSize: 11 }}>🎵 {session.detectedKey}</span>}
                 {session.bpm && <span className="badge amber" style={{ fontSize: 11 }}>♩ {Math.round(session.bpm)}</span>}
                 {session.totalNotes && <span className="badge accent" style={{ fontSize: 11 }}>♪ {session.totalNotes}</span>}
-                {session.detectedCapo > 0 && <span className="badge" style={{ color: '#f59e0b', fontSize: 11 }}>Capo {session.detectedCapo}</span>}
+                {session.detectedCapo > 0 && <span className="badge" style={{
+                  color: '#fff', fontSize: 11, fontWeight: 700,
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  padding: '2px 8px', borderRadius: 10,
+                }}>🎸 Capo {session.detectedCapo} (AI推定)</span>}
               </div>
               <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
                 <select className="tuning-select" value={session.tuning || "standard"}
@@ -1008,12 +1012,33 @@ export default function SoloTabApp() {
                     </optgroup>
                   ))}
                 </select>
-                <select className="tuning-select" value={capo}
-                  onChange={(e) => { const v = Number(e.target.value); setCapo(v); handleRetune(null, v); }}
-                  style={{ fontSize: 11, padding: '4px 6px', minWidth: 70 }}>
-                  <option value={0}>カポなし</option>
-                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (<option key={n} value={n}>Capo {n}</option>))}
-                </select>
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                  <select className="tuning-select" value={capo}
+                    onChange={(e) => { const v = Number(e.target.value); setCapo(v); handleRetune(null, v); }}
+                    style={{
+                      fontSize: 11, padding: '4px 6px', minWidth: 80,
+                      border: capo > 0 ? '1.5px solid #f59e0b' : undefined,
+                      boxShadow: capo > 0 ? '0 0 6px rgba(245,158,11,0.3)' : undefined,
+                    }}>
+                    <option value={0}>カポなし</option>
+                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(n => (
+                      <option key={n} value={n}>
+                        Capo {n}{session.detectedCapo === n ? ' ★AI' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {session.detectedCapo > 0 && capo !== session.detectedCapo && (
+                    <button
+                      onClick={() => { setCapo(session.detectedCapo); handleRetune(null, session.detectedCapo); }}
+                      title={`AI推定: Capo ${session.detectedCapo} に戻す`}
+                      style={{
+                        marginLeft: 4, padding: '2px 6px', borderRadius: 6,
+                        border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.15)',
+                        color: '#f59e0b', fontSize: 9, fontWeight: 700,
+                        cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}>AI:{session.detectedCapo}</button>
+                  )}
+                </div>
                 <div className="transpose-controls" style={{ gap: 2 }}>
                   <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調 −1'); }} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
                   <span className="transpose-label" style={{ fontSize: 11, minWidth: 28 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
