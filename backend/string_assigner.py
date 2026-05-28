@@ -1267,11 +1267,11 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 emission += _human_pref_cost(s, f, note_pitch)
 
             # V3 Transformer bonus (97.2%精度の弦予測)
-            # ローフレット候補のみにボーナス（ハイフレットへの誘導を防止）
-            if is_single and f <= 4:
+            # V2b: ボーナスを軽減し、フレット制限を撤廃（ロー偏重を防止）
+            if is_single:
                 ft_probs = groups[gi][0].get('_ft_probs')
                 if ft_probs and s in ft_probs:
-                    emission -= ft_probs[s] * 50.0  # 確率×50のボーナス
+                    emission -= ft_probs[s] * 15.0  # V2b: 50→15に軽減
 
             # 全ての前状態からの遷移を評価
             # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
@@ -1843,11 +1843,11 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
                   f"est_position={estimated_position:.1f}")
     
-    # CNN重み: steel=30.0 (CQT信頼大), nylon=25.0 (CNN-first有効化)
-    # 分析結果: CNN argmax=70.8% > Viterbi=66.9% → ナイロンでもCNNを信頼
-    cnn_weight = 25.0 if is_nylon else 30.0
+    # CNN重み: 法則ベースV2bではViterbiコスト関数を優先
+    # CNN確率はemissionの補助として使うが、Viterbiの遷移コストが主導
+    cnn_weight = 8.0 if is_nylon else 12.0
     if is_nylon:
-        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (CNN-first有効)")
+        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (Viterbi優先)")
     
     # CNNの弦確率にギタータイプ別重みを反映
     for note in notes:
@@ -1905,10 +1905,12 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
-    # === V3 Transformer 2パス目: ハイ→ローのみ修正 ===
+    # === V3 Transformer 2パス目: 文脈整合性チェック付き ===
+    # V2b: 隣弦率(L09:59.2%)を破壊しないよう、文脈を確認してから修正
     model = _load_fingering_transformer()
     if model:
         n_overrides = 0
+        n_skipped_context = 0
         for i, note in enumerate(result):
             if note.get('_is_chord_member'):
                 continue
@@ -1919,17 +1921,27 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             best_s = max(probs, key=probs.get)
             best_prob = probs[best_s]
             cur_prob = probs.get(cur_s, 0)
-            if best_s != cur_s and best_prob > 0.7 and best_prob > cur_prob * 2:
+            # V2b: 閾値を厳格化 (0.7→0.85, 2x→3x)
+            if best_s != cur_s and best_prob > 0.85 and best_prob > cur_prob * 3:
                 new_f = note['pitch'] - tuning[6 - best_s]
                 cur_f = note.get('fret', 0)
                 if 0 <= new_f <= max_fret and new_f < cur_f:
+                    # V2b: 文脈チェック - 前後のノートとの弦距離が悪化しないか
+                    prev_s = result[i-1].get('string', cur_s) if i > 0 else cur_s
+                    next_s = result[i+1].get('string', cur_s) if i < len(result)-1 else cur_s
+                    old_dist = abs(cur_s - prev_s) + abs(cur_s - next_s)
+                    new_dist = abs(best_s - prev_s) + abs(best_s - next_s)
+                    if new_dist > old_dist + 1:
+                        # 弦の飛ばしが増える場合はスキップ
+                        n_skipped_context += 1
+                        continue
                     note['string'] = best_s
                     note['fret'] = new_f
                     n_overrides += 1
                     if n_overrides <= 10:
                         print(f"  [V3] note {i}: s{cur_s}f{cur_f} -> s{best_s}f{new_f} (prob={best_prob:.0%})")
-        if n_overrides > 0:
-            print(f"[Transformer V3] {n_overrides}ノートを修正")
+        if n_overrides > 0 or n_skipped_context > 0:
+            print(f"[Transformer V3] {n_overrides}ノート修正 (文脈保護: {n_skipped_context}スキップ)")
 
     # 軽量スムージング
     result = _smooth_jumps(result, tuning, max_fret)
