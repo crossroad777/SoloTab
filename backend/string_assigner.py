@@ -777,7 +777,8 @@ WEIGHTS = {
     "w_movement_up":          1.02,   # V2: 方向バイアス撤廃 (L07: 上行/下行均等)
     "w_movement_down":        0.3,    # ハイ→ロー移動
     "w_position_shift":      29.82,   # V2: ポジション移動ペナルティ半減 (L04: 97.8%内で十分)
-    "w_string_switch":        1.34,   # V2: 弦変更ペナルティ大幅減 (L09: 隣弦59.2%)
+    "w_string_switch":        3.50,   # V2b: 弦変更ペナルティ (L09: 隣弦59.2%)
+    "w_string_skip":         12.0,    # V2b: 弦飛ばし(2弦以上)の二次ペナルティ
     "w_same_string_repeat":  25.3,    # 同弦連打回避
     "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
     "w_from_open":            0.27,   # V2: 開放弦遷移 (L05: 開放弦15.6%活用)
@@ -963,6 +964,9 @@ def _transition_cost(s: int, f: int,
     string_dist = abs(s - prev_s)
     if string_dist > 0:
         cost += string_dist * WEIGHTS["w_string_switch"]
+        # 弦飛ばしペナルティ: 2弦以上飛ばすと二次的コスト (L09: 隣弦59.2%)
+        if string_dist >= 2:
+            cost += (string_dist - 1) ** 2 * WEIGHTS.get("w_string_skip", 12.0)
     else:
         # 右手PIMA: 同じ弦の連打は右手の同指連打になり困難
         cost += WEIGHTS["w_same_string_repeat"]
