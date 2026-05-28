@@ -764,36 +764,36 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 # --- 重みパラメータ (V7: Multi-track Optuna 150trial + 論文改善) ---
 # 多曲最適化 (20曲GProTab) + 先読み/ガイドフィンガー/開放弦準備
 WEIGHTS = {
-    # 位置コスト — Multi-track Optuna最適化済み
-    "w_fret_height":          0.64,   # 多曲: フレット高さ一律ペナルティ軽減
-    "w_mid_fret_extra":      26.32,   # 多曲: f5-9を個別に強くペナルティ
-    "w_high_fret_extra":     33.23,   # 多曲: f10+を個別に強くペナルティ
+    # 位置コスト — 法則ベースOptuna V2最適化 (43法則 + 209万遷移)
+    "w_fret_height":          0.31,   # V2: フレット高さペナルティ軽減 (L01: jump平均1.33)
+    "w_mid_fret_extra":      40.24,   # V2: f5-9ペナルティ強化 (L06: f5-9=33.3%)
+    "w_high_fret_extra":     20.35,   # V2: f10+ペナルティ緩和
     "w_low_string_high_fret": 4.9,    # 低弦ハイフレット
-    "w_sweet_spot_bonus":    -9.22,   # 多曲: ローフレットボーナス控えめ
-    "w_low_fret_bonus":     -54.83,   # 多曲: 低フレットボーナス更に強化
+    "w_sweet_spot_bonus":   -24.47,   # V2: ローフレットボーナス強化
+    "w_low_fret_bonus":     -88.72,   # V2: 低フレットボーナス大幅強化 (L06: f0-4=54.7%)
 
-    # 遷移コスト — 多曲最適化 + 論文改善
+    # 遷移コスト — 法則ベース最適化
     "w_movement":            10.0,    # フレット移動基本
-    "w_movement_up":          6.19,   # 多曲: ロー→ハイ抑制
-    "w_movement_down":        0.3,    # ハイ→ロー移動（戻りやすい）
-    "w_position_shift":      55.26,   # 多曲: ポジション固定やや強化
-    "w_string_switch":        5.3,    # 弦移動
+    "w_movement_up":          1.02,   # V2: 方向バイアス撤廃 (L07: 上行/下行均等)
+    "w_movement_down":        0.3,    # ハイ→ロー移動
+    "w_position_shift":      29.82,   # V2: ポジション移動ペナルティ半減 (L04: 97.8%内で十分)
+    "w_string_switch":        1.34,   # V2: 弦変更ペナルティ大幅減 (L09: 隣弦59.2%)
     "w_same_string_repeat":  25.3,    # 同弦連打回避
     "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
-    "w_from_open":            0.05,   # 開放弦からの遷移 (論文: 準備時間あるので大幅軽減)
+    "w_from_open":            0.27,   # V2: 開放弦遷移 (L05: 開放弦15.6%活用)
 
     # 先読みボーナス (Higher-Order Viterbi, Hori & Sagayama 2016)
-    "w_lookahead":            0.3,    # 次ノートの最良遷移コスト × この係数をボーナス
+    "w_lookahead":            0.78,   # V2: 先読み2.6倍強化 (L04: ポジション維持を先読みで実現)
 
     # ガイドフィンガー (Radicioni & Lombardo 2005)
-    "w_guide_finger":       -15.0,    # 同弦で隣接フレット(<=2)スライドにボーナス
+    "w_guide_finger":       -37.14,   # V2: ガイドフィンガー2.5倍強化 (L03: 7.3%目標)
 
     # 開放弦準備時間 (FretboardFlow, ISMIR 2025)
-    "w_open_prep_discount":   0.3,    # 開放弦後のポジション移動コスト × この係数に軽減
+    "w_open_prep_discount":   0.08,   # V2: 開放弦後の移動コスト軽減
 
     # ピッチ近接性ルール
-    "w_pitch_proximity_same":-19.2,   # 同弦維持ボーナス
-    "w_pitch_proximity_adj": -10.8,   # 隣接弦遷移ボーナス
+    "w_pitch_proximity_same":-40.48,   # V2: 同弦維持ボーナス強化 (L12: 同ピッチ同弦96.3%)
+    "w_pitch_proximity_adj": -26.41,   # V2: 隣接弦遷移ボーナス強化 (L09: 隣弦59.2%)
 
     # 右手PIMA制約
     "w_pima_natural_bonus":   -0.6,
@@ -809,7 +809,7 @@ WEIGHTS = {
     # 音色コスト — 開放弦を強く優遇
     "w_open_string_bonus":  -25.0,
     "w_open_match_bonus":   -10.7,
-    "w_open_emission_bonus": -60.0,
+    "w_open_emission_bonus": -56.89,   # V2: 開放弦emission (L05: 15.6%)
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
