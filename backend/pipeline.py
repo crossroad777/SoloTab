@@ -437,7 +437,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
                 vel = float(moe_n.get("velocity", 0))
-                if vel >= 0.75:
+                if vel >= 0.50:  # 緩和: 0.75→0.50 (低velocityのMoEノートも採用)
                     downgraded = dict(moe_n)
                     downgraded["velocity"] = vel * 0.85
                     fused_notes.append(downgraded)
@@ -446,7 +446,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         # BP独自ノート (MoEに一致しなかったBPノート)
         # 閾値を厳しく: MoEが確認していないノートは高velocityのもののみ採用
         # 0.3は低すぎ → 1拍6ノート超 → 3連符量子化が崩壊
-        BP_ONLY_THRESHOLD = 0.65
+        BP_ONLY_THRESHOLD = 0.45  # 緩和: 0.65→0.45 (BP単独検出の弱い音も採用)
         bp_only_added = 0
         for i, bp_n in enumerate(bp_notes_list):
             if i not in used_bp:
@@ -460,6 +460,36 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
 
         fused_notes.sort(key=lambda n: (n["start"], n["pitch"]))
+
+        # --- フィンガースタイル密度フィルタ ---
+        # 8分音符単位でグループ化し、bass1 + melody2 に制限
+        if bpm and bpm > 0:
+            _eighth = 30.0 / bpm  # 8分音符の長さ
+        else:
+            _eighth = 0.4
+        _groups = {}
+        for _n in fused_notes:
+            _pos = round(_n["start"] / _eighth)
+            _groups.setdefault(_pos, []).append(_n)
+        
+        _filtered = []
+        for _pos in sorted(_groups.keys()):
+            _grp = _groups[_pos]
+            _bass = sorted([n for n in _grp if n["pitch"] < 55],
+                           key=lambda n: -n.get("velocity", 0))
+            _mel = sorted([n for n in _grp if n["pitch"] >= 55],
+                          key=lambda n: -n.get("velocity", 0))
+            # 表拍(偶数pos)は和音あり、裏拍は単音
+            _is_down = (_pos % 2 == 0)
+            if _bass:
+                _filtered.append(_bass[0])
+            _max_mel = 2 if _is_down else 1
+            _filtered.extend(_mel[:_max_mel])
+        
+        _before = len(fused_notes)
+        fused_notes = sorted(_filtered, key=lambda n: (n["start"], n["pitch"]))
+        report("notes", f"密度フィルタ: {_before} → {len(fused_notes)} notes "
+               f"(8分音符単位: bass1+mel{2 if True else 1})")
 
         notes = fused_notes
         method = "fusion_bp_moe"
@@ -614,6 +644,34 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("theory", f"音楽理論解析スキップ: {e}")
 
+    # --- Step: ピッチレンジフィルタ (倍音誤検出除去) ---
+    # ソロギター音域: E2(40) - B5(83)。これ以外は倍音誤検出の可能性が高い。
+    PITCH_MIN = 40   # E2 (6弦開放)
+    PITCH_MAX = 83   # B5 (1弦19フレット, 実用上限)
+    SOLO_GUITAR_FRET_LIMIT = 14  # ソロギターの実用フレット上限
+    pre_filter_count = len(notes)
+    pitch_filtered = []
+    for n in notes:
+        p = n.get("pitch", 60)
+        # ギター音域外のノートを除外
+        if p < PITCH_MIN or p > PITCH_MAX:
+            continue
+        # ソロギターではフレット14超えになるノートを弦再配置で救えるか確認
+        can_play = False
+        for s_idx, open_p in enumerate(tuning):
+            fret = p - open_p
+            if 0 <= fret <= SOLO_GUITAR_FRET_LIMIT:
+                can_play = True
+                break
+        if not can_play:
+            continue
+        pitch_filtered.append(n)
+    if len(pitch_filtered) < pre_filter_count:
+        removed = pre_filter_count - len(pitch_filtered)
+        report("assign", f"ピッチレンジフィルタ: {removed}ノート除外 "
+               f"(音域外 or fret>{SOLO_GUITAR_FRET_LIMIT}で配置不可)")
+        notes = pitch_filtered
+
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
     # Conformer出力のpitchは正確だが、string/fret割り当ては
     # 弦正解率63%（ベンチマーク検証済み）のため、Viterbi DPに任せる。
@@ -626,8 +684,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             n.pop("fret", None)
             n.pop("cnn_string_probs", None)  # CNN分類器が新たに注入する
 
-    report("assign", "運指最適化中 (Viterbi DP)...")
+    report("assign", "運指最適化中 (Viterbi DP)...");
     t0 = time.time()
+
+    # Velocity noise gate: vel < 0.50 はノイズ/倍音を除去
+    before_gate = len(notes)
+    notes = [n for n in notes if float(n.get("velocity", 0.5)) >= 0.50]
+    if before_gate != len(notes):
+        report("assign", f"Noise gate (vel>=0.50): {before_gate} → {len(notes)} notes")
+
     try:
         from string_assigner import assign_strings_dp  # type: ignore
 
@@ -666,7 +731,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # except Exception as e:
     #     report("assign", f"LSTMリファインメントスキップ: {e}")
 
-    MAX_FRET = 12
+    MAX_FRET = 14  # 修正: 19→14 (ソロギターの実用上限)
     clamp_count = 0
     remove_high = []
     for idx, n in enumerate(notes):
@@ -683,13 +748,40 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 n["fret"] = best_fret
                 clamp_count += 1
             else:
-                # どの弦でも12f以内に収まらない音 → 削除（フレット19等の異常ノート）
                 remove_high.append(idx)
     if remove_high:
         notes = [n for i, n in enumerate(notes) if i not in remove_high]
         report("assign", f"フレット超過ノート削除: {len(remove_high)}件 (fret>{MAX_FRET}で配置不可)")
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
+
+    # --- Step: コンテキストジャンプフィルタ ---
+    # 前後のノートから7フレット以上離れたノートは倍音誤検出の可能性が高い
+    context_removed = []
+    if len(notes) > 2:
+        for idx in range(len(notes)):
+            curr_fret = notes[idx].get("fret", 0)
+            curr_t = notes[idx].get("start", 0)
+            if curr_fret <= 5:  # ローポジションは安全
+                continue
+            # 前後3ノートのフレットを収集
+            neighbors = []
+            for offset in [-3, -2, -1, 1, 2, 3]:
+                ni = idx + offset
+                if 0 <= ni < len(notes):
+                    nt = notes[ni].get("start", 0)
+                    if abs(nt - curr_t) < 1.0:  # 1秒以内のノート
+                        neighbors.append(notes[ni].get("fret", 0))
+            if not neighbors:
+                continue
+            avg_neighbor = sum(neighbors) / len(neighbors)
+            # 周辺ノートの平均から8フレット以上離れていたら除外
+            if abs(curr_fret - avg_neighbor) >= 8:
+                context_removed.append(idx)
+        if context_removed:
+            notes = [n for i, n in enumerate(notes) if i not in context_removed]
+            report("assign", f"コンテキストジャンプフィルタ: {len(context_removed)}ノート除外 "
+                   f"(周辺ノートから8f+離れた異常値)")
 
     # --- Step: 左手指番号割り当て (finger_assigner.py) ---
     try:
@@ -773,7 +865,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- 後処理1: ノート重複除去 ---
     # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.08秒）で重複検出される場合
     notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
-    DEDUP_WINDOW = 0.08  # 秒
+    DEDUP_WINDOW = 0.05  # 緩和: 0.08→0.05秒 (速いパッセージを保護)
     dedup_count = 0
     i = 0
     while i < len(notes) - 1:
@@ -808,7 +900,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # 特にG3(55)は3弦開放で、アルペジオ中に誤検出されやすい。
     # 判定基準: 開放弦pitchのノートが、前後のノートより有意にvelocityが低い場合は共鳴音。
     OPEN_PITCHES = {40, 45, 50, 55, 59, 64}  # standard tuning open strings
-    SYMPA_VEL_RATIO = 0.6   # 周囲の平均velocityの60%未満 → 共鳴音と判定
+    SYMPA_VEL_RATIO = 0.45  # 緩和: 0.6→0.45 (正当な開放弦音を保護)
     SYMPA_WINDOW = 0.3      # 前後0.3秒のノートを参照
     sympa_removed = 0
     if len(notes) > 10:
@@ -886,7 +978,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             time_signature=time_signature,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
-            noise_gate=0.10,
+            noise_gate=0.05,  # 緩和: 0.10→0.05 (弱い音を保護)
             include_techniques=enable_technique_gp5,
         )
         gp5_path = session_dir / "tab.gp5"
@@ -908,7 +1000,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         time_signature=time_signature,
         rhythm_info=rhythm_info,
         key_signature=detected_key_sig,
-        noise_gate=0.15,
+        noise_gate=0.08,  # 緩和: 0.15→0.08 (弱い音を保護)
     )
 
     musicxml_path = session_dir / "tab.musicxml"

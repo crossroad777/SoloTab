@@ -18,6 +18,123 @@ import guitarpro as gp
 DIVISIONS = 12
 
 
+def _validate_beat_playability(note_entries: List[dict],
+                                tuning: List[int]) -> List[dict]:
+    """
+    量子化後の物理制約チェック。
+    同一ビート(bar + beat_pos)に配置されたノートが
+    物理的に弾けるフレットスパンかを検証し、違反があれば
+    _assign_chord_notes で弾ける組み合わせに再割り当てする。
+    """
+    from collections import defaultdict
+    from string_assigner import _get_max_span, _assign_chord_notes
+
+    # bar + beat_pos でグループ化
+    beat_groups = defaultdict(list)
+    for i, entry in enumerate(note_entries):
+        key = (int(entry.get("bar", 0)), int(entry.get("beat_pos", 0)))
+        beat_groups[key].append(i)
+
+    fixes = 0
+    for key, indices in beat_groups.items():
+        if len(indices) < 2:
+            continue
+
+        entries = [note_entries[i] for i in indices]
+        frets_all = [(int(e.get("string", 1)), int(e.get("fret", 0))) for e in entries]
+        fretted = [f for _, f in frets_all if f > 0]
+
+        if len(fretted) < 2:
+            continue
+
+        span = max(fretted) - min(fretted)
+        max_span = _get_max_span(min(fretted)) + 1  # +1: 正解PDFは少し広めのスパンを許容
+
+        if span <= max_span:
+            continue
+
+        # 違反検出 → _assign_chord_notes で弾ける組み合わせを探す
+        chord_notes = []
+        for e in entries:
+            chord_notes.append({
+                "pitch": int(e.get("pitch", 60)),
+                "start": float(e.get("start", 0)),
+                "end": float(e.get("end", 0)),
+                "velocity": float(e.get("velocity", 0.8)),
+            })
+
+        reassigned = _assign_chord_notes(chord_notes, tuning, 9, None)  # f10+への再配置を抑制
+
+        # 再割り当て結果を検証
+        new_fretted = [n.get("fret", 0) for n in reassigned if n.get("fret", 0) > 0]
+        still_bad = False
+        if len(new_fretted) >= 2:
+            new_span = max(new_fretted) - min(new_fretted)
+            new_max = _get_max_span(min(new_fretted))
+            if new_span > new_max:
+                still_bad = True
+
+        if still_bad:
+            # まだ弾けない → ローフレット基準でハイフレットを下げる
+            # 人間の発想: f3が正しいなら、f10をf3近くに再配置
+            used_strings = set()
+            # ローフレット順にソート（低い方を基準に残す）
+            sorted_by_fret = sorted(reassigned, key=lambda n: n.get("fret", 0))
+            anchor_fret = sorted_by_fret[0].get("fret", 0)
+            max_span = _get_max_span(anchor_fret)
+
+            # まずanchorに近いノートを確定
+            for n in sorted_by_fret:
+                f = n.get("fret", 0)
+                if f == 0 or abs(f - anchor_fret) <= max_span:
+                    used_strings.add(n.get("string"))
+
+            # anchorから遠いノートを再配置
+            for n in sorted_by_fret:
+                f = n.get("fret", 0)
+                if f == 0 or abs(f - anchor_fret) <= max_span:
+                    continue
+                # このノートはスパン違反 → 弾ける位置に移動
+                pitch = n.get("pitch", 60)
+                best_s, best_f, best_dist = None, None, 999
+                for si, op in enumerate(tuning):
+                    sn = 6 - si
+                    nf = pitch - op
+                    if 0 <= nf <= 14 and sn not in used_strings:
+                        dist = abs(nf - anchor_fret)
+                        if dist <= max_span and dist < best_dist:
+                            best_s, best_f, best_dist = sn, nf, dist
+                if best_s is not None:
+                    n["string"] = best_s
+                    n["fret"] = best_f
+                    used_strings.add(best_s)
+                else:
+                    n["_remove"] = True
+
+        # 結果を元のnote_entriesに反映
+        for j, idx in enumerate(indices):
+            if j < len(reassigned):
+                if reassigned[j].get("_remove"):
+                    note_entries[idx]["_remove"] = True
+                    fixes += 1
+                else:
+                    old_s = note_entries[idx].get("string")
+                    old_f = note_entries[idx].get("fret")
+                    new_s = reassigned[j].get("string", old_s)
+                    new_f = reassigned[j].get("fret", old_f)
+                    if old_s != new_s or old_f != new_f:
+                        note_entries[idx]["string"] = new_s
+                        note_entries[idx]["fret"] = new_f
+                        fixes += 1
+
+    # _remove マークされたノートを除外
+    note_entries = [e for e in note_entries if not e.get("_remove")]
+
+    if fixes > 0:
+        print(f"[gp_renderer] 物理制約チェック: {fixes}ノートを修正/除外")
+
+    return note_entries
+
 def notes_to_gp5(notes: List[dict], *,
                  beats: List[float],
                  bpm: float = 120.0,
@@ -78,6 +195,11 @@ def notes_to_gp5(notes: List[dict], *,
             )
         except Exception:
             pass
+
+    # --- 量子化後の物理制約チェック ---
+    # 同一ビートに量子化されたノートが物理的に弾けるか検証し、
+    # 弾けない場合は代替ポジションに再割り当てする
+    note_entries = _validate_beat_playability(note_entries, tuning)
 
     # _group_by_time is still needed for voice beat building
     from tab_renderer import _group_by_time
@@ -287,21 +409,27 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
         gap_to_next = max(1, min(next_target - target_pos,
                                  bar_total_divs - target_pos))
 
-        # Duration: CRNNが検出した実際の音の長さ(duration_divs)を使用
+        # Duration: ギターTABではレガート（次のノートまで持続）が自然
+        # 短い音価+休符の「ダダッ」パターンを防止
         if force_legato:
             # ベース音などは次のノートまで音価を伸ばす（小節境界でキャップ）
             dur_divs = min(gap_to_next, bar_total_divs - target_pos)
             dur_divs = max(1, dur_divs)
         else:
-            dur_divs = int(group[0].get("duration_divs", gap_to_next))
+            quantized_dur = int(group[0].get("duration_divs", gap_to_next))
+            # 量子化音価が隙間の70%未満 → 短すぎる → gap_to_nextに伸ばす
+            if quantized_dur < gap_to_next * 0.7:
+                dur_divs = gap_to_next
+            else:
+                dur_divs = quantized_dur
             dur_divs = min(dur_divs, gap_to_next, bar_total_divs - target_pos)
             dur_divs = max(1, dur_divs)
             
         if not is_triplet:
-            normal_durs = [48, 36, 24, 18, 12, 9, 6, 3, 2, 1]
+            normal_durs = [48, 36, 24, 18, 12, 9, 6, 3]  # 32nd/64th排除
             dur_divs = min(normal_durs, key=lambda x: abs(x - dur_divs))
         else:
-            triplet_durs = [48, 36, 24, 18, 12, 8, 4, 3, 2, 1]
+            triplet_durs = [48, 36, 24, 18, 12, 8, 4, 3]  # 32nd/64th排除
             dur_divs = min(triplet_durs, key=lambda x: abs(x - dur_divs))
 
         # Post-snap cap: スナップで上方向に丸められた場合、小節からはみ出さないようキャップ

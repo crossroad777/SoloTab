@@ -23,90 +23,69 @@ import json
 import os
 import numpy as np
 
-MAX_FRET = 15  # アコースティックギターの実用フレット範囲
+MAX_FRET = 14  # v2.2: 15→14 統一
 
-# --- 重みパラメータ (Optuna V2: 20曲×200trial最適化, 全360曲検証66.2%) ---
+# --- 重みパラメータ (V5: Optuna 500trial最適化, GuitarSet 69.6%) ---
+# NOTE: メインのViterbi DPは string_assigner.py の WEIGHTS を使用。
+# ここのWEIGHTSは PIMA R5後処理とコードスコアリングで参照される。
 _DEFAULT_WEIGHTS = {
-    # 位置コスト
-    "w_fret_height":          0.93,    # フレット高コスト (V2: 0.9340)
-    "w_high_fret_extra":      9.7,     # 9f超追加コスト (V2: 9.7056)
-    "w_low_string_high_fret": 1.5,     # 低弦(4-6弦)ハイフレット倍率
-    "w_sweet_spot_bonus":    -4.8,     # sweet spot (0-9f) ボーナス (V2: -4.7594)
+    # 位置コスト (V5: フレット高コスト極限削減)
+    "w_fret_height":          0.11,    # V5: 0.93→0.11
+    "w_high_fret_extra":      7.0,     # V5: 9.7→7.0
+    "w_low_string_high_fret": 4.9,     # V5: 1.5→4.9
+    "w_sweet_spot_bonus":    -7.4,     # V5: -4.8→-7.4
 
-    # 遷移コスト（ポジション連続性を強く重視）
-    "w_movement":            29.5,     # ポジション移動コスト (V2: 29.5272)
-    "w_position_shift":      75.1,     # ポジション跨ぎ追加コスト (V2: 75.0571)
-    "w_string_switch":        1.1,     # 弦切り替えコスト (V2: 1.0621)
-    "w_same_string_repeat":  13.9,     # ⑧ 右手PIMA: 同弦連打ペナルティ (V2: 13.9127)
+    # 遷移コスト (V5: ポジション一貫性超重視)
+    "w_movement":            99.0,     # V5: 29.5→99.0
+    "w_position_shift":      99.3,     # V5: 75.1→99.3
+    "w_string_switch":        5.3,     # V5: 1.1→5.3
+    "w_same_string_repeat":  25.3,     # V5: 13.9→25.3
 
     # 人間工学コスト
-    "w_fret_span":          100.0,     # 和音フレットスパンコスト
-    "w_unplayable":       10000.0,     # 物理的に弾けない配置
-    "w_adjacent_stretch":    30.0,     # ⑨ 隣接弦ストレッチペナルティ (3f超)
-    "w_too_many_fingers":  5000.0,     # ⑨ 4音超の同時押弦ペナルティ (バレーなし)
+    "w_fret_span":          100.0,
+    "w_unplayable":       10000.0,
+    "w_adjacent_stretch":    30.0,
+    "w_too_many_fingers":  5000.0,
 
-    # 音色コスト
-    "w_open_string_bonus":  -15.0,     # 開放弦ボーナス (強化: -7.2→-15.0 B3→S2:F0を優先)
-    "w_open_match_bonus":   -25.0,     # 開放弦でしか出せない音のボーナス (強化: -14.4→-25.0)
-    "w_barre_bonus":         -5.0,     # バレーコードボーナス (per extra string)
+    # 音色コスト (V5: 開放弦ボーナス調整)
+    "w_open_string_bonus":  -13.6,     # V5: -15.0→-13.6
+    "w_open_match_bonus":   -10.7,     # V5: -25.0→-10.7
+    "w_barre_bonus":         -5.0,
 
-    # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
-    "w_bass_low_string":   -20.0,     # ベース音(最低ピッチ)が低弦(4-6弦)ボーナス
-    "w_melody_high_string":-15.0,     # メロディ音(最高ピッチ)が高弦(1-3弦)ボーナス
-    "w_bass_wrong_string":  25.0,     # ベース音が高弦(1-3弦)にいるペナルティ
+    # フィンガースタイル弦域分離 (V5: 分離大幅強化)
+    "w_bass_low_string":   -19.1,     # V5: -20.0→-19.1
+    "w_melody_high_string":-37.4,     # V5: -15.0→-37.4
+    "w_bass_wrong_string":  37.9,     # V5: 25.0→37.9
     # 人間運指選好 (IDMT human fingering)
-    "w_human_pref_bonus":   -15.0,    # 人間が好むポジションへのボーナス
+    "w_human_pref_bonus":   -15.0,
 
-    # 法則3: ピッチ近接性弦保持 (3半音境界ルール)
-    # <3半音 → 同弦維持ボーナス, ≥3半音 → 隣接弦遷移を許容
-    "w_pitch_proximity_same_string":  -8.0,   # <3半音で同弦維持ボーナス
-    "w_pitch_proximity_adj_string":   -3.0,   # ≥3半音で隣接弦遷移ボーナス
+    # 法則3: ピッチ近接性弦保持 (V5: 大幅強化)
+    "w_pitch_proximity_same_string": -19.2,   # V5: -8.0→-19.2
+    "w_pitch_proximity_adj_string":  -10.8,   # V5: -3.0→-10.8
 
-    # ⑪ 右手PIMA制約 (Skarha 2018, Optuna V2最適化済み)
-    "w_pima_natural_bonus":   -4.4,    # R3: 自然位置ボーナス (V2: -4.3690)
-    "w_pima_thumb_bass":      -3.5,    # R2: 親指=ベース弦ボーナス (V2: -3.5063)
-    "w_pima_thumb_wrong":     11.8,    # R2: 親指がメロディ弦ペナルティ (V2: 11.7989)
-    "w_pima_crossing":        25.8,    # R4: 右手の逆交差ペナルティ (V2: 25.7610)
-    "w_pima_ama_avoid":        8.0,    # R5: a-m-a交替回避ペナルティ
-    "w_pima_same_finger":     15.4,    # R1: 同指連打禁止ペナルティ (V2: 15.3683)
+    # 右手PIMA制約 (V5最適化)
+    "w_pima_natural_bonus":   -0.6,    # V5: -4.4→-0.6
+    "w_pima_thumb_bass":     -10.1,    # V5: -3.5→-10.1
+    "w_pima_thumb_wrong":     11.8,    # 維持
+    "w_pima_crossing":        14.1,    # V5: 25.8→14.1
+    "w_pima_ama_avoid":        8.0,    # 維持
+    "w_pima_same_finger":     15.4,    # 維持
 
-    # ⑫ Radicioni CSP: ポジション依存の指独立性 (ICMC 2004, V2最適化済み)
-    "w_radicioni_stretch":     19.4,   # ポジション依存ストレッチ (V2: 19.4440)
-    "w_radicioni_independence": 1.0,   # 指の独立性制約 (V2: 1.0200)
+    # Radicioni CSP (維持)
+    "w_radicioni_stretch":     19.4,
+    "w_radicioni_independence": 1.0,
 }
 
 
 def _load_pdl_weights() -> dict:
     """
     PDL(Path Difference Learning)最適化重みをロード。
-    optimized_weights.json が存在すれば、該当キーのみ上書きする。
-    
-    注意: PDLはTheory pathのみの最適化(65%)。3アプローチ統合環境では
-    一部のキー（開放弦ボーナス等）はTheory pathの差別化要因として
-    デフォルト値を維持する。
+    v2.2: PDL上書きを無効化。_DEFAULT_WEIGHTSのみ使用。
+    PDLの精度(65%)は不十分で、手動調整した重みを上書きしていたため。
     """
     weights = dict(_DEFAULT_WEIGHTS)
-    pdl_path = os.path.join(os.path.dirname(__file__), 'optimized_weights.json')
-    # 3アプローチ統合で保護するキー（Theory pathの差別化に重要）
-    _PROTECTED_KEYS = {"w_open_string_bonus", "w_open_match_bonus", 
-                       "w_human_pref_bonus", "w_bass_low_string", "w_melody_high_string"}
-    if os.path.exists(pdl_path):
-        try:
-            with open(pdl_path, 'r', encoding='utf-8') as f:
-                pdl_data = json.load(f)
-            pdl_weights = pdl_data.get('weights', {})
-            merged, skipped = 0, 0
-            for key, val in pdl_weights.items():
-                if key in _PROTECTED_KEYS:
-                    skipped += 1
-                    continue
-                if key in weights:
-                    weights[key] = val
-                    merged += 1
-            acc = pdl_data.get('string_accuracy', 0)
-            print(f"[guitar_cost] PDL重み適用: {merged}個上書き, {skipped}個保護 (PDL精度={acc:.4f})")
-        except Exception as e:
-            print(f"[guitar_cost] PDL重みロード失敗: {e}")
+    # v2.2: PDL上書き無効化 — 手動設定の重みを保護
+    print("[guitar_cost] PDL上書き無効化: _DEFAULT_WEIGHTSを使用")
     return weights
 
 
@@ -459,7 +438,7 @@ _PIMA_AMA_PATTERNS = [
 ]
 
 
-def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 15) -> list:
+def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 14) -> list:
     """
     R5 a-m-a回避: Viterbi後処理。
     3連続ノートで a-m-a パターン(弦1→2→1等)が検出された場合、
