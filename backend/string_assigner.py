@@ -764,37 +764,36 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 # --- 重みパラメータ (V7: Multi-track Optuna 150trial + 論文改善) ---
 # 多曲最適化 (20曲GProTab) + 先読み/ガイドフィンガー/開放弦準備
 WEIGHTS = {
-    # 位置コスト — 法則ベースOptuna V2最適化 (43法則 + 209万遷移)
-    "w_fret_height":          0.31,   # V2: フレット高さペナルティ軽減 (L01: jump平均1.33)
-    "w_mid_fret_extra":      40.24,   # V2: f5-9ペナルティ強化 (L06: f5-9=33.3%)
-    "w_high_fret_extra":     20.35,   # V2: f10+ペナルティ緩和
+    # 位置コスト — Multi-track Optuna最適化済み
+    "w_fret_height":          0.64,   # 多曲: フレット高さ一律ペナルティ軽減
+    "w_mid_fret_extra":      26.32,   # 多曲: f5-9を個別に強くペナルティ
+    "w_high_fret_extra":     33.23,   # 多曲: f10+を個別に強くペナルティ
     "w_low_string_high_fret": 4.9,    # 低弦ハイフレット
-    "w_sweet_spot_bonus":   -24.47,   # V2: ローフレットボーナス強化
-    "w_low_fret_bonus":     -88.72,   # V2: 低フレットボーナス大幅強化 (L06: f0-4=54.7%)
+    "w_sweet_spot_bonus":    -9.22,   # 多曲: ローフレットボーナス控えめ
+    "w_low_fret_bonus":     -54.83,   # 多曲: 低フレットボーナス更に強化
 
-    # 遷移コスト — 法則ベース最適化
+    # 遷移コスト — 多曲最適化 + 論文改善
     "w_movement":            10.0,    # フレット移動基本
-    "w_movement_up":          1.02,   # V2: 方向バイアス撤廃 (L07: 上行/下行均等)
-    "w_movement_down":        0.3,    # ハイ→ロー移動
-    "w_position_shift":      29.82,   # V2: ポジション移動ペナルティ半減 (L04: 97.8%内で十分)
-    "w_string_switch":        3.50,   # V2b: 弦変更ペナルティ (L09: 隣弦59.2%)
-    "w_string_skip":         12.0,    # V2b: 弦飛ばし(2弦以上)の二次ペナルティ
+    "w_movement_up":          6.19,   # 多曲: ロー→ハイ抑制
+    "w_movement_down":        0.3,    # ハイ→ロー移動（戻りやすい）
+    "w_position_shift":      55.26,   # 多曲: ポジション固定やや強化
+    "w_string_switch":        5.3,    # 弦移動
     "w_same_string_repeat":  25.3,    # 同弦連打回避
     "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
-    "w_from_open":            0.27,   # V2: 開放弦遷移 (L05: 開放弦15.6%活用)
+    "w_from_open":            0.05,   # 開放弦からの遷移 (論文: 準備時間あるので大幅軽減)
 
     # 先読みボーナス (Higher-Order Viterbi, Hori & Sagayama 2016)
-    "w_lookahead":            0.78,   # V2: 先読み2.6倍強化 (L04: ポジション維持を先読みで実現)
+    "w_lookahead":            0.3,    # 次ノートの最良遷移コスト × この係数をボーナス
 
     # ガイドフィンガー (Radicioni & Lombardo 2005)
-    "w_guide_finger":       -37.14,   # V2: ガイドフィンガー2.5倍強化 (L03: 7.3%目標)
+    "w_guide_finger":       -15.0,    # 同弦で隣接フレット(<=2)スライドにボーナス
 
     # 開放弦準備時間 (FretboardFlow, ISMIR 2025)
-    "w_open_prep_discount":   0.08,   # V2: 開放弦後の移動コスト軽減
+    "w_open_prep_discount":   0.3,    # 開放弦後のポジション移動コスト × この係数に軽減
 
     # ピッチ近接性ルール
-    "w_pitch_proximity_same":-40.48,   # V2: 同弦維持ボーナス強化 (L12: 同ピッチ同弦96.3%)
-    "w_pitch_proximity_adj": -26.41,   # V2: 隣接弦遷移ボーナス強化 (L09: 隣弦59.2%)
+    "w_pitch_proximity_same":-19.2,   # 同弦維持ボーナス
+    "w_pitch_proximity_adj": -10.8,   # 隣接弦遷移ボーナス
 
     # 右手PIMA制約
     "w_pima_natural_bonus":   -0.6,
@@ -810,7 +809,7 @@ WEIGHTS = {
     # 音色コスト — 開放弦を強く優遇
     "w_open_string_bonus":  -25.0,
     "w_open_match_bonus":   -10.7,
-    "w_open_emission_bonus": -56.89,   # V2: 開放弦emission (L05: 15.6%)
+    "w_open_emission_bonus": -60.0,
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
@@ -964,9 +963,6 @@ def _transition_cost(s: int, f: int,
     string_dist = abs(s - prev_s)
     if string_dist > 0:
         cost += string_dist * WEIGHTS["w_string_switch"]
-        # 弦飛ばしペナルティ: 2弦以上飛ばすと二次的コスト (L09: 隣弦59.2%)
-        if string_dist >= 2:
-            cost += (string_dist - 1) ** 2 * WEIGHTS.get("w_string_skip", 12.0)
     else:
         # 右手PIMA: 同じ弦の連打は右手の同指連打になり困難
         cost += WEIGHTS["w_same_string_repeat"]
@@ -1267,11 +1263,11 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 emission += _human_pref_cost(s, f, note_pitch)
 
             # V3 Transformer bonus (97.2%精度の弦予測)
-            # V2b: ボーナスを軽減し、フレット制限を撤廃（ロー偏重を防止）
-            if is_single:
+            # ローフレット候補のみにボーナス（ハイフレットへの誘導を防止）
+            if is_single and f <= 4:
                 ft_probs = groups[gi][0].get('_ft_probs')
                 if ft_probs and s in ft_probs:
-                    emission -= ft_probs[s] * 15.0  # V2b: 50→15に軽減
+                    emission -= ft_probs[s] * 50.0  # 確率×50のボーナス
 
             # 全ての前状態からの遷移を評価
             # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
@@ -1843,11 +1839,11 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
                   f"est_position={estimated_position:.1f}")
     
-    # CNN重み: 法則ベースV2bではViterbiコスト関数を優先
-    # CNN確率はemissionの補助として使うが、Viterbiの遷移コストが主導
-    cnn_weight = 8.0 if is_nylon else 12.0
+    # CNN重み: steel=30.0 (CQT信頼大), nylon=25.0 (CNN-first有効化)
+    # 分析結果: CNN argmax=70.8% > Viterbi=66.9% → ナイロンでもCNNを信頼
+    cnn_weight = 25.0 if is_nylon else 30.0
     if is_nylon:
-        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (Viterbi優先)")
+        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (CNN-first有効)")
     
     # CNNの弦確率にギタータイプ別重みを反映
     for note in notes:
@@ -1905,12 +1901,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
-    # === V3 Transformer 2パス目: 文脈整合性チェック付き ===
-    # V2b: 隣弦率(L09:59.2%)を破壊しないよう、文脈を確認してから修正
+    # === V3 Transformer 2パス目: ハイ→ローのみ修正 ===
     model = _load_fingering_transformer()
     if model:
         n_overrides = 0
-        n_skipped_context = 0
         for i, note in enumerate(result):
             if note.get('_is_chord_member'):
                 continue
@@ -1921,27 +1915,17 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             best_s = max(probs, key=probs.get)
             best_prob = probs[best_s]
             cur_prob = probs.get(cur_s, 0)
-            # V2b: 閾値を厳格化 (0.7→0.85, 2x→3x)
-            if best_s != cur_s and best_prob > 0.85 and best_prob > cur_prob * 3:
+            if best_s != cur_s and best_prob > 0.7 and best_prob > cur_prob * 2:
                 new_f = note['pitch'] - tuning[6 - best_s]
                 cur_f = note.get('fret', 0)
                 if 0 <= new_f <= max_fret and new_f < cur_f:
-                    # V2b: 文脈チェック - 前後のノートとの弦距離が悪化しないか
-                    prev_s = result[i-1].get('string', cur_s) if i > 0 else cur_s
-                    next_s = result[i+1].get('string', cur_s) if i < len(result)-1 else cur_s
-                    old_dist = abs(cur_s - prev_s) + abs(cur_s - next_s)
-                    new_dist = abs(best_s - prev_s) + abs(best_s - next_s)
-                    if new_dist > old_dist + 1:
-                        # 弦の飛ばしが増える場合はスキップ
-                        n_skipped_context += 1
-                        continue
                     note['string'] = best_s
                     note['fret'] = new_f
                     n_overrides += 1
                     if n_overrides <= 10:
                         print(f"  [V3] note {i}: s{cur_s}f{cur_f} -> s{best_s}f{new_f} (prob={best_prob:.0%})")
-        if n_overrides > 0 or n_skipped_context > 0:
-            print(f"[Transformer V3] {n_overrides}ノート修正 (文脈保護: {n_skipped_context}スキップ)")
+        if n_overrides > 0:
+            print(f"[Transformer V3] {n_overrides}ノートを修正")
 
     # 軽量スムージング
     result = _smooth_jumps(result, tuning, max_fret)
