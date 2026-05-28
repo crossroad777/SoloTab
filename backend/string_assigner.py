@@ -1308,13 +1308,16 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 
                 # --- Higher-Order Viterbi: 先読みボーナス (Hori & Sagayama 2016) ---
                 # 次のノートの候補を見て、現在の(s,f)から次が弾きやすいならボーナス
+                # 計算量制御: 候補を上位3個に制限 (O(k³)回避)
                 if gi + 1 < n_groups and group_candidates[gi + 1] is not None:
                     next_candidates_list = group_candidates[gi + 1]
                     if next_candidates_list:
+                        # フレットが低い順に上位3候補のみ評価
+                        top3 = sorted(next_candidates_list, key=lambda x: x[1])[:3]
                         next_pitch = groups[gi + 1][0].get('pitch') if len(groups[gi + 1]) == 1 else None
                         min_next_trans = min(
                             _transition_cost(ns, nf, s, f, next_pitch, cur_pitch)
-                            for ns, nf in next_candidates_list
+                            for ns, nf in top3
                         )
                         # 次が楽な弦選びにボーナス（コスト低減）
                         total -= min_next_trans * WEIGHTS.get("w_lookahead", 0.3)
