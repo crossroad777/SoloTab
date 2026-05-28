@@ -963,6 +963,10 @@ def _transition_cost(s: int, f: int,
     string_dist = abs(s - prev_s)
     if string_dist > 0:
         cost += string_dist * WEIGHTS["w_string_switch"]
+        # === L09構造: 弦飛ばし二次ペナルティ (隣弦率59.2%目標) ===
+        # 2弦以上飛ばすと急激にコスト増加
+        if string_dist >= 2:
+            cost += (string_dist - 1) ** 2 * WEIGHTS.get("w_string_skip", 15.0)
     else:
         # 右手PIMA: 同じ弦の連打は右手の同指連打になり困難
         cost += WEIGHTS["w_same_string_repeat"]
@@ -979,6 +983,29 @@ def _transition_cost(s: int, f: int,
             # 大きいインターバル: 隣接弦遷移にボーナス
             if string_dist == 1:
                 cost += WEIGHTS["w_pitch_proximity_adj"]
+
+        # === L12構造: 同ピッチ→同弦ルール (96.3%) ===
+        if interval == 0 and s == prev_s:
+            cost -= 25.0  # 同ピッチ同弦を強力に優遇
+        elif interval == 0 and s != prev_s:
+            cost += 20.0  # 同ピッチ異弦を強くペナルティ
+
+        # === L11構造: 音程→弦変化の法則 ===
+        # 5半音(完全4度)=1弦移動がチューニング構造と一致
+        expected_string_jump = interval / 5.0  # 5半音≒1弦
+        if string_dist > 0 and interval > 0:
+            deviation = abs(string_dist - expected_string_jump)
+            if deviation < 0.5:
+                cost -= 5.0  # チューニング構造に沿った弦移動にボーナス
+
+    # === L01構造: フレットジャンプ非線形ペナルティ ===
+    # 2f以内=90.5%, 3f=5.5%, 4f+=3.6% → 3f以上で急激にコスト増
+    if f > 0 and prev_f > 0:
+        fj = abs(f - prev_f)
+        if fj >= 3:
+            cost += (fj - 2) ** 2 * 8.0  # 3f=8, 4f=32, 5f=72
+        if fj >= 5:
+            cost += 50.0  # L28: 5フレット以上は身体的限界
 
     # --- 右手PIMA制約 (Skarha 2018) ---
     finger = _PIMA_NATURAL.get(s, 'p')
