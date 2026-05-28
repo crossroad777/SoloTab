@@ -22,6 +22,12 @@ venv.bak/
 *.bak
 *.npz
 
+# Exception: デプロイに必要なモデルファイル
+!backend/string_classifier_mixed_v2.pth
+!backend/train/fingering_model_v3.py
+!gp_training_data/v3/models/fingering_transformer_v3_best.pt
+!gp_training_data/v3/models/fingering_transformer_v3_finetuned.pt
+
 # Logs
 *.log
 error.log
@@ -39,6 +45,9 @@ SynthTab-main/
 backend/fretnet_models/
 gprotab_downloads/
 gp_training_data/
+# Exception: モデルファイルのディレクトリは許可
+!gp_training_data/v3/
+!gp_training_data/v3/models/
 
 # Node
 node_modules/
