@@ -766,11 +766,11 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 WEIGHTS = {
     # 位置コスト — Multi-track Optuna最適化済み
     "w_fret_height":          0.64,   # 多曲: フレット高さ一律ペナルティ軽減
-    "w_mid_fret_extra":      26.32,   # 多曲: f5-9を個別に強くペナルティ
+    "w_mid_fret_extra":       3.0,    # V3f: 10→3 (f5-9へのペナルティを更に軽減)
     "w_high_fret_extra":     33.23,   # 多曲: f10+を個別に強くペナルティ
     "w_low_string_high_fret": 4.9,    # 低弦ハイフレット
-    "w_sweet_spot_bonus":    -9.22,   # 多曲: ローフレットボーナス控えめ
-    "w_low_fret_bonus":     -54.83,   # 多曲: 低フレットボーナス更に強化
+    "w_sweet_spot_bonus":     0.0,    # V3f: ゼロ化 (f0-4過集中防止)
+    "w_low_fret_bonus":       0.0,    # V3f: ゼロ化 (L06: f0-4=54.7%目標)
 
     # 遷移コスト — 多曲最適化 + 論文改善
     "w_movement":            10.0,    # フレット移動基本
@@ -808,9 +808,9 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,
 
     # 音色コスト — 開放弦優遇を法則に合わせて抑制
-    "w_open_string_bonus":  -10.0,   # V3b: -25→-10 (L05: 開放弦15.6%)
+    "w_open_string_bonus":   50.0,   # V3e: ペナルティ更に強化 (L05: 開放弦15.6%)
     "w_open_match_bonus":   -10.7,
-    "w_open_emission_bonus": -10.0,   # V3b: -60→-10 (開放弦率35%→15.6%目標)
+    "w_open_emission_bonus":  50.0,   # V3e: ペナルティ更に強化
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
@@ -1291,11 +1291,11 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 emission += _human_pref_cost(s, f, note_pitch)
 
             # V3 Transformer bonus (97.2%精度の弦予測)
-            # ローフレット候補のみにボーナス（ハイフレットへの誘導を防止）
-            if is_single and f <= 4:
+            # V3f: フレット制限撤廃 + 重み軽減 (f0-4過集中防止)
+            if is_single:
                 ft_probs = groups[gi][0].get('_ft_probs')
                 if ft_probs and s in ft_probs:
-                    emission -= ft_probs[s] * 50.0  # 確率×50のボーナス
+                    emission -= ft_probs[s] * 15.0  # V3f: 50→15
 
             # 全ての前状態からの遷移を評価
             # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
