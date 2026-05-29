@@ -807,10 +807,10 @@ WEIGHTS = {
     "w_adjacent_stretch":    30.0,
     "w_too_many_fingers":  5000.0,
 
-    # 音色コスト — 開放弦を強く優遇
-    "w_open_string_bonus":  -25.0,
+    # 音色コスト — 開放弦優遇を法則に合わせて抑制
+    "w_open_string_bonus":  -10.0,   # V3b: -25→-10 (L05: 開放弦15.6%)
     "w_open_match_bonus":   -10.7,
-    "w_open_emission_bonus": -60.0,
+    "w_open_emission_bonus": -10.0,   # V3b: -60→-10 (開放弦率35%→15.6%目標)
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
@@ -1332,6 +1332,13 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 if fret_jump > max_fret_reach:
                     trans += (fret_jump - max_fret_reach) * 15.0
                 
+                # === L29-30構造: 速度依存遷移コストスケーリング ===
+                # 速いパッセージ(IOI<0.2s)では遷移コストを増幅
+                # → 小さいジャンプが強く優遍される
+                if ioi < 0.2:
+                    speed_scale = 1.0 + (0.2 - ioi) * 5.0  # IOI=0.1s→1.5x, IOI=0.05s→1.75x
+                    trans *= speed_scale
+
                 total = prev_cost + emission + trans
 
                 # --- Higher-Order Viterbi: 先読みボーナス (Hori & Sagayama 2016) ---
@@ -1929,8 +1936,11 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
     result = _minimax_postprocess(result, tuning, max_fret)
 
-    # === V3 Transformer 2パス目: ハイ→ローのみ修正 ===
-    model = _load_fingering_transformer()
+    # === V3 Transformer 2パス目: 無効化 ===
+    # V3b: f0-4過集中(89%)の原因がこの段階のハイ→ロー変換と判明
+    # 構造的法則(L01/L09/L11/L12)がViterbiに組込み済みのため、V3は不要
+    # model = _load_fingering_transformer()
+    model = None  # V3b: 無効化
     if model:
         n_overrides = 0
         for i, note in enumerate(result):
