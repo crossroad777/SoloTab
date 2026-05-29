@@ -776,8 +776,9 @@ WEIGHTS = {
     "w_movement":            10.0,    # フレット移動基本
     "w_movement_up":          6.19,   # 多曲: ロー→ハイ抑制
     "w_movement_down":        0.3,    # ハイ→ロー移動（戻りやすい）
-    "w_position_shift":      55.26,   # 多曲: ポジション固定やや強化
-    "w_string_switch":        5.3,    # 弦移動
+    "w_position_shift":      27.72,   # V3: ポジション移動緩和 (55→28, L04適合)
+    "w_string_switch":        9.68,   # V3: 弦変更コスト適正化 (5.3→9.7)
+    "w_string_skip":         35.95,   # V3: 弦飛ばし二次ペナルティ (隣弦率26→51%)
     "w_same_string_repeat":  25.3,    # 同弦連打回避
     "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
     "w_from_open":            0.05,   # 開放弦からの遷移 (論文: 準備時間あるので大幅軽減)
