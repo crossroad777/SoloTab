@@ -196,7 +196,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             if (inY) {
                 const centerX = x + w / 2;
                 const dist = Math.abs(px - centerX);
-                if (dist < bestDist && dist < w * 1.5) {
+                if (dist < bestDist && dist < w * 30) {
                     bestDist = dist;
                     bestBeat = entry;
                 }
@@ -209,7 +209,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 const centerX = x + w / 2;
                 const centerY = y + h / 2;
                 const dist = Math.sqrt(Math.pow(px - centerX, 2) + Math.pow(py - centerY, 2));
-                if (dist < bestDist && dist < 120) {
+                if (dist < bestDist && dist < 300) {
                     bestDist = dist;
                     bestBeat = entry;
                 }
@@ -1322,8 +1322,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                                 ? `${apiBase}/result/${sessionId}/notes`
                                                 : `${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`;
                                             const method = isNew ? "POST" : "PATCH";
+                                            // Standard tuning MIDI base per string: 1=E4(64), 2=B3(59), 3=G3(55), 4=D3(50), 5=A2(45), 6=E2(40)
+                                            const stringMidi = [0, 64, 59, 55, 50, 45, 40];
                                             const bodyData = isNew
-                                                ? { fret: newFret, string: newString, start_time: editNote.startTime, duration: 0.25 }
+                                                ? { fret: newFret, string: newString, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
                                                 : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
 
                                             const res = await fetch(url, {
@@ -1365,8 +1367,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                             ? `${apiBase}/result/${sessionId}/notes`
                                             : `${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`;
                                         const method = isNew ? "POST" : "PATCH";
+                                        // Standard tuning MIDI base per string: 1=E4(64), 2=B3(59), 3=G3(55), 4=D3(50), 5=A2(45), 6=E2(40)
+                                        const stringMidi = [0, 64, 59, 55, 50, 45, 40];
                                         const bodyData = isNew
-                                            ? { fret: newFret, string: newString, start_time: editNote.startTime, duration: 0.25 }
+                                            ? { fret: newFret, string: newString, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
                                             : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
 
                                         const res = await fetch(url, {
