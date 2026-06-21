@@ -29,7 +29,18 @@ _EXPERTS = [
 
 solotab_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("ffmpeg", "libsndfile1", "fonts-noto-cjk", "git")
+    .apt_install("ffmpeg", "libsndfile1", "fonts-noto-cjk", "git", "curl", "unzip", "ca-certificates", "gnupg")
+    .run_commands(
+        # Install Deno for yt-dlp EJS
+        "curl -fsSL https://deno.land/install.sh | sh",
+        "ln -sf /root/.deno/bin/deno /usr/local/bin/deno",
+        # Install Node.js for yt-dlp JS challenges + ensure in PATH
+        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs",
+        "ln -sf /usr/bin/node /usr/local/bin/node",
+        # Install bgutil-ytdlp-pot-provider scripts for PO Token generation
+        "git clone https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /root/bgutil-ytdlp-pot-provider"
+        " && cd /root/bgutil-ytdlp-pot-provider/server && npm ci && npx tsc",
+    )
     .pip_install(
         "torch==2.5.1",
         extra_index_url="https://download.pytorch.org/whl/cu121",
@@ -48,6 +59,8 @@ solotab_image = (
         "basic-pitch",
         "cython",
         "pyguitarpro",
+        "yt-dlp[default]",
+        "bgutil-ytdlp-pot-provider",
     )
     .pip_install(
         # madmom 0.16.1 PyPI fails on Python 3.11 (setup.py egg_info error).
@@ -89,6 +102,7 @@ app = modal.App("solotab", image=solotab_image)
 session_vol = modal.Volume.from_name("solotab-sessions", create_if_missing=True)
 
 
+
 # ---------------------------------------------------------------------------
 # ASGI エントリーポイント
 # ---------------------------------------------------------------------------
@@ -117,7 +131,7 @@ def solotab_api():
     from fastapi.responses import FileResponse
     from pydantic import BaseModel
     from contextlib import asynccontextmanager
-    import json, shutil, subprocess, datetime as dt, copy
+    import json, shutil, subprocess, datetime as dt, copy, uuid
     from typing import Optional
     from enum import Enum
     from pathlib import Path
@@ -148,6 +162,11 @@ def solotab_api():
             return sessions[sid]
         sd = UPLOAD_DIR / sid
         sp = sd / "session.json"
+        if not sp.exists():
+            try:
+                session_vol.reload()
+            except Exception as e:
+                print(f"[load_session] Volume reload warning: {e}")
         if sp.exists():
             s = json.loads(sp.read_text(encoding="utf-8"))
             sessions[sid] = s
@@ -195,9 +214,130 @@ def solotab_api():
         """pipeline.run_pipeline に完全委譲（ローカルと同一ロジック）"""
         s = sessions[sid]
         sd = Path(s["session_dir"])
-        wav = Path(s["wav_path"])
         try:
             s["status"] = SS.PROCESSING; save(sid, commit=False)
+
+            # --- YouTube download (if applicable) ---
+            is_youtube = s.get("url", "").startswith("http")
+            if is_youtube:
+                youtube_url = s["url"]
+                output_path = sd / "download_temp"
+                s["progress"] = "YouTube音声をダウンロード中..."
+                save(sid, commit=False)
+                # Start Node.js PO Token HTTP server
+                import time as _time
+                import json as _json
+                pot_proc = None
+                try:
+                    pot_proc = subprocess.Popen(
+                        ["node", "/root/bgutil-ytdlp-pot-provider/server/build/main.js",
+                         "--port", "4416"],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    )
+                    _time.sleep(5)
+                    poll = pot_proc.poll()
+                    if poll is not None:
+                        stderr_out = pot_proc.stderr.read().decode() if pot_proc.stderr else ""
+                        print(f"[YouTube] POT server exited (code={poll}): {stderr_out[:500]}", flush=True)
+                        pot_proc = None
+                    else:
+                        print(f"[YouTube] POT server running (pid={pot_proc.pid})", flush=True)
+                except Exception as e:
+                    print(f"[YouTube] POT server error: {e}", flush=True)
+
+                # Pre-warm: make a request to cache BotGuard result
+                if pot_proc:
+                    try:
+                        import urllib.request
+                        req = urllib.request.Request(
+                            "http://127.0.0.1:4416/get_pot",
+                            data=b"{}",
+                            headers={"Content-Type": "application/json"},
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(req, timeout=60) as resp:
+                            warmup = _json.loads(resp.read().decode())
+                        print(f"[YouTube] POT server pre-warmed OK (keys={list(warmup.keys())})", flush=True)
+                    except Exception as e:
+                        print(f"[YouTube] POT pre-warm failed: {e}", flush=True)
+
+                # Check for cookies file (local first, then reload volume)
+                cookies_path = Path("/data/cookies.txt")
+                has_cookies = cookies_path.exists()
+                if not has_cookies:
+                    try:
+                        session_vol.reload()
+                        has_cookies = cookies_path.exists()
+                    except: pass
+                print(f"[YouTube] Cookies found: {has_cookies}", flush=True)
+
+                cmd = [
+                    "yt-dlp",
+                    "--no-playlist",
+                    "--no-check-certificates",
+                    "--remote-components", "ejs:github",
+                    "--extractor-args", "youtube:player_client=web",
+                    "-x",
+                    "--audio-format", "wav",
+                    "--audio-quality", "0",
+                    "-o", str(output_path) + ".%(ext)s",
+                    "-v",
+                    youtube_url,
+                ]
+                if has_cookies:
+                    cmd.insert(2, "--cookies")
+                    cmd.insert(3, str(cookies_path))
+                    print(f"[YouTube] Downloading with cookies: {youtube_url}")
+                elif pot_proc and pot_proc.poll() is None:
+                    cmd.insert(-1, "--extractor-args")
+                    cmd.insert(-1, "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
+                    print(f"[YouTube] Downloading with PO Token: {youtube_url}")
+                else:
+                    print(f"[YouTube] Downloading without auth: {youtube_url}")
+
+                result_dl = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+                # Stop POT server
+                if pot_proc:
+                    try:
+                        pot_proc.terminate()
+                        pot_proc.wait(timeout=5)
+                    except: pass
+
+                if result_dl.returncode != 0:
+                    print(f"[YouTube] yt-dlp stderr (last 800 chars): {result_dl.stderr[-800:]}")
+                    raise Exception(f"YouTube download failed: {result_dl.stderr}")
+                else:
+                    print(f"[YouTube] Download succeeded!")
+
+                # Find and convert downloaded file
+                downloaded_file = None
+                for f in sd.glob("download_temp.*"):
+                    if f.suffix.lower() in [".mp3", ".m4a", ".webm", ".wav", ".opus", ".ogg"]:
+                        downloaded_file = f
+                        break
+
+                if not downloaded_file:
+                    raise FileNotFoundError("Downloaded audio file not found")
+
+                wav_path = sd / "converted.wav"
+                subprocess.run(["ffmpeg", "-y", "-i", str(downloaded_file), str(wav_path)], check=True, capture_output=True)
+                s["wav_path"] = str(wav_path)
+
+                # Get title
+                try:
+                    info_cmd = ["yt-dlp", "--no-playlist", "--no-check-certificates", "--print", "%(title)s",
+                                "--extractor-args", "youtube:player_client=web", youtube_url]
+                    title_res = subprocess.run(info_cmd, capture_output=True, text=True, timeout=15)
+                    if title_res.returncode == 0 and title_res.stdout.strip():
+                        s["filename"] = title_res.stdout.strip()
+                except Exception:
+                    pass
+
+                save(sid, commit=False)
+            # --- End YouTube download ---
+
+            wav = Path(s["wav_path"])
 
             # progress_cb でセッション状態を更新
             step_map = {
@@ -289,6 +429,57 @@ def solotab_api():
         background_tasks.add_task(_run_bg, sid)
         return UR(session_id=sid, message="解析を開始しました", status=SS.PENDING, audio_url=f"/files/{sid}/converted.wav")
 
+    @fa.post("/upload/youtube")
+    async def upload_youtube(request: Request):
+        import re
+        body = await request.json()
+        url = body.get("url", "")
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+
+        m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', url)
+        if not m:
+            raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+
+        guitar_type = body.get("guitar_type", "electric")
+        tuning_val = body.get("tuning", "standard")
+
+        session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S-") + "yt-" + uuid.uuid4().hex[:4]
+        session_dir = UPLOAD_DIR / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        session_data = {
+            "status": SS.PENDING,
+            "session_dir": str(session_dir),
+            "filename": "YouTube Video",
+            "url": url,
+            "wav_path": "",
+            "guitar_type": guitar_type,
+            "tuning": tuning_val if tuning_val in TUNINGS else "standard",
+            "progress": "YouTube音声をダウンロード中...",
+            "error": None,
+        }
+        sessions[session_id] = session_data
+        save(session_id)
+
+        # Convert enum values to plain strings for session persistence
+        spawn_data = {k: (v.value if hasattr(v, 'value') else v) for k, v in session_data.items()}
+
+        # Run YouTube pipeline in background thread
+        import threading
+        threading.Thread(target=_run_bg, args=(session_id,), daemon=True).start()
+
+        return {"session_id": session_id, "message": "YouTube解析を開始しました", "status": "pending"}
+
+    @fa.post("/upload/cookies")
+    async def upload_cookies(file: UploadFile = File(...)):
+        """Upload YouTube cookies.txt for authenticated downloads"""
+        cookies_path = Path("/data/cookies.txt")
+        content = await file.read()
+        cookies_path.write_bytes(content)
+        session_vol.commit()
+        return {"message": "Cookies uploaded successfully", "size": len(content)}
+
     @fa.get("/status/{sid}/stream")
     async def stream(sid:str):
         import asyncio
@@ -324,6 +515,7 @@ def solotab_api():
             elif (sd/"beats.json").exists():
                 s["progress"] = "MoE推論中..."; s["steps_done"] = 1
         return SR(session_id=sid,status=s["status"],progress=s.get("progress"),error=s.get("error"),filename=s.get("filename"))
+
 
     @fa.get("/result/{sid}",response_model=RR)
     async def result(sid:str):
@@ -444,9 +636,148 @@ def solotab_api():
         np_=Path(s["session_dir"])/"notes_assigned.json"
         return {"notes":json.loads(np_.read_text(encoding="utf-8"))} if np_.exists() else {"notes":[]}
 
-    @fa.patch("/result/{sid}/notes/{note_idx}")
-    async def edit_note(sid: str, note_idx: int, body: dict):
-        """ノートの編集（フレット変更 or 削除）→ MusicXML再生成"""
+    def separate_melody_backing(notes: list, beats: list, beats_per_bar: int = 4) -> tuple[list, list]:
+        if not notes or not beats:
+            return notes.copy(), []
+        
+        import numpy as np
+        beats_arr = np.array(beats)
+        
+        from collections import defaultdict
+        beat_groups = defaultdict(list)
+        
+        for n in notes:
+            t = float(n.get("start", n.get("start_time", 0.0)))
+            idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
+            idx = max(0, min(idx, len(beats_arr) - 1))
+            beat_groups[idx].append(n)
+            
+        melody_notes = []
+        backing_notes = []
+        
+        for beat_idx, group in beat_groups.items():
+            candidates = []
+            for n in group:
+                s = int(n.get("string", 1))
+                p = int(n.get("pitch", 60))
+                if s <= 3 and p > 52:
+                    candidates.append(n)
+            
+            if candidates:
+                melody_note = max(candidates, key=lambda x: int(x.get("pitch", 0)))
+                for n in group:
+                    if n is melody_note:
+                        melody_notes.append(n)
+                    else:
+                        backing_notes.append(n)
+            else:
+                for n in group:
+                    backing_notes.append(n)
+                    
+        melody_notes.sort(key=lambda x: float(x.get("start", 0)))
+        backing_notes.sort(key=lambda x: float(x.get("start", 0)))
+        return melody_notes, backing_notes
+
+    def _regenerate_tab(sid, notes, tuning=None, noise_gate=None):
+        """notes → tab.gp5 + tab.musicxml + tab.gp4 を一括再生成する"""
+        s = load_session(sid)
+        if s is None:
+            return
+        sd = Path(s["session_dir"])
+
+        # 量子化済みデータは start_time を持ち start が欠落している場合がある
+        for n in notes:
+            if "start" not in n and "start_time" in n:
+                n["start"] = n["start_time"]
+
+        if tuning is None:
+            tuning_name = s.get("tuning", "standard")
+            tuning = TUNINGS.get(tuning_name, TUNINGS["standard"])
+            capo_val = s.get("capo", 0) or 0
+            if capo_val > 0:
+                tuning = [p + capo_val for p in tuning]
+
+        beats, bpm = [], s.get("bpm", 120)
+        time_sig = s.get("time_signature", "4/4")
+        rhythm_info = None
+        beats_path = sd / "beats.json"
+        if beats_path.exists():
+            try:
+                bd = json.loads(beats_path.read_text(encoding="utf-8"))
+                beats = bd.get("beats", [])
+                bpm = bd.get("bpm", bpm)
+                time_sig = bd.get("time_signature", time_sig)
+                rhythm_info = bd.get("rhythm_info")
+            except Exception:
+                pass
+
+        # 拍子から beats_per_bar を取得
+        beats_per_bar = 4
+        if time_sig == "3/4":
+            beats_per_bar = 3
+        elif time_sig == "6/8":
+            beats_per_bar = 6
+
+        # メロディとバッキングに分離
+        melody_notes, backing_notes = separate_melody_backing(notes, beats, beats_per_bar)
+
+        title = s.get("filename", sid).rsplit(".", 1)[0]
+        try:
+            title.encode('latin-1')
+        except:
+            import re
+            title = re.sub(r'[^\x20-\x7E]', '', title).strip() or sid
+
+        gate = noise_gate if noise_gate is not None else (s.get("noise_gate", 0.20) or 0.20)
+
+        # --- GP5再生成 ---
+        final_note_entries = None
+        try:
+            from gp_renderer import notes_to_gp5
+            gp5_bytes, final_note_entries = notes_to_gp5(
+                melody_notes, backing_notes=backing_notes, beats=beats, bpm=bpm, title=title,
+                tuning=tuning, time_signature=time_sig,
+                rhythm_info=rhythm_info, noise_gate=gate,
+                return_entries=True,
+            )
+            (sd / "tab.gp5").write_bytes(gp5_bytes)
+            
+            # GP5に書き込まれた最終ノート情報を notes_assigned.json に保存
+            if final_note_entries is not None:
+                (sd / "notes_assigned.json").write_text(json.dumps(final_note_entries, ensure_ascii=False, indent=2), encoding="utf-8")
+            
+            # GP4 (TuxGuitar用) も同時生成
+            try:
+                import guitarpro as _gp
+                _song = _gp.parse(str(sd / "tab.gp5"))
+                _gp.write(_song, str(sd / "tab.gp4"))
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[_regenerate_tab] GP5 generation failed: {e}")
+
+        # --- MusicXML再生成 ---
+        try:
+            from tab_renderer import notes_to_tab_musicxml
+            xc, _ = notes_to_tab_musicxml(
+                melody_notes, beats=beats, bpm=bpm, backing_notes=backing_notes, title=title,
+                tuning=tuning, time_signature=time_sig, noise_gate=gate
+            )
+            (sd / "tab.musicxml").write_text(xc, encoding="utf-8")
+        except Exception as e:
+            print(f"[_regenerate_tab] MusicXML generation failed: {e}")
+
+        # 古いPDFを削除
+        pp = sd / "tab.pdf"
+        if pp.exists():
+            try:
+                pp.unlink()
+            except Exception:
+                pass
+
+    @fa.post("/result/{sid}/notes")
+    async def add_assigned_note(sid: str, body: dict):
+        """新規ノートの追加（notes_assigned.json に挿入）→ MusicXML/GP5/GP4再生成"""
         s = load_session(sid)
         if s is None: raise HTTPException(404, "Not found")
         sd = Path(s["session_dir"])
@@ -455,12 +786,92 @@ def solotab_api():
 
         notes_data = json.loads(np_.read_text(encoding="utf-8"))
 
+        new_fret = body.get("fret")
+        new_string = body.get("string")
+        start_time = body.get("start_time")
+        duration = body.get("duration", 0.25)
+
+        if new_fret is None or new_string is None or start_time is None:
+            raise HTTPException(400, "fret, string, and start_time are required")
+
+        new_fret = int(new_fret)
+        new_string = int(new_string)
+        start_time = float(start_time)
+        duration = float(duration)
+
+        if not (0 <= new_fret <= 15): raise HTTPException(400, f"Invalid fret: {new_fret}")
+        if not (1 <= new_string <= 6): raise HTTPException(400, f"Invalid string: {new_string}")
+
+        # ピッチの計算
+        tuning = TUNINGS.get(s.get("tuning", "standard"), TUNINGS["standard"])
+        capo_val = s.get("capo", 0) or 0
+        string_idx = 6 - new_string
+        pitch = 40
+        if 0 <= string_idx < len(tuning):
+            pitch = tuning[string_idx] + capo_val + new_fret
+
+        # 新規ノートオブジェクト
+        new_note = {
+            "string": new_string,
+            "fret": new_fret,
+            "pitch": pitch,
+            "start": start_time,
+            "start_time": start_time,
+            "duration": duration,
+        }
+
+        # start_time の位置に挿入
+        notes_data.append(new_note)
+        notes_data.sort(key=lambda x: x.get("start_time", x.get("start", 0)))
+
+        # 一括再生成
+        _regenerate_tab(sid, notes_data)
+
+        # Volume同期
+        try:
+            session_vol.commit()
+        except Exception:
+            pass
+
+        s["total_notes"] = len(notes_data)
+        save(sid)
+        return {"status": "ok", "total_notes": len(notes_data)}
+
+    @fa.patch("/result/{sid}/notes/{note_idx}")
+    async def edit_note(sid: str, note_idx: int, body: dict):
+        """ノートの編集（フレット変更 or 削除）→ MusicXML/GP5/GP4再生成"""
+        s = load_session(sid)
+        if s is None: raise HTTPException(404, "Not found")
+        sd = Path(s["session_dir"])
+        np_ = sd / "notes_assigned.json"
+        if not np_.exists(): raise HTTPException(404, "Notes not found")
+
+        notes_data = json.loads(np_.read_text(encoding="utf-8"))
+
+        # 時刻ベース検索: start_time + string で正確なノートを特定
+        actual_index = note_idx
+        if body.get("start_time") is not None and body.get("string") is not None:
+            best_idx = -1
+            best_dist = float('inf')
+            for i, n in enumerate(notes_data):
+                if int(n.get('string', 0)) == int(body.get("string")):
+                    n_start = n.get('start_time', n.get('start', 0.0))
+                    d = abs(n_start - body.get("start_time"))
+                    if d < best_dist:
+                        best_dist = d
+                        best_idx = i
+            if best_idx >= 0 and best_dist < 2.0:  # 2秒以内
+                actual_index = best_idx
+                print(f"[edit_note] Time-based match: notes[{actual_index}] start={notes_data[actual_index].get('start_time') or notes_data[actual_index].get('start')}, dist={best_dist:.3f}s")
+            else:
+                print(f"[edit_note] WARNING: No time-based match found, using index {note_idx}")
+
+        if actual_index < 0 or actual_index >= len(notes_data):
+            raise HTTPException(400, f"Invalid note index: {actual_index}")
+
         if body.get("delete"):
             # ノート削除
-            if 0 <= note_idx < len(notes_data):
-                notes_data.pop(note_idx)
-            else:
-                raise HTTPException(400, f"Invalid note index: {note_idx}")
+            notes_data.pop(actual_index)
         else:
             # フレット・弦変更
             new_fret = body.get("fret")
@@ -474,41 +885,27 @@ def solotab_api():
                 new_string = int(new_string)
                 if not (1 <= new_string <= 6):
                     raise HTTPException(400, f"Invalid string: {new_string}")
-            if 0 <= note_idx < len(notes_data):
-                note = notes_data[note_idx]
-                # 弦変更
-                if new_string is not None:
-                    note["string"] = new_string
-                string = note.get("string", 1)
-                # ピッチも更新（開放弦ピッチ + 新フレット）
-                tuning = TUNINGS.get(s.get("tuning", "standard"), TUNINGS["standard"])
-                string_idx = 6 - string  # MusicXML弦番号 → 内部インデックス
-                if 0 <= string_idx < len(tuning):
-                    note["pitch"] = tuning[string_idx] + new_fret
-                note["fret"] = new_fret
-            else:
-                raise HTTPException(400, f"Invalid note index: {note_idx}")
-
-        # 保存
-        np_.write_text(json.dumps(notes_data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-        # MusicXML再生成
-        try:
-            from tab_renderer import notes_to_tab_musicxml
+            
+            note = notes_data[actual_index]
+            if new_string is not None:
+                note["string"] = new_string
+            string = note.get("string", 1)
+            # ピッチも更新（開放弦ピッチ + カポ値 + 新フレット）
             tuning = TUNINGS.get(s.get("tuning", "standard"), TUNINGS["standard"])
-            bp = sd / "beats.json"
-            beats_ = []; bpm_r = s.get("bpm", 120); ts_ = s.get("time_signature", "4/4")
-            if bp.exists():
-                bd = json.loads(bp.read_text(encoding="utf-8"))
-                beats_ = bd.get("beats", []); bpm_r = bd.get("bpm", bpm_r); ts_ = bd.get("time_signature", ts_)
-            title = s.get("filename", sid).rsplit(".", 1)[0]
-            xc, _ = notes_to_tab_musicxml(
-                notes_data, beats=beats_, bpm=bpm_r, title=title,
-                tuning=tuning, time_signature=ts_
-            )
-            (sd / "tab.musicxml").write_text(xc, encoding="utf-8")
-        except Exception as e:
-            print(f"MusicXML regeneration failed: {e}")
+            capo_val = s.get("capo", 0) or 0
+            string_idx = 6 - string
+            if 0 <= string_idx < len(tuning):
+                note["pitch"] = tuning[string_idx] + capo_val + new_fret
+            note["fret"] = new_fret
+
+        # 一括再生成
+        _regenerate_tab(sid, notes_data)
+
+        # Volume同期
+        try:
+            session_vol.commit()
+        except Exception:
+            pass
 
         s["total_notes"] = len(notes_data)
         save(sid)

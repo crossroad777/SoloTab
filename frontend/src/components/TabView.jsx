@@ -47,6 +47,204 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     // ============================================================
     // notesDataRef: APIから取得したノートデータ（start時刻あり）
     const notesDataRef = useRef([]);
+    const getTabY = (api, vbY, vbH) => {
+        const bl = api?.renderer?.boundsLookup;
+        const masterBars = bl?.masterBars ?? [];
+        const tabYMap = new Map();
+        for (const mb of masterBars) {
+            const sysY = mb.visualBounds?.y;
+            if (sysY == null || tabYMap.has(sysY)) continue;
+            const tabStaveVb = mb.bars?.[0]?.bars?.[1]?.visualBounds
+                            ?? mb.bars?.[0]?.bars?.[0]?.visualBounds;
+            if (tabStaveVb?.y != null) {
+                tabYMap.set(sysY, tabStaveVb.y - 8);
+            } else {
+                tabYMap.set(sysY, sysY + (mb.visualBounds?.h ?? 0) * 0.77);
+            }
+        }
+        if (tabYMap.has(vbY)) return tabYMap.get(vbY);
+        let best = null, bestDist = Infinity;
+        for (const [sy] of tabYMap) {
+            const d = Math.abs(sy - vbY);
+            if (d < bestDist) { bestDist = d; best = sy; }
+        }
+        return best != null ? tabYMap.get(best) : (vbY + vbH * 0.77);
+    };
+
+    const handleWrapperClick = (e, api) => {
+        if (editSaving) return;
+
+        const wrapper = wrapperRef.current;
+        if (!wrapper || !containerRef.current) return;
+
+        const rect = wrapper.getBoundingClientRect();
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+
+        // 1. まず、クリックされた位置に既存の音符があるか座標ベースで判定する
+        const lookup = api?.renderer?.boundsLookup;
+        let matchedNoteInfo = null;
+
+        if (lookup) {
+            const groups = lookup.staffSystems || lookup.staveGroups || [];
+            const margin = 10; // クリック判定の許容マージン (px)
+            
+            outer: for (const sys of groups) {
+                const bars = sys.bars || sys.masterBars || [];
+                for (const bar of bars) {
+                    const barBounds = bar.bars || [];
+                    for (const bb of barBounds) {
+                        const beats = bb.beats || [];
+                        for (const beatBounds of beats) {
+                            const notes = beatBounds.notes || [];
+                            for (const nb of notes) {
+                                if (nb.note) {
+                                    const bounds = nb.noteHeadBounds || beatBounds.visualBounds;
+                                    if (bounds) {
+                                        const { x, y, w, h } = bounds;
+                                        if (px >= x - margin && px <= x + w + margin &&
+                                            py >= y - margin && py <= y + h + margin) {
+                                            matchedNoteInfo = {
+                                                note: nb.note,
+                                                bounds: bounds
+                                            };
+                                            break outer;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. 既存の音符が見つかった場合 -> 編集ポップアップを開く
+        if (matchedNoteInfo) {
+            const { note, bounds } = matchedNoteInfo;
+            const score = api.score;
+            if (!score) return;
+
+            const beat = note.beat;
+            const ticksPerBeat = 960;
+            const bpm = (typeof score.tempo === 'object' && score.tempo !== null)
+                ? (score.tempo.value || 120)
+                : (score.tempo || 120);
+            const approxTimeSec = (beat.absolutePlaybackStart / ticksPerBeat) * (60 / bpm);
+            const backendString = 7 - note.string;
+
+            // バックエンドのノートインデックスを特定
+            let backendIdx = -1;
+            const backendNotes = notesDataRef.current;
+            if (backendNotes.length > 0) {
+                let bestDist = Infinity;
+                for (let i = 0; i < backendNotes.length; i++) {
+                    const bn = backendNotes[i];
+                    const startVal = bn.start_time ?? bn.start ?? 0;
+                    if (Number(bn.string) === backendString && Number(bn.fret) === Number(note.fret)) {
+                        const d = Math.abs(startVal - approxTimeSec);
+                        if (d < bestDist) { bestDist = d; backendIdx = i; }
+                    }
+                }
+                if (backendIdx < 0) {
+                    let bestDist2 = Infinity;
+                    for (let i = 0; i < backendNotes.length; i++) {
+                        const bn = backendNotes[i];
+                        const startVal = bn.start_time ?? bn.start ?? 0;
+                        const d = Math.abs(startVal - approxTimeSec);
+                        if (d < bestDist2 && Number(backendNotes[i].string) === backendString) {
+                            bestDist2 = d; backendIdx = i;
+                        }
+                    }
+                }
+            }
+
+            if (backendIdx >= 0) {
+                const matchedNote = backendNotes[backendIdx];
+                const containerRect = containerRef.current.getBoundingClientRect();
+                const popupX = e.clientX - containerRect.left;
+                const popupY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+
+                console.log(`[TabView] Note clicked via coordinates: fret=${note.fret} str=${backendString} idx=${backendIdx} t≈${approxTimeSec.toFixed(2)}s`);
+                setEditNote({
+                    noteIndex: backendIdx,
+                    fret: note.fret,
+                    string: backendString,
+                    startTime: matchedNote?.start,
+                    x: popupX,
+                    y: popupY,
+                    alphaNote: note
+                });
+                setEditInput(String(note.fret));
+                setTimeout(() => editInputRef.current?.focus(), 50);
+            } else {
+                console.warn('[TabView] Could not find matching backend note for coordinates');
+            }
+            return;
+        }
+
+        // 3. 既存の音符がない場合 -> 新規ノート追加ポップアップを開く
+        const map = beatMapRef.current;
+        if (!map || !map.length) return;
+
+        let bestBeat = null;
+        let bestDist = Infinity;
+
+        for (const entry of map) {
+            const { x, y, w, h } = entry.vb;
+            const inY = py >= y && py <= y + h;
+            if (inY) {
+                const centerX = x + w / 2;
+                const dist = Math.abs(px - centerX);
+                if (dist < bestDist && dist < w * 1.5) {
+                    bestDist = dist;
+                    bestBeat = entry;
+                }
+            }
+        }
+
+        if (!bestBeat) {
+            for (const entry of map) {
+                const { x, y, w, h } = entry.vb;
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                const dist = Math.sqrt(Math.pow(px - centerX, 2) + Math.pow(py - centerY, 2));
+                if (dist < bestDist && dist < 120) {
+                    bestDist = dist;
+                    bestBeat = entry;
+                }
+            }
+        }
+
+        if (bestBeat) {
+            const tabTopY = getTabY(api, bestBeat.vb.y, bestBeat.vb.h);
+            const offset = py - tabTopY;
+            let estString = 1;
+            if (offset < 13) estString = 1;
+            else if (offset < 23) estString = 2;
+            else if (offset < 33) estString = 3;
+            else if (offset < 43) estString = 4;
+            else if (offset < 53) estString = 5;
+            else estString = 6;
+
+            const startTimeSec = bestBeat.startMs / 1000;
+            const containerRect = containerRef.current.getBoundingClientRect();
+            const popupX = e.clientX - containerRect.left;
+            const popupY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+
+            setEditNote({
+                noteIndex: -1, // 新規追加を示すマーク
+                fret: 0,
+                string: estString,
+                startTime: startTimeSec,
+                x: popupX,
+                y: popupY
+            });
+            setEditInput("0");
+            setTimeout(() => editInputRef.current?.focus(), 50);
+        }
+    };
+
 
     const buildBeatMap = (api) => {
         if (!api.score || !api.renderer?.boundsLookup) {
@@ -654,6 +852,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         console.log(`[TabView] init triggered — key=${key}`);
         initKeyRef.current = key;
 
+        let onWrapperClick = null;
         let destroyed = false;
         boundsReadyRef.current = false;
         beatMapRef.current = [];
@@ -829,92 +1028,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     }
                 });
 
-                // --- ノートクリック → 編集UI ---
-                api.noteMouseDown.on((note, evt) => {
-                    if (!note || !containerRef.current) return;
-                    const score = api.score;
-                    if (!score) return;
-
-                    // BeatのtickからオーディオMSを推算
-                    const beat = note.beat;
-                    const ticksPerBeat = 960; // AlphaTab standard
-                    const bpm = score.tempo?.value || 120;
-                    const approxTimeSec = (beat.absolutePlaybackStart / ticksPerBeat) * (60 / bpm);
-
-                    // notesDataRef (= notes_assigned.json と同じ順序) から
-                    // (string, fret, 近い時刻) でマッチするノートを検索
-                    let backendIdx = -1;
-                    const backendNotes = notesDataRef.current;
-                    if (backendNotes.length > 0) {
-                        let bestDist = Infinity;
-                        for (let i = 0; i < backendNotes.length; i++) {
-                            const bn = backendNotes[i];
-                            if (Number(bn.string) === Number(note.string) && Number(bn.fret) === Number(note.fret)) {
-                                const d = Math.abs(bn.start - approxTimeSec);
-                                if (d < bestDist) { bestDist = d; backendIdx = i; }
-                            }
-                        }
-                        // フォールバック: string+fretが一致しない場合は時刻のみで検索
-                        if (backendIdx < 0) {
-                            let bestDist2 = Infinity;
-                            for (let i = 0; i < backendNotes.length; i++) {
-                                const d = Math.abs(backendNotes[i].start - approxTimeSec);
-                                if (d < bestDist2 && Number(backendNotes[i].string) === Number(note.string)) {
-                                    bestDist2 = d; backendIdx = i;
-                                }
-                            }
-                        }
-                    }
-                    if (backendIdx < 0) {
-                        console.warn('[TabView] Could not find matching backend note');
-                        return;
-                    }
-                    console.log(`[TabView] noteClick: alphaTab fret=${note.fret} str=${note.string} t≈${approxTimeSec.toFixed(2)}s → backend[${backendIdx}] start=${backendNotes[backendIdx]?.start}`);
-
-                    const rect = containerRef.current.getBoundingClientRect();
-                    let px, py;
-                    if (evt && (evt.pageX || evt.clientX)) {
-                        px = (evt.pageX || evt.clientX) - rect.left;
-                        py = (evt.pageY || evt.clientY) - rect.top + containerRef.current.scrollTop;
-                    } else {
-                        const bl = api.renderer?.boundsLookup;
-                        let noteBounds = null;
-                        if (bl) {
-                            try {
-                                const groups = bl.staffSystems || bl.staveGroups || [];
-                                outer: for (const sys of groups) {
-                                    const bars = sys.bars || sys.masterBars || [];
-                                    for (const bar of bars) {
-                                        const barBounds = bar.bars || [];
-                                        for (const bb of barBounds) {
-                                            const beats = bb.beats || [];
-                                            for (const beatBounds of beats) {
-                                                const notes = beatBounds.notes || [];
-                                                for (const nb of notes) {
-                                                    if (nb.note === note) {
-                                                        noteBounds = nb.noteHeadBounds || beatBounds.visualBounds;
-                                                        break outer;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch { /* ignore */ }
-                        }
-                        if (noteBounds) {
-                            px = noteBounds.x + noteBounds.w / 2;
-                            py = noteBounds.y;
-                        } else {
-                            px = rect.width / 2;
-                            py = containerRef.current.scrollTop + rect.height / 3;
-                        }
-                    }
-                    const matchedNote = backendNotes[backendIdx];
-                    setEditNote({ noteIndex: backendIdx, fret: note.fret, string: note.string, startTime: matchedNote?.start, x: px, y: py, alphaNote: note });
-                    setEditInput(String(note.fret));
-                    setTimeout(() => editInputRef.current?.focus(), 50);
-                });
+                // Note click is now handled via coordinate-based matching inside handleWrapperClick to ensure reliability.;
 
                 api.renderStarted.on(() => setLoading(true));
                 api.postRenderFinished.on(() => {
@@ -956,6 +1070,16 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 // Transpose is handled in a separate effect below
 
                 console.log(`[TabView] Loading score data into AlphaTab...`);
+                // --- 空白部分クリック → 新規ノート追加UI ---
+                const wrapper = wrapperRef.current;
+                onWrapperClick = (e) => {
+                    handleWrapperClick(e, api);
+                };
+                if (wrapper) {
+                    wrapper.addEventListener('click', onWrapperClick);
+                }
+
+                window.alphaTabApi = api;
                 api.load(scoreData);
             } catch (err) {
                 console.error("[TabView init]", err);
@@ -968,6 +1092,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             destroyed = true;
             boundsReadyRef.current = false;
             initKeyRef.current = null;
+            if (wrapperRef.current && onWrapperClick) {
+                wrapperRef.current.removeEventListener('click', onWrapperClick);
+            }
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId, apiBase, reloadKey]);
@@ -1190,20 +1317,29 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                         setEditSaving(true);
                                         try {
-                                            const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
-                                                method: "PATCH",
+                                            const isNew = editNote.noteIndex === -1;
+                                            const url = isNew
+                                                ? `${apiBase}/result/${sessionId}/notes`
+                                                : `${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`;
+                                            const method = isNew ? "POST" : "PATCH";
+                                            const bodyData = isNew
+                                                ? { fret: newFret, string: newString, start_time: editNote.startTime, duration: 0.25 }
+                                                : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
+
+                                            const res = await fetch(url, {
+                                                method: method,
                                                 headers: { "Content-Type": "application/json" },
-                                                body: JSON.stringify({ fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret }),
+                                                body: JSON.stringify(bodyData),
                                             });
                                             if (res.ok) {
-                                                console.log('[TabView] Note edited:', await res.json());
+                                                console.log('[TabView] Note saved:', await res.json());
                                                 setEditNote(null);
                                                 await new Promise(r => setTimeout(r, 300));
                                                 onNoteEdited?.();
                                             } else {
-                                                console.error('[TabView] Edit failed:', res.status);
+                                                console.error('[TabView] Save failed:', res.status);
                                             }
-                                        } catch (err) { console.error("Edit failed:", err); }
+                                        } catch (err) { console.error("Save failed:", err); }
                                         setEditSaving(false);
                                     } else if (e.key === "Escape") {
                                         setEditNote(null);
@@ -1224,20 +1360,29 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     if (isNaN(newFret) || newFret < 0 || newFret > 15) return;
                                     setEditSaving(true);
                                     try {
-                                        const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
-                                            method: "PATCH",
+                                        const isNew = editNote.noteIndex === -1;
+                                        const url = isNew
+                                            ? `${apiBase}/result/${sessionId}/notes`
+                                            : `${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`;
+                                        const method = isNew ? "POST" : "PATCH";
+                                        const bodyData = isNew
+                                            ? { fret: newFret, string: newString, start_time: editNote.startTime, duration: 0.25 }
+                                            : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
+
+                                        const res = await fetch(url, {
+                                            method: method,
                                             headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret }),
+                                            body: JSON.stringify(bodyData),
                                         });
                                         if (res.ok) {
-                                            console.log('[TabView] Note edited:', await res.json());
+                                            console.log('[TabView] Note saved:', await res.json());
                                             setEditNote(null);
                                             await new Promise(r => setTimeout(r, 300));
                                             onNoteEdited?.();
                                         } else {
-                                            console.error('[TabView] Edit failed:', res.status);
+                                            console.error('[TabView] Save failed:', res.status);
                                         }
-                                    } catch (err) { console.error("Edit failed:", err); }
+                                    } catch (err) { console.error("Save failed:", err); }
                                     setEditSaving(false);
                                 }}
                                 disabled={editSaving}
@@ -1247,31 +1392,33 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     cursor: "pointer", fontSize: 13,
                                 }}
                             >✓</button>
-                            <button
-                                onClick={async () => {
-                                    if (!confirm("このノートを削除しますか？")) return;
-                                    setEditSaving(true);
-                                    try {
-                                        const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
-                                            method: "PATCH",
-                                            headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ delete: true, start_time: editNote.startTime, string: editNote.string, old_fret: editNote.fret }),
-                                        });
-                                        if (res.ok) {
-                                            setEditNote(null);
-                                            await new Promise(r => setTimeout(r, 300));
-                                            onNoteEdited?.();
-                                        }
-                                    } catch (err) { console.error("Delete failed:", err); }
-                                    setEditSaving(false);
-                                }}
-                                disabled={editSaving}
-                                style={{
-                                    padding: "4px 8px", borderRadius: 6, border: "none",
-                                    background: "#ef4444", color: "white", fontWeight: 700,
-                                    cursor: "pointer", fontSize: 13,
-                                }}
-                            >🗑</button>
+                            {editNote.noteIndex !== -1 && (
+                                <button
+                                    onClick={async () => {
+                                        if (!confirm("このノートを削除しますか？")) return;
+                                        setEditSaving(true);
+                                        try {
+                                            const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                                method: "PATCH",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ delete: true, start_time: editNote.startTime, string: editNote.string, old_fret: editNote.fret }),
+                                            });
+                                            if (res.ok) {
+                                                setEditNote(null);
+                                                await new Promise(r => setTimeout(r, 300));
+                                                onNoteEdited?.();
+                                            }
+                                        } catch (err) { console.error("Delete failed:", err); }
+                                        setEditSaving(false);
+                                    }}
+                                    disabled={editSaving}
+                                    style={{
+                                        padding: "4px 8px", borderRadius: 6, border: "none",
+                                        background: "#ef4444", color: "white", fontWeight: 700,
+                                        cursor: "pointer", fontSize: 13,
+                                    }}
+                                >🗑</button>
+                            )}
                         </div>
                         <div style={{ fontSize: 10, color: "#64748b" }}>枠外クリック or Esc=閉じる</div>
                     </div>
