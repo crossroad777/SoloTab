@@ -13,9 +13,10 @@ Strategy:
 """
 from typing import List, Tuple, Optional
 import json
-import math
 import os
+import math
 import numpy as np
+from fingering_template_db import apply_phrase_templates
 
 # PDMX Statistical Table
 _PDMX_SF_TABLE = {
@@ -113,8 +114,7 @@ MAX_POS = 19
 #       Radicioni & Lombardo 2005, Carlevaro Technique
 # ============================================================
 _FINGER_DP_WEIGHTS = {
-    # Optuna Phase 6: co-optimized with ctx=5+7 ensemble (99.0%/99.5%)
-    'w_cnn_prior': 34.99,          # CNN trust: 4→21→29→35
+    'w_cnn_prior': 34.99,
     'w_offset_rule': 8.89,
     'w_std_offset': 0.44,
     'w_position_same': -7.46,
@@ -134,34 +134,78 @@ _FINGER_DP_WEIGHTS = {
     'w_string_cross': 9.22,
     'w_voice_cross_discount': 0.83,
     'w_slide_shift_bonus': -5.76,
+    'w_pivot_finger': -15.0,
+    'w_descending_shift_factor': 1.3,
+    'w_stretch_penalty_base': 6.0,
+    'w_lh_shift_rh_repeat_penalty': 2.0,
+    'w_lh_pinky_rh_thumb_bass_penalty': 3.0,
+    'w_lh_pivot_rh_alternation_bonus': -1.5,
+    'w_presentacion_lookahead': 2.0,
+    'w_tech_slide_bonus': -3.0,
+    'w_tech_bend_bonus': -4.0,
+    'w_tech_vibrato_pinky_penalty': 5.0,
+    'w_tech_harmonic_bonus': -2.0,
+    'w_tech_hammer_pull_bonus': -4.0,
+    'w_bend_support_conflict_penalty': 4.0,
+    'w_bass_sustain_bonus': -3.0,
+    'w_lh_fatigue_penalty': 2.0,
+    'w_wrist_angle_penalty': 3.0,
     'w_finger_order': 0.0,
     'w_finger_pair_smooth': 0.0,
+    'w_scale_box_bonus': -10.0,
+    'w_common_tone_bonus': -4.0,
+    'w_conjunct_bass_bonus': -3.0,
+    'w_disjunct_bass_penalty': 5.0,
+    'w_data_prior': -1.5,
+    'w_string_finger_prior': 3.0,
 }
 
 # Chord weights from Optuna Phase 6
 _CHORD_DP_WEIGHTS = {
-    'w_cnn_prior': 10.40,          # Chord CNN trust rising (3.79→10.40)
-    'w_offset_rule': 23.72,
-    'w_std_offset': 3.45,
-    'w_position_same': -7.25,
-    'w_position_shift': 15.33,
-    'w_position_shift_free': 2.41,
-    'w_finger_cross': 200.0,
-    'w_same_finger_diff': 23.91,
-    'w_span_excess': 16.70,
-    'w_tendon_coupling': 13.32,
-    'w_continuity_2fret': -7.67,
-    'w_guide_finger': -24.37,
-    'w_minimax_threshold': 87.75,
-    'w_minimax_excess': 1.64,
-    'w_barre_continuity': -16.99,
-    'w_anchor_penalty': 39.54,
-    'w_chord_pos_bonus': -17.98,
-    'w_string_cross': 1.36,
-    'w_voice_cross_discount': 0.39,
-    'w_slide_shift_bonus': -12.82,
+    'w_cnn_prior': 10.4000,
+    'w_offset_rule': 20.0000,
+    'w_std_offset': 3.4500,
+    'w_position_same': -7.2500,
+    'w_position_shift': 15.3300,
+    'w_position_shift_free': 2.4100,
+    'w_finger_cross': 200.0000,
+    'w_same_finger_diff': 23.9100,
+    'w_span_excess': 16.7000,
+    'w_tendon_coupling': 10.0000,
+    'w_continuity_2fret': -7.6700,
+    'w_guide_finger': -24.3700,
+    'w_minimax_threshold': 87.7500,
+    'w_minimax_excess': 1.6400,
+    'w_barre_continuity': -16.9900,
+    'w_anchor_penalty': 39.5400,
+    'w_chord_pos_bonus': -17.9800,
+    'w_string_cross': 1.3600,
+    'w_voice_cross_discount': 0.3900,
+    'w_slide_shift_bonus': -12.8200,
     'w_finger_order': 0.0,
     'w_finger_pair_smooth': 0.0,
+    'w_pivot_finger': -15.0000,
+    'w_descending_shift_factor': 1.3000,
+    'w_stretch_penalty_base': 6.0000,
+    'w_lh_shift_rh_repeat_penalty': 2.0000,
+    'w_lh_pinky_rh_thumb_bass_penalty': 3.0000,
+    'w_lh_pivot_rh_alternation_bonus': -1.5000,
+    'w_presentacion_lookahead': 2.0000,
+    'w_tech_slide_bonus': -3.0,
+    'w_tech_bend_bonus': -4.0,
+    'w_tech_vibrato_pinky_penalty': 5.0,
+    'w_tech_harmonic_bonus': -2.0,
+    'w_tech_hammer_pull_bonus': -4.0,
+    'w_bend_support_conflict_penalty': 4.0,
+    'w_bass_sustain_bonus': -3.0,
+    'w_lh_fatigue_penalty': 2.0,
+    'w_wrist_angle_penalty': 3.0,
+    'w_scale_box_bonus': -5.0,
+    'w_common_tone_bonus': -2.0,
+    'w_conjunct_bass_bonus': -2.0,
+    'w_disjunct_bass_penalty': 3.0,
+    'w_data_prior': -0.5,
+    'w_string_finger_prior': 2.0,
 }
 
 # Active weights pointer (set per-phrase by context blending)
@@ -201,12 +245,13 @@ def _position_adjusted_max_span(finger_lo: int, finger_hi: int,
 # Derived Fingering Rules (from GP5 corpus mining)
 # ============================================================
 _FRET_OFFSET_RULES = None  # offset → {finger: count}
+_STRING_FINGER_RULES = None  # string → {finger: prob}
 
 
 def _load_derived_rules():
-    """Load fret_offset_rules from derived_fingering_rules.json."""
-    global _FRET_OFFSET_RULES
-    if _FRET_OFFSET_RULES is not None:
+    """Load fret_offset_rules and string_finger_usage from derived_fingering_rules.json."""
+    global _FRET_OFFSET_RULES, _STRING_FINGER_RULES
+    if _FRET_OFFSET_RULES is not None and _STRING_FINGER_RULES is not None:
         return
     rules_path = os.path.join(os.path.dirname(__file__),
                               'derived_fingering_rules.json')
@@ -214,6 +259,8 @@ def _load_derived_rules():
         try:
             with open(rules_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            
+            # fret_offset_rules
             raw = data.get('fret_offset_rules', {})
             _FRET_OFFSET_RULES = {}
             for offset_str, finger_counts in raw.items():
@@ -224,11 +271,24 @@ def _load_derived_rules():
                         int(fg): cnt / total
                         for fg, cnt in finger_counts.items()
                     }
+
+            # string_finger_usage
+            raw_s = data.get('string_finger_usage', {})
+            _STRING_FINGER_RULES = {}
+            for s_str, f_counts in raw_s.items():
+                total = sum(f_counts.values())
+                if total > 0:
+                    _STRING_FINGER_RULES[int(s_str)] = {
+                        int(fg): cnt / total
+                        for fg, cnt in f_counts.items()
+                    }
         except Exception as e:
             print(f"[finger_assigner] derived rules load failed: {e}")
             _FRET_OFFSET_RULES = {}
+            _STRING_FINGER_RULES = {}
     else:
         _FRET_OFFSET_RULES = {}
+        _STRING_FINGER_RULES = {}
 
 
 def _finger_from_offset(offset: int) -> Optional[int]:
@@ -244,6 +304,39 @@ def _finger_from_offset(offset: int) -> Optional[int]:
     if 0 <= offset <= 3:
         return offset + 1
     return None
+
+# ============================================================
+# Mined Fingering Patterns (from GP5 corpus 4.8M notes)
+# ============================================================
+_MINED_RUN2_PATTERNS = None
+
+
+def _load_mined_patterns():
+    """Load scale_run2_fingerings from mined_fingering_patterns.json."""
+    global _MINED_RUN2_PATTERNS
+    if _MINED_RUN2_PATTERNS is not None:
+        return _MINED_RUN2_PATTERNS
+    path_candidates = [
+        os.path.join(os.path.dirname(__file__), '..', 'gp_training_data', 'mined_fingering_patterns.json'),
+        os.path.join(os.path.dirname(__file__), 'gp_training_data', 'mined_fingering_patterns.json'),
+    ]
+    db_path = None
+    for p in path_candidates:
+        if os.path.exists(p):
+            db_path = p
+            break
+    if db_path and os.path.exists(db_path):
+        try:
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            _MINED_RUN2_PATTERNS = data.get('scale_run2_fingerings', {})
+        except Exception as e:
+            print(f"[finger_assigner] mined patterns load failed: {e}")
+            _MINED_RUN2_PATTERNS = {}
+    else:
+        _MINED_RUN2_PATTERNS = {}
+    return _MINED_RUN2_PATTERNS
+
 
 # ============================================================
 # CNN Model — Dual-Scale Ensemble (v4 CTX=7 + v5 CTX=15)
@@ -499,6 +592,35 @@ def _resolve_chord_conflicts(chord_notes):
             if not valid:
                 continue
 
+            # Left-Hand Cross-String Crossing Constraint
+            for i in range(len(non_barre)):
+                si = int(non_barre[i].get('string', 0))
+                fi = perm[i]
+                fri = int(non_barre[i].get('fret', 0))
+                for j in range(i + 1, len(non_barre)):
+                    sj = int(non_barre[j].get('string', 0))
+                    fj = perm[j]
+                    frj = int(non_barre[j].get('fret', 0))
+
+                    # Reject if si > sj, fi < fj, fri > frj (crossed finger hand contortion)
+                    if si > sj and fi < fj and fri > frj:
+                        valid = False
+                        break
+                    if sj > si and fj < fi and frj > fri:
+                        valid = False
+                        break
+
+                    # Or same fret and non-adjacent fingers
+                    if fri == frj and si != sj:
+                        if abs(fi - fj) > 1:
+                            valid = False
+                            break
+                if not valid:
+                    break
+
+            if not valid:
+                continue
+
             # Compute cost for this assignment
             for note, finger in zip(non_barre, perm):
                 fret = int(note.get('fret', 0))
@@ -518,6 +640,19 @@ def _resolve_chord_conflicts(chord_notes):
                 # Span cost: fingers too far from position
                 if offset < 0 or offset > 3:
                     cost += abs(offset - max(0, min(3, offset))) * 4.0
+
+                # v18.0: コード内の押弦における指の疲労度と手首ねじれコストの反映
+                string = int(note.get('string', 0))
+                if string >= 5:  # 低音弦（5・6弦）
+                    # 疲労ペナルティ
+                    if finger == 4:
+                        cost += _CHORD_DP_WEIGHTS.get('w_lh_fatigue_penalty', 2.0) * 1.5
+                    elif finger == 3:
+                        cost += _CHORD_DP_WEIGHTS.get('w_lh_fatigue_penalty', 2.0) * 0.8
+                    
+                    # 手首ねじれペナルティ
+                    if finger == 4 and fret >= 8:
+                        cost += _CHORD_DP_WEIGHTS.get('w_wrist_angle_penalty', 3.0)
 
             # Inter-finger span cost within chord
             for i in range(len(non_barre)):
@@ -704,7 +839,10 @@ def _finger_emission_cost(note: dict, finger: int, position: int) -> float:
     # CNN prior bonus (negative cost = reward)
     probs = note.get('_finger_probs')
     if probs is not None:
-        cost -= W['w_cnn_prior'] * float(probs[finger])
+        # v25.0 (Approach A): Clip CNN probability to prevent it from completely
+        # overriding biomechanical constraints.
+        prob_val = min(0.70, float(probs[finger]))
+        cost -= W['w_cnn_prior'] * prob_val
 
     # Derived offset rules bonus
     _load_derived_rules()
@@ -717,10 +855,15 @@ def _finger_emission_cost(note: dict, finger: int, position: int) -> float:
     if finger == offset + 1:
         cost -= W['w_std_offset']
     else:
-        # v8.3: Stretch penalty — non-standard offset costs more
-        # This prevents the expanded state space from preferring stretch
-        # positions when a standard position works equally well.
-        cost += 6.0  # Moderate penalty for stretch states
+        # v8.5: Position-dependent stretch penalty (Radicioni 2004)
+        # High positions have narrower fret spacing → stretch is easier.
+        # Restrict reduction to high positions (fret >= 9) to prevent mid-position stretch abuse.
+        fret_val = int(note.get('fret', 0))
+        if fret_val >= 9:
+            pos_factor = max(0.4, 1.0 - fret_val * 0.05)
+        else:
+            pos_factor = 1.0
+        cost += W.get('w_stretch_penalty_base', 6.0) * pos_factor
 
     # --- v8.1: Anchor finger avoidance ---
     # If another sustained note is using this finger, avoid it
@@ -743,19 +886,46 @@ def _finger_emission_cost(note: dict, finger: int, position: int) -> float:
     if chord_pos is not None and position == int(chord_pos):
         cost += W['w_chord_pos_bonus']  # Bonus (negative)
 
-    # --- v8.3: Technique-aware emission bias ---
+    # --- v24.0: Scale box match bonus ---
+    scale_finger = note.get('_scale_finger')
+    if scale_finger is not None and finger == scale_finger:
+        cost += W.get('w_scale_box_bonus', -10.0)
+
+    # --- v24.0: String-finger usage prior ---
+    _load_derived_rules()
+    if _STRING_FINGER_RULES:
+        s = int(note.get('string', 3))
+        s_probs = _STRING_FINGER_RULES.get(s)
+        if s_probs and finger in s_probs:
+            cost -= W.get('w_string_finger_prior', 3.0) * s_probs[finger]
+
+    # --- v13.0: Technique-aware emission bias ---
     # Only activate when technique is explicitly provided (not 'normal')
-    tech = note.get('_technique')
-    if tech and tech != 'normal':
+    tech = note.get('_technique') or note.get('technique')
+    if (tech and tech != 'normal') or note.get('vibrato') or note.get('_vibrato'):
         if tech in ('slide_up', 'slide_down'):
             if finger <= 2:
-                cost -= 3.0
+                cost += W.get('w_tech_slide_bonus', -3.0)
         elif tech == 'bend':
             if finger in (2, 3):
-                cost -= 4.0
+                cost += W.get('w_tech_bend_bonus', -4.0)
+
+            # Support finger conflict penalty (fijación de apoio)
+            occupied = note.get('_chord_occupied_fingers', set())
+            if finger == 3 and (1 in occupied or 2 in occupied):
+                cost += W.get('w_bend_support_conflict_penalty', 4.0)
+            elif finger == 4 and (2 in occupied or 3 in occupied):
+                cost += W.get('w_bend_support_conflict_penalty', 4.0)
+            elif finger == 2 and (1 in occupied):
+                cost += W.get('w_bend_support_conflict_penalty', 4.0)
+        elif tech == 'vibrato' or note.get('vibrato') or note.get('_vibrato'):
+            if finger == 4:
+                cost += W.get('w_tech_vibrato_pinky_penalty', 5.0)
+            elif finger in (2, 3):
+                cost += W.get('w_tech_bend_bonus', -4.0)
         elif tech == 'harmonic':
             if finger == 1:
-                cost -= 2.0
+                cost += W.get('w_tech_harmonic_bonus', -2.0)
 
     # --- v8.3: String-based emission bias ---
     # Bass strings (4-6) favor thumb-side fingers for stability
@@ -766,6 +936,19 @@ def _finger_emission_cost(note: dict, finger: int, position: int) -> float:
     #     cost -= 1.0
     # elif string <= 2 and finger >= 3:  # Treble + ring/pinky
     #     cost -= 0.5
+
+    # --- v16.0: Finger Fatigue & Wrist Twist Penalty ---
+    string = int(note.get('string', 3))
+    if string >= 5:  # 低音弦（5・6弦）
+        # 疲労ペナルティ: 弱い指（薬指3、小指4）への負荷を抑える
+        if finger == 4:
+            cost += W.get('w_lh_fatigue_penalty', 2.0) * 1.5
+        elif finger == 3:
+            cost += W.get('w_lh_fatigue_penalty', 2.0) * 0.8
+        
+        # 手首ねじれペナルティ: 低音弦で高いフレットを小指で押さえる無理な角度を回避
+        if finger == 4 and fret >= 8:
+            cost += W.get('w_wrist_angle_penalty', 3.0)
 
     return cost
 
@@ -789,13 +972,32 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
     W = _ACTIVE_WEIGHTS
     cost = 0.0
     pos_diff = abs(pos - prev_pos)
+    tech = note.get('_technique') or note.get('technique')
+
+    # v9.0: Tempo-adaptive guide finger slide IOI threshold
+    # v25.0 (Approach A): Impose a physical lower bound of 0.25s on guide finger threshold.
+    # Rapid same-finger movements should always be penalised.
+    tempo = note.get('_estimated_tempo', 120.0)
+    ioi_threshold = max(0.25, 24.0 / tempo)
 
     # --- Position shift cost ---
     if pos_diff == 0:
         cost += W['w_position_same']  # bonus (negative)
     else:
-        shift_w = W['w_position_shift_free'] if is_free_shift else W['w_position_shift']
-        cost += pos_diff * shift_w
+        # v13.0: Slide transitions are physically guided, so we treat them as free shifts
+        is_slide_shift = (tech in ('slide_up', 'slide_down') and note.get('string') == prev_note.get('string') and finger == prev_finger)
+        shift_w = W['w_position_shift_free'] if (is_free_shift or is_slide_shift) else W['w_position_shift']
+        
+        # v15.0: フレット幅に依存するポジションシフトコストの動的スケーリング (Radicioni 2004 / 物理距離モデル)
+        # 高ポジションほどフレット間隔が狭くなり、手の物理的な移動距離が短くなるため、シフトコストを軽減する。
+        avg_pos = (pos + prev_pos) / 2.0
+        pos_scale = max(0.4, 1.0 - (avg_pos - 1) * 0.05)
+        
+        if pos < prev_pos:
+            # v9.0: Descending shift is biomechanically harder than ascending
+            cost += pos_diff * shift_w * W.get('w_descending_shift_factor', 1.3) * pos_scale
+        else:
+            cost += pos_diff * shift_w * pos_scale
 
     # --- Law 4: ≤2 fret move continuity bonus ---
     if pos_diff <= 2 and pos_diff > 0:
@@ -814,12 +1016,17 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
 
     # --- Same finger, different fret ---
     if finger == prev_finger and fret != prev_fret:
-        # v8.3: Same finger is OK for slides (guide finger effect)
-        tech = note.get('_technique')
-        if tech and tech in ('slide_up', 'slide_down'):
-            cost += W['w_guide_finger']  # Bonus instead of penalty
+        # v13.0: Slide technique bypasses same-finger-different-fret penalty
+        is_slide = (tech in ('slide_up', 'slide_down') and note.get('string') == prev_note.get('string'))
+        if is_slide:
+            cost += W.get('w_tech_slide_bonus', -3.0)
         else:
-            cost += W['w_same_finger_diff']
+            # Speed-Adaptive Guide Finger Slide Bonus
+            ioi = float(note.get('start', note.get('start_time', 0.0))) - float(prev_note.get('start', prev_note.get('start_time', 0.0)))
+            if ioi >= ioi_threshold and note.get('string') == prev_note.get('string'):
+                cost += W['w_guide_finger']
+            else:
+                cost += W['w_same_finger_diff']
 
     # --- Span excess (position-dependent, Miura 2003) ---
     if finger != prev_finger and pos == prev_pos:
@@ -843,7 +1050,15 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
     # Ref: Segovia technique — guide finger stays on string during shifts
     if (finger == prev_finger and pos != prev_pos
             and note.get('string') == prev_note.get('string')):
-        cost += W['w_guide_finger']
+        ioi = float(note.get('start', note.get('start_time', 0.0))) - float(prev_note.get('start', prev_note.get('start_time', 0.0)))
+        if ioi >= ioi_threshold:
+            cost += W['w_guide_finger']
+
+    # --- Pivot finger retention bonus ---
+    # 同一の指・同一のフレット・同一 of 弦にとどまる（音の保持・ピボット）場合はボーナス
+    if (finger == prev_finger and fret == prev_fret
+            and note.get('string') == prev_note.get('string')):
+        cost += W.get('w_pivot_finger', 0.0)
 
     # --- v8.2: String-crossing geometry ---
     # Large string jumps within the same position change hand geometry
@@ -889,6 +1104,47 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
         if abs(finger - prev_finger) == 1:
             cost += W.get('w_finger_pair_smooth', -1.5)
 
+    # --- v10.0: Left-Right Hand (PIMA-Left Hand) Coordination ---
+    r_finger = note.get('r_finger')
+    prev_r_finger = prev_note.get('r_finger')
+    if r_finger is not None and prev_r_finger is not None:
+        # Rule 1: LH Shift / RH Repeat Penalty
+        if pos != prev_pos and r_finger == prev_r_finger:
+            cost += W.get('w_lh_shift_rh_repeat_penalty', 2.0)
+
+        # Rule 2: LH Pinky / RH Thumb Bass Penalty
+        if s >= 5 and finger == 4 and r_finger == 1:
+            cost += W.get('w_lh_pinky_rh_thumb_bass_penalty', 3.0)
+
+        # Rule 3: LH Pivot / RH Alternation Bonus
+        is_pivot = (finger == prev_finger and fret == prev_fret and s == prev_s)
+        if is_pivot and r_finger != prev_r_finger:
+            cost += W.get('w_lh_pivot_rh_alternation_bonus', -1.5)
+
+    # --- v13.0: Technique-aware transition cost (Viterbi DP integration) ---
+    if tech and tech != 'normal' and s == prev_s:
+        # Rule 1: Slide must use same finger on connected notes
+        if tech in ('slide_up', 'slide_down'):
+            if finger != prev_finger:
+                cost += 50.0  # Penalty for using different finger on slide
+
+        # Rule 2: Hammer-on (ascending fret => higher finger)
+        elif tech == 'hammer_on':
+            if finger > prev_finger and fret > prev_fret:
+                # v13.0: Legato involving pinky (4) is harder, so reduce the bonus
+                factor = 0.5 if (finger == 4 or prev_finger == 4) else 1.0
+                cost += W.get('w_tech_hammer_pull_bonus', -4.0) * factor
+            else:
+                cost += 50.0  # Penalty for invalid finger order on hammer-on
+
+        # Rule 3: Pull-off (descending fret => lower finger)
+        elif tech == 'pull_off':
+            if finger < prev_finger and fret < prev_fret:
+                factor = 0.5 if (finger == 4 or prev_finger == 4) else 1.0
+                cost += W.get('w_tech_hammer_pull_bonus', -4.0) * factor
+            else:
+                cost += 50.0  # Penalty for invalid finger order on pull-off
+
     # --- Minimax component (Hori & Sagayama 2016) ---
     # Prevent any single transition from being extremely difficult.
     # Instead of minimizing sum, penalize extreme single-step costs.
@@ -897,11 +1153,51 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
         excess = cost - minimax_thresh
         cost += excess * W.get('w_minimax_excess', 3.0)
 
+    # --- v24.0: Voice leading transition costs ---
+    # 1. Common Tone Retention: same pitch class (pc) and same finger/position
+    prev_pitch = prev_note.get('pitch', 60)
+    curr_pitch = note.get('pitch', 60)
+    if prev_pitch % 12 == curr_pitch % 12:
+        if finger == prev_finger and pos == prev_pos:
+            cost += W.get('w_common_tone_bonus', -4.0)
+
+    # 2. Conjunct Bass Line: smooth transitions on bass strings (5 & 6)
+    is_prev_bass = prev_s >= 5
+    is_curr_bass = s >= 5
+    if is_prev_bass and is_curr_bass:
+        pitch_diff = abs(curr_pitch - prev_pitch)
+        if 0 < pitch_diff <= 2:
+            # Conjunct shift bonus (half/whole step)
+            cost += W.get('w_conjunct_bass_bonus', -3.0)
+        elif pitch_diff >= 12:
+            # Disjunct jump penalty (octave or more)
+            cost += W.get('w_disjunct_bass_penalty', 5.0)
+
+    # --- v24.0: Data-driven transition priority (GP5 Prior) ---
+    if prev_s == s and prev_fret > 0 and fret > 0:
+        run_key = f"{s}-{prev_fret}-{fret}"
+        run2_db = _load_mined_patterns()
+        if run2_db and run_key in run2_db:
+            pat = run2_db[run_key]
+            if pat['finger_from'] == prev_finger and pat['finger_to'] == finger:
+                cost += math.log(max(2.0, float(pat['count']))) * W.get('w_data_prior', -1.5)
+
+    # --- v14.0: Carlevaro Bass Sustain Rule (音価保持ルール) ---
+    prev_s = int(prev_note.get('string', 3))
+    if prev_s >= 5:  # 低音弦（5・6弦）
+        prev_start = float(prev_note.get('start', prev_note.get('start_time', 0.0)))
+        prev_dur = float(prev_note.get('duration', 0.0))
+        curr_start = float(note.get('start', note.get('start_time', 0.0)))
+        if prev_start + prev_dur > curr_start + 0.05:
+            if pos == prev_pos and not (finger == prev_finger and fret != prev_fret):
+                cost += W.get('w_bass_sustain_bonus', -3.0)
+
     return cost
 
 
 def _viterbi_finger_phrase(fretted_notes: List[dict],
-                           free_shift_set: set) -> int:
+                           free_shift_set: set,
+                           next_pos: Optional[int] = None) -> int:
     """Run Viterbi DP on a sequence of fretted notes.
 
     For each note at fret F, valid states are (finger, position):
@@ -916,21 +1212,34 @@ def _viterbi_finger_phrase(fretted_notes: List[dict],
     if N == 0:
         return 0
 
+    W = _ACTIVE_WEIGHTS
+
     def _states(note: dict) -> List[Tuple[int, int]]:
         """Return valid (finger, position) states for a note.
 
-        v8.3: Standard 4 states per note.
-        Stretch states available but gated behind per-note heuristic
-        to avoid regression on solo passages.
+        v8.4: Standard 4 states, plus stretch states in high positions
+        (fret >= 9) to optimize fingering where frets are narrow.
         """
         fret = int(note.get('fret', 0))
         states = []
         seen = set()
         for finger in range(1, 5):
             pos = fret - (finger - 1)
-            if pos >= 1 and (finger, pos) not in seen:
+            if pos >= 1:
                 states.append((finger, pos))
                 seen.add((finger, pos))
+
+        # Allow stretch states in high positions (fret >= 9) where frets are narrow
+        if fret >= 9:
+            for finger in range(1, 5):
+                for offset in [-1, 1]:
+                    pos = fret - (finger - 1) + offset
+                    if pos >= 1 and (finger, pos) not in seen:
+                        # Ensure the hand geometry is realistic
+                        actual_offset = fret - pos
+                        if 0 <= actual_offset <= 5:
+                            states.append((finger, pos))
+                            seen.add((finger, pos))
         return states
 
     # --- Forward pass ---
@@ -943,6 +1252,10 @@ def _viterbi_finger_phrase(fretted_notes: List[dict],
     for state in first_states:
         finger, pos = state
         cost = _finger_emission_cost(fretted_notes[0], finger, pos)
+        if next_pos is not None and (N - 1) < 3:
+            dist = abs(pos - next_pos)
+            weight_scale = (3 - (N - 1)) / 3.0
+            cost += dist * W.get('w_presentacion_lookahead', 2.0) * weight_scale
         init[state] = (cost, None)
     dp.append(init)
 
@@ -954,6 +1267,10 @@ def _viterbi_finger_phrase(fretted_notes: List[dict],
         for state in curr_states:
             finger, pos = state
             em_cost = _finger_emission_cost(fretted_notes[t], finger, pos)
+            if next_pos is not None and (N - 1 - t) < 3:
+                dist = abs(pos - next_pos)
+                weight_scale = (3 - (N - 1 - t)) / 3.0
+                em_cost += dist * W.get('w_presentacion_lookahead', 2.0) * weight_scale
             best_cost = float('inf')
             best_prev = None
             for prev_state, (prev_cost, _) in dp[t - 1].items():
@@ -1002,45 +1319,111 @@ def _viterbi_finger_phrase(fretted_notes: List[dict],
     return changed
 
 
-def _compute_chord_ratio(phrase: List[dict]) -> float:
-    """Compute what fraction of notes in a phrase are part of chords.
+def _compute_phrase_features(phrase: List[dict]) -> Tuple[float, float, float]:
+    """Compute structural features of a phrase: chord_ratio, arpeggio_ratio, scale_ratio.
 
-    Returns a value [0.0, 1.0] where 1.0 = all notes are simultaneous.
-    Used for context-dependent weight blending (v8.3).
+    All ratios are in range [0.0, 1.0].
     """
     if len(phrase) <= 1:
-        return 0.0
+        return 0.0, 0.0, 0.0
+
     simultaneous = 0
+    arpeggio_transitions = 0
+    scale_transitions = 0
+
     for i in range(1, len(phrase)):
-        gap = abs(phrase[i].get('start', 0) - phrase[i-1].get('start', 0))
-        if gap <= 0.03:  # Same threshold as chord grouping
+        prev = phrase[i - 1]
+        curr = phrase[i]
+
+        gap = abs(curr.get('start', 0) - prev.get('start', 0))
+
+        # 1. Chord ratio
+        if gap <= 0.03:
             simultaneous += 1
-    return simultaneous / len(phrase)
+            continue  # Simultaneous notes aren't sequential transitions
+
+        # Sequential transition analysis
+        prev_s = prev.get('string')
+        curr_s = curr.get('string')
+        prev_p = prev.get('pitch')
+        curr_p = curr.get('pitch')
+
+        if prev_s is None or curr_s is None or prev_p is None or curr_p is None:
+            continue
+
+        string_diff = abs(curr_s - prev_s)
+        pitch_diff = abs(curr_p - prev_p)
+
+        # 2. Arpeggio transition:
+        # Cross strings (string_diff > 0) with relatively small gap (<= 0.25s)
+        if string_diff > 0 and gap <= 0.25:
+            arpeggio_transitions += 1
+
+        # 3. Scale transition:
+        # Small pitch change (<= 2 semitones: whole/half step) with relatively small gap (<= 0.20s)
+        elif pitch_diff <= 2 and gap <= 0.20:
+            scale_transitions += 1
+
+    N = len(phrase)
+    chord_ratio = simultaneous / N
+
+    # Sequential ratio represents what fraction of sequential transitions are of certain type
+    seq_steps = N - simultaneous - 1
+    if seq_steps > 0:
+        arpeggio_ratio = arpeggio_transitions / seq_steps
+        scale_ratio = scale_transitions / seq_steps
+    else:
+        arpeggio_ratio = 0.0
+        scale_ratio = 0.0
+
+    return chord_ratio, arpeggio_ratio, scale_ratio
 
 
-def _blend_weights(chord_ratio: float) -> dict:
-    """Blend solo and chord weights based on chord ratio.
+def _blend_weights(chord_ratio: float, arpeggio_ratio: float = 0.0, scale_ratio: float = 0.0) -> dict:
+    """Blend solo and chord weights based on chord, arpeggio and scale ratios.
 
-    v8.3: Context-dependent weight selection.
-    - chord_ratio = 0.0 → pure solo weights
-    - chord_ratio = 1.0 → pure chord weights
-    - Smooth interpolation in between
-
-    Discovery from Optuna Phase 2: solo passages and chord voicings
-    have fundamentally different optimal weight profiles.
+    - High chord_ratio -> Chord weights
+    - Low chord_ratio:
+      - High arpeggio_ratio -> Boost position same, guide finger, pivot finger
+      - High scale_ratio -> Boost finger order, same finger diff penalty
     """
+    # Base blending between Solo and Chord weights
     if chord_ratio < 0.5:
-        return _FINGER_DP_WEIGHTS
-    if chord_ratio > 0.7:
-        return _CHORD_DP_WEIGHTS
+        base = _FINGER_DP_WEIGHTS.copy()
+    elif chord_ratio > 0.7:
+        return _CHORD_DP_WEIGHTS.copy()
+    else:
+        # Linear blend
+        r = (chord_ratio - 0.5) / 0.2
+        base = {}
+        for key in _FINGER_DP_WEIGHTS:
+            solo_val = _FINGER_DP_WEIGHTS[key]
+            chord_val = _CHORD_DP_WEIGHTS.get(key, solo_val)
+            base[key] = solo_val + r * (chord_val - solo_val)
 
-    # Linear blend
-    blended = {}
-    for key in _FINGER_DP_WEIGHTS:
-        solo_val = _FINGER_DP_WEIGHTS[key]
-        chord_val = _CHORD_DP_WEIGHTS.get(key, solo_val)
-        blended[key] = solo_val + chord_ratio * (chord_val - solo_val)
-    return blended
+    # Apply dynamic adjustments based on playing style for solo/hybrid passages
+    if chord_ratio < 0.7:
+        # 1. Arpeggio adaptation
+        if arpeggio_ratio > 0.4:
+            arp_factor = min(1.0, (arpeggio_ratio - 0.4) / 0.4)
+            # Boost position retention
+            base['w_position_same'] += arp_factor * -4.0
+            # Boost pivot finger retention
+            base['w_pivot_finger'] += arp_factor * -5.0
+            # Relax stretch penalty base to allow holding chord shapes
+            base['w_stretch_penalty_base'] = max(3.0, base.get('w_stretch_penalty_base', 6.0) - arp_factor * 2.0)
+
+        # 2. Scale Run adaptation
+        if scale_ratio > 0.4:
+            scale_factor = min(1.0, (scale_ratio - 0.4) / 0.4)
+            # Enable and boost sequential finger order (1->2->3->4)
+            base['w_finger_order'] = base.get('w_finger_order', 0.0) - scale_factor * 3.0
+            # Enable and boost adjacent finger pair smoothness
+            base['w_finger_pair_smooth'] = base.get('w_finger_pair_smooth', 0.0) - scale_factor * 2.0
+            # Strongly penalise same finger on different fret to encourage alternate fingering
+            base['w_same_finger_diff'] += scale_factor * 10.0
+
+    return base
 
 
 def _viterbi_finger_dp(notes: List[dict],
@@ -1075,10 +1458,10 @@ def _viterbi_finger_dp(notes: List[dict],
     if current_phrase:
         phrases.append(current_phrase)
 
-    for phrase in phrases:
+    for pi, phrase in enumerate(phrases):
         # v8.3: Context-dependent weight selection
-        chord_ratio = _compute_chord_ratio(phrase)
-        _ACTIVE_WEIGHTS = _blend_weights(chord_ratio)
+        chord_ratio, arpeggio_ratio, scale_ratio = _compute_phrase_features(phrase)
+        _ACTIVE_WEIGHTS = _blend_weights(chord_ratio, arpeggio_ratio, scale_ratio)
 
         # Identify fretted note indices within phrase
         fretted_indices = [
@@ -1097,99 +1480,26 @@ def _viterbi_finger_dp(notes: List[dict],
             if _is_free_shift_point(phrase, fretted_indices, fi):
                 free_shift_set.add(fi)
 
-        changed = _viterbi_finger_phrase(fretted_notes, free_shift_set)
+        # v11.0: Calculate estimated starting position of the next phrase for look-ahead
+        next_pos = None
+        if pi + 1 < len(phrases):
+            next_phrase = phrases[pi + 1]
+            next_fretted = [n for n in next_phrase
+                            if isinstance(n.get('fret', 0), (int, float))
+                            and int(n.get('fret', 0)) > 0]
+            if next_fretted:
+                next_pos = _estimate_position(next_fretted[:3])
+
+        changed = _viterbi_finger_phrase(fretted_notes, free_shift_set, next_pos=next_pos)
         total_changed += changed
 
     # Restore default weights
     _ACTIVE_WEIGHTS = _FINGER_DP_WEIGHTS
 
-    # --- v8.2: Cross-phrase transition optimization ---
-    total_changed += _optimize_phrase_transitions(phrases)
-
     return total_changed
 
 
-def _optimize_phrase_transitions(phrases: List[List[dict]]) -> int:
-    """Optimize fingering at phrase boundaries for smoother transitions.
 
-    Human guitarists anticipate upcoming position shifts during the
-    current phrase. Instead of an abrupt jump at the phrase boundary,
-    they gradually shift the last 2-3 notes toward the target position.
-
-    Ref: Radicioni & Lombardo (2005) - "solve per segment, optimize
-         transitions between segments"
-    Ref: Tennant - "anticipation/visualization: mentally prepare for
-         next chord/note before moving"
-
-    Returns number of notes adjusted.
-    """
-    if len(phrases) < 2:
-        return 0
-
-    adjusted = 0
-
-    for pi in range(len(phrases) - 1):
-        curr_phrase = phrases[pi]
-        next_phrase = phrases[pi + 1]
-
-        # Get fretted notes from each phrase
-        curr_fretted = [n for n in curr_phrase
-                        if isinstance(n.get('fret', 0), (int, float))
-                        and int(n.get('fret', 0)) > 0]
-        next_fretted = [n for n in next_phrase
-                        if isinstance(n.get('fret', 0), (int, float))
-                        and int(n.get('fret', 0)) > 0]
-
-        if not curr_fretted or not next_fretted:
-            continue
-
-        # Estimate positions
-        curr_pos = _estimate_position(curr_fretted[-3:]) if len(curr_fretted) >= 3 \
-            else _estimate_position(curr_fretted)
-        next_pos = _estimate_position(next_fretted[:3]) if len(next_fretted) >= 3 \
-            else _estimate_position(next_fretted)
-
-        if curr_pos is None or next_pos is None:
-            continue
-
-        pos_jump = abs(next_pos - curr_pos)
-        if pos_jump <= 2:
-            # Small jump — no preparation needed
-            continue
-
-        # Adjust the LAST 2-3 notes of the current phrase
-        # Try to shift them toward the target position
-        tail_count = min(3, len(curr_fretted))
-        tail_notes = curr_fretted[-tail_count:]
-
-        for note in tail_notes:
-            fret = int(note.get('fret', 0))
-            old_finger = note.get('left_hand_finger', 0)
-            if fret <= 0 or old_finger <= 0:
-                continue
-
-            old_pos = fret - (old_finger - 1)
-
-            # Try each finger to see if one brings position closer to target
-            best_finger = old_finger
-            best_distance = abs(old_pos - next_pos)
-
-            for candidate in range(1, 5):
-                cand_pos = fret - (candidate - 1)
-                if cand_pos < 1:
-                    continue
-                if not _is_valid_finger(fret, candidate):
-                    continue
-                cand_dist = abs(cand_pos - next_pos)
-                if cand_dist < best_distance:
-                    best_finger = candidate
-                    best_distance = cand_dist
-
-            if best_finger != old_finger:
-                note['left_hand_finger'] = best_finger
-                adjusted += 1
-
-    return adjusted
 
 
 
@@ -1234,6 +1544,12 @@ def _apply_pitch_proximity_rule(notes: List[dict]) -> int:
         # Skip if time gap is large (different phrase)
         time_gap = curr.get('start', 0) - prev.get('start', 0)
         if time_gap > 0.5:
+            continue
+
+        # v13.0: Skip if there is an active slide technique on either note
+        tech = curr.get('_technique') or curr.get('technique')
+        prev_tech = prev.get('_technique') or prev.get('technique')
+        if (tech and 'slide' in tech) or (prev_tech and 'slide' in prev_tech):
             continue
 
         prev_finger = int(prev.get('left_hand_finger', 0))
@@ -1391,6 +1707,29 @@ def _apply_pivot_fingers(notes: List[dict]) -> int:
     return fixes
 
 
+def _mark_bend_support_context(groups: List[List[dict]]):
+    """Mark other occupied fingers in the same chord group for bend notes.
+
+    This helps identify whether support fingers (lower indexes than choking finger)
+    are occupied by other chord notes.
+    """
+    for group in groups:
+        if len(group) > 1:
+            bend_notes = [n for n in group if n.get('_technique') == 'bend' or n.get('technique') == 'bend']
+            if not bend_notes:
+                continue
+
+            for bn in bend_notes:
+                occupied = set()
+                for n in group:
+                    if n is bn:
+                        continue
+                    f = n.get('left_hand_finger', 0)
+                    if f > 0:
+                        occupied.add(f)
+                bn['_chord_occupied_fingers'] = occupied
+
+
 def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
                     techniques: Optional[List[str]] = None,
                     detected_key: Optional[str] = None) -> List[dict]:
@@ -1416,10 +1755,19 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
     if not notes:
         return notes
 
+    # Estimate tempo and assign to all notes for adaptive rules (v9.0)
+    tempo = _estimate_tempo(notes)
+    for note in notes:
+        note['_estimated_tempo'] = tempo
+
     # Attach technique info to notes if provided
     if techniques and len(techniques) == len(notes):
         for i, note in enumerate(notes):
             note['_technique'] = techniques[i]
+    else:
+        for note in notes:
+            if 'technique' in note and '_technique' not in note:
+                note['_technique'] = note['technique']
 
     # Step 1: CNN prediction
     cnn_results = _cnn_predict(notes)
@@ -1477,12 +1825,26 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
             _resolve_chord_conflicts(group)
 
     # Step 2.5 (v8.1): Context propagation — inform Viterbi DP
+    _mark_bend_support_context(groups)
     anchor_count = _mark_anchor_context(notes)
     barre_count = _propagate_barre_context(notes, groups)
     chord_pos_count = _propagate_chord_position(notes, groups)
 
+    # --- v24.0: Scale box matching ---
+    try:
+        from guitar_fingering_db import match_scale_box
+        scale_matches = match_scale_box(notes, detected_key)
+        for note_idx, sug_finger, box_name in scale_matches:
+            notes[note_idx]['_scale_finger'] = sug_finger
+            notes[note_idx]['_scale_box_name'] = box_name
+    except Exception as e:
+        print(f"  (Warning: Scale box matching failed: {e})")
+
     # Step 3: Viterbi DP finger assignment (replaces position_smoothing + scale runs)
     viterbi_fixes = _viterbi_finger_dp(notes, phrase_gap=phrase_gap)
+
+    # Step 3.2 (v26.0 - Approach F): Apply corpus-driven phrase templates (human annotations)
+    template_fixes = apply_phrase_templates(notes)
 
     # Note: Post-Viterbi chord re-resolution was tried but caused -12.2%
     # regression by overwriting Viterbi's globally-optimal assignments.
@@ -1509,10 +1871,17 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
         note.pop('_avoid_fingers', None)
         note.pop('_barre_context', None)
         note.pop('_chord_position', None)
+        note.pop('_estimated_tempo', None)
+        note.pop('_chord_occupied_fingers', None)
+
+    # Ensure backward/renderer compatibility: copy left_hand_finger to finger
+    for note in notes:
+        if 'left_hand_finger' in note:
+            note['finger'] = note['left_hand_finger']
 
     mode = "CNN" if use_cnn else "PDMX"
     print(f"[finger_assigner] {len(notes)} notes ({mode}, "
-          f"{len(groups)} groups, viterbi={viterbi_fixes}, prox={prox_fixes}, "
+          f"{len(groups)} groups, viterbi={viterbi_fixes}, templates={template_fixes}, prox={prox_fixes}, "
           f"pattern={pattern_fixes}, pivot={pivot_fixes}, tech={tech_fixes}, "
           f"anchor={anchor_count}, barre_ctx={barre_count}, chord_ctx={chord_pos_count})")
     return notes
@@ -1736,91 +2105,11 @@ def _propagate_chord_position(notes: List[dict],
 def _apply_technique_constraints(notes: List[dict]) -> int:
     """Step 5: Apply technique-specific finger constraints.
 
-    Rules:
-    - slide_up/slide_down: Same finger on source and target notes
-    - hammer_on: Target finger must be HIGHER than source (higher fret = higher finger)
-    - pull_off: Target finger must be LOWER than source (lower fret = lower finger)
-    - bend: Prefer ring finger (3) — strongest for bending
-
-    Only modifies notes where the technique constraint conflicts with
-    the current assignment. Minimal intervention approach.
-
-    Returns number of notes corrected."""
-    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
-    corrected = 0
-
-    for i in range(len(sorted_notes)):
-        note = sorted_notes[i]
-        tech = note.get('_technique', 'normal')
-        fret = note.get('fret', 0)
-        finger = note.get('left_hand_finger', 0)
-
-        if tech == 'normal' or fret == 0 or finger == 0:
-            continue
-
-        # --- Bend: prefer ring finger (3) ---
-        if tech == 'bend':
-            if finger != 3 and _is_valid_finger(fret, 3):
-                note['left_hand_finger'] = 3
-                corrected += 1
-            continue
-
-        # --- Slide: same finger on connected notes ---
-        if tech in ('slide_up', 'slide_down'):
-            # Find the previous fretted note (slide source)
-            prev = _find_prev_fretted(sorted_notes, i)
-            if prev is not None:
-                prev_finger = prev.get('left_hand_finger', 0)
-                if prev_finger > 0 and finger != prev_finger:
-                    if _is_valid_finger(fret, prev_finger):
-                        note['left_hand_finger'] = prev_finger
-                        corrected += 1
-            continue
-
-        # --- Hammer-on: target finger must be higher ---
-        if tech == 'hammer_on':
-            prev = _find_prev_fretted(sorted_notes, i)
-            if prev is not None:
-                prev_finger = prev.get('left_hand_finger', 0)
-                prev_fret = prev.get('fret', 0)
-                # Hammer-on goes to higher fret → need higher finger
-                if prev_finger > 0 and fret > prev_fret and finger <= prev_finger:
-                    # Strategy 1: raise target finger
-                    raised = False
-                    for candidate in range(prev_finger + 1, 5):
-                        if _is_valid_finger(fret, candidate):
-                            note['left_hand_finger'] = candidate
-                            corrected += 1
-                            raised = True
-                            break
-                    # Strategy 2: if can't raise target (prev=pinky), lower source
-                    if not raised:
-                        offset = fret - prev_fret
-                        # Set source to index, target based on offset
-                        ideal_src = 1
-                        ideal_tgt = min(ideal_src + offset, 4)
-                        if ideal_tgt > ideal_src:
-                            prev['left_hand_finger'] = ideal_src
-                            note['left_hand_finger'] = ideal_tgt
-                            corrected += 1
-            continue
-
-        # --- Pull-off: target finger must be lower ---
-        if tech == 'pull_off':
-            prev = _find_prev_fretted(sorted_notes, i)
-            if prev is not None:
-                prev_finger = prev.get('left_hand_finger', 0)
-                prev_fret = prev.get('fret', 0)
-                # Pull-off goes to lower fret → need lower finger
-                if prev_finger > 0 and fret < prev_fret and finger >= prev_finger:
-                    for candidate in range(prev_finger - 1, 0, -1):
-                        if _is_valid_finger(fret, candidate):
-                            note['left_hand_finger'] = candidate
-                            corrected += 1
-                            break
-            continue
-
-    return corrected
+    v13.0: All technique rules (bend, slide, legato) are integrated into
+    Viterbi DP emission and transition cost functions to ensure global optimality.
+    This post-processing function is deprecated and kept as a placeholder.
+    """
+    return 0
 
 
 def _find_prev_fretted(sorted_notes: List[dict], current_idx: int) -> Optional[dict]:

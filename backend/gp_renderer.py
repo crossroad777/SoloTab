@@ -135,8 +135,10 @@ def _validate_beat_playability(note_entries: List[dict],
 
     return note_entries
 
+
 def notes_to_gp5(notes: List[dict], *,
                  beats: List[float],
+                 backing_notes: List[dict] = None,
                  bpm: float = 120.0,
                  title: str = "Guitar TAB",
                  tuning: list | None = None,
@@ -145,7 +147,7 @@ def notes_to_gp5(notes: List[dict], *,
                  rhythm_info: dict | None = None,
                  key_signature: str = "C",
                  include_techniques: bool = True,
-                 **kwargs) -> bytes:
+                 **kwargs) -> bytes | tuple[bytes, List[dict]]:
     """
     ノートデータからGP5バイナリを生成する。
 
@@ -155,6 +157,8 @@ def notes_to_gp5(notes: List[dict], *,
         Keys: start, end, pitch, string, fret, velocity, technique
     beats : list[float]
         ビート時刻(秒)
+    backing_notes : list[dict], optional
+        バッキング用のノートリスト。渡された場合は2トラックで出力する。
     bpm : float
     title : str
     tuning : list[int]  [6th→1st] のMIDIノート番号
@@ -173,41 +177,51 @@ def notes_to_gp5(notes: List[dict], *,
     is_triplet = (rhythm_info or {}).get("subdivision") == "triplet"
 
     # Noise gate filter
-    filtered = _filter_noise(notes, noise_gate)
+    filtered_melody = _filter_noise(notes, noise_gate)
+    is_2tracks = backing_notes is not None
+    if is_2tracks:
+        filtered_backing = _filter_noise(backing_notes, noise_gate)
+    else:
+        filtered_backing = []
 
-    # --- 量子化: music21ベース (新) or tab_renderer (旧フォールバック) ---
-    try:
-        from music_quantizer import quantize_notes_music21
-        note_entries = quantize_notes_music21(
-            filtered, beats, bpm,
-            time_signature=time_signature,
-            beats_per_bar=beats_per_bar,
-            rhythm_subdivision=(rhythm_info or {}).get("subdivision", "straight"),
-        )
-    except Exception as e:
-        print(f"[gp_renderer] music21 quantizer failed, falling back: {e}")
-        from tab_renderer import _assign_to_bars
-        note_entries = _assign_to_bars(filtered, beats, beats_per_bar, rhythm_info=rhythm_info)
+    # Quantization helper
+    def _quantize_track(filtered_notes):
         try:
-            from music_theory import quantize_note_durations
-            note_entries = quantize_note_durations(
-                note_entries, is_triplet_mode=is_triplet, beats_per_bar=beats_per_bar
+            from music_quantizer import quantize_notes_music21
+            entries = quantize_notes_music21(
+                filtered_notes, beats, bpm,
+                time_signature=time_signature,
+                beats_per_bar=beats_per_bar,
+                rhythm_subdivision=(rhythm_info or {}).get("subdivision", "straight"),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[gp_renderer] music21 quantizer failed, falling back: {e}")
+            from tab_renderer import _assign_to_bars
+            entries = _assign_to_bars(filtered_notes, beats, beats_per_bar, rhythm_info=rhythm_info)
+            try:
+                from music_theory import quantize_note_durations
+                entries = quantize_note_durations(
+                    entries, is_triplet_mode=is_triplet, beats_per_bar=beats_per_bar
+                )
+            except Exception:
+                pass
 
-    # --- 量子化後の物理制約チェック ---
-    # 同一ビートに量子化されたノートが物理的に弾けるか検証し、
-    # 弾けない場合は代替ポジションに再割り当てする
-    note_entries = _validate_beat_playability(note_entries, tuning)
+        # Validate playability
+        entries = _validate_beat_playability(entries, tuning)
+        return entries
 
-    # _group_by_time is still needed for voice beat building
-    from tab_renderer import _group_by_time
+    melody_entries = _quantize_track(filtered_melody)
+    if is_2tracks:
+        backing_entries = _quantize_track(filtered_backing)
+    else:
+        backing_entries = []
+
+    all_note_entries = melody_entries + backing_entries
 
     # Calculate total bars
     total_bars = 1
-    if note_entries:
-        total_bars = max(int(e["bar"]) for e in note_entries) + 1
+    if all_note_entries:
+        total_bars = max(int(e["bar"]) for e in all_note_entries) + 1
     elif beats:
         total_bars = max(1, len(beats) // beats_per_bar)
     total_bars = max(total_bars, 1)
@@ -218,19 +232,30 @@ def notes_to_gp5(notes: List[dict], *,
     song.artist = "SoloTab"
     song.tempo = int(bpm)
 
-    # Track setup
-    track = song.tracks[0]
-    track.name = "Guitar"
-    track.channel.instrument = 25  # Acoustic Guitar (steel)
-    track.strings = [
+    # Track 1 setup (Melody)
+    track1 = song.tracks[0]
+    track1.name = "Guitar (Melody)" if is_2tracks else "Guitar"
+    track1.channel.instrument = 25  # Acoustic Guitar (steel)
+    track1.strings = [
         gp.GuitarString(number=i + 1, value=tuning[5 - i])
         for i in range(6)
     ]  # GP format: string 1 = highest (E4), string 6 = lowest (E2)
 
+    tracks_to_process = [(track1, melody_entries)]
+
+    # Track 2 setup (Backing)
+    if is_2tracks:
+        track2 = gp.Track(song)
+        track2.name = "Guitar (Backing)"
+        track2.channel.instrument = 25  # Acoustic Guitar (steel)
+        track2.strings = [
+            gp.GuitarString(number=i + 1, value=tuning[5 - i])
+            for i in range(6)
+        ]
+        song.tracks.append(track2)
+        tracks_to_process.append((track2, backing_entries))
+
     # Key signature
-    # ギターTABではフレット番号が情報の主体であり、
-    # キー検出の不正確さ（例：Am楽曲がE majorと判定される）による
-    # 誤った調号表示を防ぐため、Cメジャー（調号なし）に固定する。
     key_fifths = 0  # C major = 調号なし
 
     # --- Measure Headers ---
@@ -239,8 +264,6 @@ def notes_to_gp5(notes: List[dict], *,
     mh0.timeSignature.numerator = beats_per_bar
     mh0.timeSignature.denominator.value = _beat_type_to_gp_dur(beat_type)
     mh0.keySignature = _fifths_to_gp_key(key_fifths)
-    # Note: tripletFeel (shuffle) は使わない
-    # 実際の三連符は個別ノートの tuplet (3:2) で表現する
 
     # Add remaining measure headers
     for bar_num in range(1, total_bars):
@@ -250,117 +273,109 @@ def notes_to_gp5(notes: List[dict], *,
         mh.timeSignature.numerator = beats_per_bar
         mh.timeSignature.denominator.value = _beat_type_to_gp_dur(beat_type)
         mh.keySignature = _fifths_to_gp_key(key_fifths)
-        # tripletFeel は個別ノートの tuplet で代替
         song.measureHeaders.append(mh)
 
-    # --- Build Measures ---
-    # First measure already exists
-    measures = [track.measures[0]]
-    for bar_num in range(1, total_bars):
-        m = gp.Measure(track, song.measureHeaders[bar_num])
-        measures.append(m)
-    track.measures = measures
+    # _group_by_time helper from tab_renderer
+    from tab_renderer import _group_by_time
 
-    # --- Fill each measure with notes ---
-    # For denom=4: each beat = quarter note = DIVISIONS divs
-    # For denom=8: each beat = eighth note = DIVISIONS//2 divs
-    divs_per_beat = DIVISIONS if beat_type == 4 else DIVISIONS // 2
-    bar_total_divs = beats_per_bar * divs_per_beat  # e.g. 36 for 3/4, 36 for 6/8
+    for track, entries_to_use in tracks_to_process:
+        # Build Measures
+        measures = [track.measures[0]]
+        for bar_num in range(1, total_bars):
+            m = gp.Measure(track, song.measureHeaders[bar_num])
+            measures.append(m)
+        track.measures = measures
 
-    # Voice分離: 弦ベース（弦4-6=ベース, 弦1-3=メロディ）優先、フォールバックはpitch
-    # ギターのフィンガースタイルでは親指(p)がベース弦(4-6)を担当
-    split_pitch = 52  # E3: フォールバック用
+        # Fill each measure with notes
+        divs_per_beat = DIVISIONS if beat_type == 4 else DIVISIONS // 2
+        bar_total_divs = beats_per_bar * divs_per_beat
 
-    def _is_bass(n):
-        """弦情報があれば弦4-6をベース、なければpitch<=52"""
-        s = int(n.get("string", 0))
-        if s >= 4:  # 弦4,5,6 = ベース
-            return True
-        if s >= 1:  # 弦1,2,3 = メロディ
-            return False
-        # 弦情報なし → pitch fallback
-        return int(n.get("pitch", 60)) <= split_pitch
+        split_pitch = 52
 
-    # --- Pre-pass: ベース音(Voice 2)の後処理 ---
-    # 1) 各小節のベース音をbeat_pos=0にスナップ（各小節の最初のベース音のみ保持）
-    # 2) ベース音が欠落している小節に、前の小節のベース音を引き継ぎ補完
-    bars_data = []
-    for bar_num in range(total_bars):
-        bar_notes = [e for e in note_entries if e["bar"] == bar_num]
-        melody = [n for n in bar_notes if not _is_bass(n)]
-        bass = [n for n in bar_notes if _is_bass(n)]
-        bars_data.append({"melody": melody, "bass": bass})
+        def _is_bass(n):
+            s = int(n.get("string", 0))
+            if s >= 4:  # 弦4,5,6 = ベース
+                return True
+            if s >= 1:  # 弦1,2,3 = メロディ
+                return False
+            return int(n.get("pitch", 60)) <= split_pitch
 
-    # ベース音スナップ＋補完
-    last_bass_template = None
-    for bar_num in range(total_bars):
-        bd = bars_data[bar_num]
-        if bd["bass"]:
-            # ベース音のポジション処理:
-            # - 拍の先頭近く（1拍目の範囲内）のベース音は1拍目にスナップ
-            # - それ以外のベース音は元の位置を維持
-            # 同一pitch のベース音が複数ある場合は1つに統合
-            seen_pitches = set()
-            snapped = []
-            for b in sorted(bd["bass"], key=lambda x: float(x.get("beat_pos", 0))):
-                p = int(b.get("pitch", 60))
-                if p not in seen_pitches:
-                    seen_pitches.add(p)
-                    snap = dict(b)
-                    # 最初のビート範囲内（1拍=12divs）のベース音のみ1拍目にスナップ
-                    if float(snap.get("beat_pos", 0)) < 12:
-                        snap["beat_pos"] = 0
-                    snapped.append(snap)
-            bd["bass"] = snapped
-            last_bass_template = snapped
-        else:
-            # ベース音なし → 前の小節のベース音を引き継ぎ
-            if last_bass_template and bd["melody"]:
-                bd["bass"] = [dict(t) for t in last_bass_template]
+        # --- Pre-pass: ベース音(Voice 2)の後処理 ---
+        bars_data = []
+        for bar_num in range(total_bars):
+            bar_notes = [e for e in entries_to_use if e["bar"] == bar_num]
+            melody = [n for n in bar_notes if not _is_bass(n)]
+            bass = [n for n in bar_notes if _is_bass(n)]
+            bars_data.append({"melody": melody, "bass": bass})
 
-    for bar_num in range(total_bars):
-        m = track.measures[bar_num]
-        bd = bars_data[bar_num]
-        melody = bd["melody"]
-        bass = bd["bass"]
+        # ベース音スナップ＋補完
+        last_bass_template = None
+        for bar_num in range(total_bars):
+            bd = bars_data[bar_num]
+            if bd["bass"]:
+                seen_pitches = set()
+                snapped = []
+                for b in sorted(bd["bass"], key=lambda x: float(x.get("beat_pos", 0))):
+                    p = int(b.get("pitch", 60))
+                    if p not in seen_pitches:
+                        seen_pitches.add(p)
+                        snap = dict(b)
+                        if float(snap.get("beat_pos", 0)) < 12:
+                            snap["beat_pos"] = 0
+                        snapped.append(snap)
+                bd["bass"] = snapped
+                last_bass_template = snapped
+            else:
+                if last_bass_template and bd["melody"]:
+                    bd["bass"] = [dict(t) for t in last_bass_template]
 
-        if not melody and not bass:
-            # Empty bar: bar-length rest (3/4等ではwhole restは長すぎる)
-            m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
-            continue
+        for bar_num in range(total_bars):
+            m = track.measures[bar_num]
+            bd = bars_data[bar_num]
+            melody = bd["melody"]
+            bass = bd["bass"]
 
-        # Voice 1 (Melody)
-        if melody:
-            # NOTE: threshold=0.1s may split chords at slow tempos (e.g. notes 0.11s apart)
-            # Consider increasing threshold for BPM < 80 if chord splitting is observed.
-            groups1 = _group_by_time(melody, threshold=0.1)
-            m.voices[0].beats = _build_voice_beats(
-                groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet,
-                include_techniques=include_techniques
-            )
-        else:
-            m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
+            if not melody and not bass:
+                m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
+                continue
 
-        # Voice 2 (Bass)
-        if bass and len(m.voices) > 1:
-            groups2 = _group_by_time(bass, threshold=0.1)
-            m.voices[1].beats = _build_voice_beats(
-                groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True,
-                include_techniques=include_techniques
-            )
+            # Voice 1 (Melody)
+            if melody:
+                groups1 = _group_by_time(melody, threshold=0.1)
+                m.voices[0].beats = _build_voice_beats(
+                    groups1, m.voices[0], bar_total_divs, is_triplet=is_triplet,
+                    include_techniques=include_techniques
+                )
+            else:
+                m.voices[0].beats = _divs_to_gp_beats_rest(bar_total_divs, m.voices[0], is_triplet)
 
-    # --- Voice integrity check ---
-    # AlphaTabはVoiceのbeatsが空だとサイレントハングするため、
-    # 全小節の全Voiceに最低1つのbeat(全休符)を保証する
-    for m in track.measures:
-        for v in m.voices:
-            if not v.beats:
-                v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
+            # Voice 2 (Bass)
+            if bass and len(m.voices) > 1:
+                groups2 = _group_by_time(bass, threshold=0.1)
+                m.voices[1].beats = _build_voice_beats(
+                    groups2, m.voices[1], bar_total_divs, is_triplet=is_triplet, force_legato=True,
+                    include_techniques=include_techniques
+                )
+
+        # Voice integrity check
+        for m in track.measures:
+            for v in m.voices:
+                if not v.beats:
+                    v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
 
     # --- Write to bytes ---
     import io
     buf = io.BytesIO()
     gp.write(song, buf)
+
+    if kwargs.get("return_entries", False):
+        for e in melody_entries:
+            e["track"] = 0
+        for e in backing_entries:
+            e["track"] = 1
+        all_quantized_entries = melody_entries + backing_entries
+        all_quantized_entries.sort(key=lambda x: (int(x.get("bar", 0)), float(x.get("beat_pos", 0)), int(x.get("pitch", 0))))
+        return buf.getvalue(), all_quantized_entries
     return buf.getvalue()
 
 
@@ -667,25 +682,20 @@ def _filter_noise(notes, gate):
         return notes.copy()
     if not notes:
         return []
-    # ノート数ベース: gate=0.5 → velocity下位50%のノートをカット
-    # 重要: 同時発音ノート（和音・アルペジオ開始）は分離不可のため保護する
-    import random
-    cut_count = int(len(notes) * gate)
-    if cut_count >= len(notes):
-        cut_count = len(notes) - 1  # 最低1ノート残す
-    if cut_count <= 0:
-        return notes.copy()
 
-    # 同時発音ノート（50ms以内）をグループ化し、保護対象を特定
-    SIMUL_THRESHOLD = 0.05  # 50ms
-    sorted_by_time = sorted(enumerate(notes), key=lambda x: float(x[1].get("start", 0)))
+    # 同時発音ノート（20ms以内）をグループ化し、保護対象を特定
+    SIMUL_THRESHOLD = 0.02  # 20ms
+    def get_start(n):
+        return float(n.get("start") if n.get("start") is not None else n.get("start_time", 0.0))
+
+    sorted_by_time = sorted(enumerate(notes), key=lambda x: get_start(x[1]))
     protected_indices = set()
     i = 0
     while i < len(sorted_by_time):
         group = [sorted_by_time[i]]
         j = i + 1
         while j < len(sorted_by_time):
-            t_diff = abs(float(sorted_by_time[j][1].get("start", 0)) - float(group[0][1].get("start", 0)))
+            t_diff = abs(get_start(sorted_by_time[j][1]) - get_start(group[0][1]))
             if t_diff <= SIMUL_THRESHOLD:
                 group.append(sorted_by_time[j])
                 j += 1
@@ -697,19 +707,23 @@ def _filter_noise(notes, gate):
                 protected_indices.add(idx)
         i = j
 
-    # velocityでグループ化し、同一velocity内はシャッフルして偏りを防止
-    # (deterministic seed for reproducibility)
-    rng = random.Random(42)
-    indexed = list(enumerate(notes))
-    # velocity + ランダムキーでソート（同一velocity内を均等分散）
-    indexed.sort(key=lambda x: (float(x[1].get("velocity", 0.5)), rng.random()))
-    # 保護対象を除いてカット
+    # 絶対値（しきい値）ベースのカット値算出
+    # gate: 0.0 〜 0.80 -> threshold: 0.40 〜 0.80
+    threshold = 0.40 + gate * 0.50
+
     cut_indices = set()
-    for idx, _ in indexed:
-        if len(cut_indices) >= cut_count:
-            break
-        if idx not in protected_indices:
+    for idx, n in enumerate(notes):
+        # 高確信度(velocity >= 0.85)のノートは保護
+        if float(n.get("velocity", 0.5)) >= 0.85:
+            continue
+        # 同時発音ノートも保護
+        if idx in protected_indices:
+            continue
+        # しきい値未満ならカット対象
+        if float(n.get("velocity", 0.5)) < threshold:
             cut_indices.add(idx)
+
+    # 万が一すべてのノートがカットされてしまった場合のセーフティ
     filtered = [n for i, n in enumerate(notes) if i not in cut_indices]
     return filtered if filtered else [notes[0]]
 

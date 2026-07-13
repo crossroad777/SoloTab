@@ -57,7 +57,7 @@ _CHORD_INTERVALS = {
 }
 
 # コード名 → DB検索キー変換用の定数
-_NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 _QUALITY_SUFFIX = {
     "major": "", "minor": "m", "7": "7", "m7": "m7", "maj7": "maj7",
     "dim": "dim", "dim7": "dim7", "aug": "aug", "sus4": "sus4", "sus2": "sus2",
@@ -277,15 +277,31 @@ def _chord_form_position_cost(s: int, f: int, chord_name: str,
     best_bonus = 0.0
     for form in forms:
         db_frets = form["frets"]
-        if db_frets[idx] != f:
-            continue
-
         form_pos = form.get("position", 0)
         source = form.get("source", "")
+        form_fret = db_frets[idx]
+        if form_fret == -1:
+            continue
 
-        # フォームの「中心フレット」を計算（押弦フレットの平均）
+        # フォームの押弦範囲を計算
         pressed = [fr for fr in db_frets if fr > 0]
-        form_center = sum(pressed) / len(pressed) if pressed else 0
+        min_pressed = min(pressed) if pressed else 0
+        max_pressed = max(pressed) if pressed else 0
+
+        if form_fret > 0:
+            fret_diff = abs(f - form_fret)
+        elif f == 0:
+            fret_diff = 0
+        else:
+            if min_pressed <= f <= max_pressed:
+                fret_diff = 0
+            elif f > max_pressed:
+                fret_diff = f - max_pressed
+            else:
+                fret_diff = min_pressed - f
+
+        if fret_diff > 3:
+            continue
 
         # ベースボーナス: フォームの種別で決定
         if source in ("open", "extra") and form_pos == 0:
@@ -297,11 +313,17 @@ def _chord_form_position_cost(s: int, f: int, chord_name: str,
         else:
             base_bonus = -1.0   # ハイポジション
 
-        # 距離減衰: ノートのフレットがフォーム中心から離れるほどボーナス減少
-        dist = abs(f - form_center)
-        decay = max(0.3, 1.0 - dist * 0.15)
-        bonus = base_bonus * decay
+        # 近接度に応じた減衰
+        if fret_diff == 0:
+            proximity = 1.0
+        elif fret_diff == 1:
+            proximity = 0.5
+        elif fret_diff == 2:
+            proximity = 0.25
+        else:
+            proximity = 0.1
 
+        bonus = base_bonus * proximity
         best_bonus = min(best_bonus, bonus)
 
     if best_bonus < 0:

@@ -377,7 +377,6 @@ def apply_music_theory(notes: List[dict], beats: List[float],
     Returns: {
         "rhythm_info": dict,
         "key_signature": str,
-        "bar_dynamics": dict,
         "notes": List[dict] (処理済み),
     }
     """
@@ -395,3 +394,136 @@ def apply_music_theory(notes: List[dict], beats: List[float],
         "key_signature": key_sig,
         "notes": notes,
     }
+
+
+def get_diatonic_pcs(key: str) -> List[int]:
+    """
+    指定されたキー（調）に対するダイアトニック・ピッチクラスのリストを返す。
+    24すべてのメジャー/マイナーキーに対応。
+    """
+    if not key or key == "N.C.":
+        return list(range(12))
+    
+    note_to_pc = {
+        'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
+        'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9,
+        'A#': 10, 'Bb': 10, 'B': 11
+    }
+    key_clean = key.strip()
+    is_minor = key_clean.endswith('m')
+    root = key_clean[:-1] if is_minor else key_clean
+    root_pc = note_to_pc.get(root, 0)
+    
+    if is_minor:
+        # 短調: 自然短音階 (0,2,3,5,7,8,10) と和声短音階 (0,2,3,5,7,8,11) の併用
+        intervals = [0, 2, 3, 5, 7, 8, 10, 11]
+    else:
+        # 長調: 長音階 (0,2,4,5,7,9,11)
+        intervals = [0, 2, 4, 5, 7, 9, 11]
+        
+    return [(root_pc + i) % 12 for i in intervals]
+
+
+def validate_notes_by_music_theory(
+    notes: List[dict],
+    beats: List[float],
+    chords: List[dict],
+    key: str,
+    threshold: float = 0.50
+) -> List[dict]:
+    """
+    音楽理論（調、コード構成音、拍子グリッド適合度）に基づき、
+    各ノートの「音楽的妥当性スコア (MVS: Musical Validity Score)」を算出してフィルタリングする。
+    
+    MVS = velocity (確信度) + S_harmonic (調・コード) + S_rhythm (拍グリッド)
+    """
+    if not notes:
+        return []
+        
+    import numpy as np
+    from chord_theory import _parse_chord_name, _get_chord_notes_pc
+
+    # ダイアトニックピッチクラスのセット
+    diatonic_pcs = set(get_diatonic_pcs(key))
+    
+    # ヘルパー: 指定されたコードのピッチクラスリスト
+    def get_chord_pcs(chord_name: str) -> List[int]:
+        if not chord_name or chord_name in ("N.C.", "N", "X"):
+            return []
+        r_pc, q = _parse_chord_name(chord_name)
+        if r_pc < 0:
+            return []
+        return _get_chord_notes_pc(r_pc, q)
+
+    # ヘルパー: 指定時刻のコード名取得
+    def get_chord_at_time(t_sec: float) -> Optional[str]:
+        if not chords:
+            return None
+        for c in chords:
+            start = c.get('start', 0.0)
+            end = c.get('end', 9999.0)
+            if start <= t_sec < end:
+                return c.get('chord')
+        return None
+
+    beats_arr = np.array(beats)
+    validated_notes = []
+    removed_count = 0
+    
+    for n in notes:
+        t = float(n.get("start", n.get("start_time", 0.0)))
+        pitch = int(n.get("pitch", 60))
+        pc = pitch % 12
+        vel = float(n.get("velocity", 0.5))
+        if vel > 1.0:
+            vel /= 127.0
+            
+        # 1. 調・コード構成音判定 (Harmonic)
+        s_harmonic = 0.0
+        if pc in diatonic_pcs:
+            s_harmonic += 0.20
+            
+        active_chord = get_chord_at_time(t)
+        if active_chord:
+            chord_pcs = get_chord_pcs(active_chord)
+            if pc in chord_pcs:
+                s_harmonic += 0.30
+                
+        # 2. 拍子グリッド判定 (Rhythm)
+        s_rhythm = 0.0
+        if len(beats_arr) >= 2:
+            idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
+            idx = max(0, min(idx, len(beats_arr) - 2))
+            
+            beat_time = float(beats_arr[idx])
+            next_beat_time = float(beats_arr[idx + 1])
+            beat_dur = next_beat_time - beat_time
+            
+            if beat_dur > 0.05:
+                frac = (t - beat_time) / beat_dur
+                frac = frac % 1.0
+                
+                # 16分音符グリッド or 3連8分音符グリッドへの最小距離
+                dist_straight = min(abs(frac - g) for g in [0.0, 0.25, 0.5, 0.75, 1.0])
+                dist_triplet = min(abs(frac - g) for g in [0.0, 1/3, 2/3, 1.0])
+                d_min = min(dist_straight, dist_triplet)
+                
+                if d_min <= 0.05:     # グリッドに適合 (±25ms @ 120BPM)
+                    s_rhythm = 0.20
+                elif d_min >= 0.09:   # オフグリッド（ノイズ等）
+                    s_rhythm = -0.30
+                    
+        # 3. 総合MVS判定
+        mvs = vel + s_harmonic + s_rhythm
+        
+        n["_mvs"] = float(mvs)
+        n["_s_harmonic"] = float(s_harmonic)
+        n["_s_rhythm"] = float(s_rhythm)
+        
+        if mvs >= threshold:
+            validated_notes.append(n)
+        else:
+            removed_count += 1
+            
+    print(f"[music_theory] MVS validation: kept {len(validated_notes)} / {len(notes)} notes, removed {removed_count} notes (threshold={threshold})")
+    return validated_notes

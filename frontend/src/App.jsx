@@ -1,8 +1,23 @@
 import React, { useState, useEffect, useRef } from "react";
-import { UploadCloud, Play, Pause, Square, History, Music, ChevronRight, Sun, Moon, Home, Download, Printer, Activity, Repeat, Headphones, VolumeX, Timer, MoreVertical, Edit2, ChevronUp, SkipBack } from "lucide-react";
+import { UploadCloud, Play, Pause, Square, History, Music, ChevronRight, ChevronLeft, Sun, Moon, Home, Download, Printer, Activity, Repeat, Headphones, VolumeX, Timer, MoreVertical, Edit2, ChevronUp, SkipBack, ArrowLeft } from "lucide-react";
 import { TabView } from "./components/TabView";
 
-const API_BASE = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8001";
+// ── API接続先の動的解決 ──
+// ローカル → 環境変数 or localhost:8002
+// 外部トンネル → tunnel_urls.json から solotab_be を取得
+const _envUrl = import.meta.env.VITE_API_URL;
+let API_BASE = _envUrl !== undefined ? _envUrl : "http://localhost:8002";
+let PORTAL_URL = "https://guitar-suite.vercel.app/portal";
+
+// tunnel_urls.json から接続先URLを非同期取得
+const _tunnelApiPromise = fetch('/tunnel_urls.json')
+  .then(r => r.json())
+  .then(data => {
+    if (data?.solotab_be) { API_BASE = data.solotab_be; console.log('[SoloTab] Using tunnel API:', API_BASE); }
+    if (data?.portal) { PORTAL_URL = data.portal; console.log('[SoloTab] Using portal URL:', PORTAL_URL); }
+  })
+  .catch(() => console.log('[SoloTab] tunnel_urls.json not found, using default API'));
+
 const STATUS = { IDLE: "idle", UPLOADING: "uploading", PROCESSING: "processing", COMPLETED: "completed", FAILED: "failed" };
 
 export default function SoloTabApp() {
@@ -39,14 +54,30 @@ export default function SoloTabApp() {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
 
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    let timer;
+    if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
+      setElapsedSeconds(0);
+      timer = setInterval(() => {
+        setElapsedSeconds(prev => prev + 1);
+      }, 1000);
+    } else {
+      setElapsedSeconds(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [status]);
+
   const audioRef = useRef(null);
   const sseRef = useRef(null);
   const fileInputRef = useRef(null);
   const scrollTimerRef = useRef(null);
   const scrollStartRef = useRef(null);
   const [scrollOnly, setScrollOnly] = useState(false);
-  const [tipIndex, setTipIndex] = useState(0);
-  const [tipVisible, setTipVisible] = useState(true);
+
   const [processingAudioPlaying, setProcessingAudioPlaying] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
   const uploadLockRef = useRef(false);
@@ -101,39 +132,12 @@ export default function SoloTabApp() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [status]);
 
-  // 起動時: 処理中セッションがあれば復元、なければ履歴取得
+  // 起動時: 常にIDLE状態で開始し、履歴を取得
+  // ※ ポータルからの画面遷移時に自動解析が走らないようにする
   useEffect(() => {
-    const savedSid = localStorage.getItem('solotab-processing-session');
-    if (savedSid) {
-      // サーバーにセッション状態を確認
-      fetch(`${API_BASE}/status/${savedSid}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.status === 'processing') {
-            // まだ処理中 → SSE再接続
-            setSession({ id: savedSid, fileName: data.filename || 'Restoring...',
-              audioUrl: `${API_BASE}/files/${savedSid}/converted.wav` });
-            setStatus(STATUS.PROCESSING);
-            setStepsDone(data.steps_done || 0);
-            setProgressMsg(data.progress || '復元中...');
-            startStatusStream(savedSid);
-          } else if (data.status === 'completed') {
-            // 完了していた → 結果表示
-            localStorage.removeItem('solotab-processing-session');
-            restoreSession(savedSid);
-          } else {
-            // 失敗 or 不明 → クリーンアップ
-            localStorage.removeItem('solotab-processing-session');
-            fetchHistory();
-          }
-        })
-        .catch(() => {
-          localStorage.removeItem('solotab-processing-session');
-          fetchHistory();
-        });
-    } else {
-      fetchHistory();
-    }
+    // 古い処理中セッションのキーをクリーンアップ
+    localStorage.removeItem('solotab-processing-session');
+    fetchHistory();
   }, []);
 
   // Audio sync & loop logic
@@ -571,6 +575,22 @@ export default function SoloTabApp() {
   const duration = audioRef.current?.duration || 0;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  const originalBpm = session?.bpm || 120;
+  const currentBpm = Math.round(originalBpm * speed);
+
+  const handleBpmChange = (newBpm) => {
+    if (!originalBpm) return;
+    const minBpm = Math.round(originalBpm * 0.5);
+    const maxBpm = Math.round(originalBpm * 2.0);
+    const clampedBpm = Math.max(minBpm, Math.min(maxBpm, newBpm));
+    const newRate = clampedBpm / originalBpm;
+    setSpeed(Math.max(0.5, Math.min(2.0, Math.round(newRate * 100) / 100)));
+  };
+
+  const decreaseBpm = () => handleBpmChange(currentBpm - 1);
+  const increaseBpm = () => handleBpmChange(currentBpm + 1);
+  const resetBpm = () => setSpeed(1.0);
+
   // Processing step definitions
   const STEPS = [
     { key: 'upload', label: 'アップロード完了', icon: '📁' },
@@ -580,38 +600,9 @@ export default function SoloTabApp() {
     { key: 'tab', label: 'TAB譜生成', icon: '📄' },
   ];
 
-  // Processing tips
-  const TIPS = [
-    { icon: '🎵', text: 'ビート検出にはRNNを使用。人間のように拍を感じます' },
-    { icon: '🧠', text: 'ノート検出は35のAIモデルのアンサンブル投票で行います' },
-    { icon: '🎸', text: '弦の割り当てはViterbi DPで最適化。ギタリストの手の動きを再現' },
-    { icon: '🤚', text: '運指はCNN + Viterbi DPのハイブリッド。精度79.9%' },
-    { icon: '📊', text: '33,378ノートのデータセットで検証済み' },
-    { icon: '🎼', text: 'キー検出・コード検出・拍子推定も自動で行います' },
-    { icon: '⚡', text: 'GPU加速で処理を高速化しています' },
-    { icon: '🎯', text: 'テクニック検出: ハンマリング、プリング、スライド、ベンドを自動認識' },
-  ];
-
-
-
-  // Tip rotation effect
-  useEffect(() => {
-    if (status !== STATUS.PROCESSING && status !== STATUS.UPLOADING) return;
-    const interval = setInterval(() => {
-      setTipVisible(false);
-      setTimeout(() => {
-        setTipIndex(prev => (prev + 1) % TIPS.length);
-        setTipVisible(true);
-      }, 400);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [status]);
-
-  // Reset tip when entering processing
+  // Reset audio when entering processing
   useEffect(() => {
     if (status === STATUS.PROCESSING || status === STATUS.UPLOADING) {
-      setTipIndex(0);
-      setTipVisible(true);
       setProcessingAudioPlaying(false);
     }
   }, [status]);
@@ -703,20 +694,63 @@ export default function SoloTabApp() {
 
       {/* Header */}
       <header className="app-header">
-        <div className="app-logo" onClick={goHome}>
-          <div className="logo-icon">
-            <Music size={16} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <a
+            href={PORTAL_URL}
+            className="portal-back-btn"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              padding: '6px 12px',
+              borderRadius: '20px',
+              background: 'rgba(255,255,255,0.10)',
+              border: '1px solid rgba(255,255,255,0.10)',
+              color: 'var(--st-text)',
+              textDecoration: 'none',
+              transition: 'all 0.2s',
+            }}
+            title="ポータルに戻る"
+          >
+            <ArrowLeft size={14} />
+            <span>ポータル</span>
+          </a>
+          <div className="app-logo" onClick={goHome} role="button" tabIndex={0} aria-label="Go to home screen" onKeyDown={(e) => { if (e.key === 'Enter') goHome(); }}>
+            <div className="logo-icon">
+              <Music size={16} style={{ color: 'white' }} />
+            </div>
+            <span className="logo-text">SoloTab</span>
           </div>
-          <span className="logo-text">SoloTab</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           {status === STATUS.COMPLETED && (
             <button className="home-btn" onClick={goHome}>
               <Home size={14} style={{ marginRight: 4, verticalAlign: -2 }} />新規解析
             </button>
           )}
-          <button onClick={toggleTheme} className="home-btn">
-            {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+          <button
+            onClick={toggleTheme}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: '1px solid var(--st-border)',
+              color: 'var(--st-text-dim)',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+            title={theme === 'dark' ? 'ライトモードに切替' : 'ダークモードに切替'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--st-surface-2)'; e.currentTarget.style.color = theme === 'dark' ? '#fbbf24' : '#6366f1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--st-text-dim)'; }}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
       </header>
@@ -729,7 +763,7 @@ export default function SoloTabApp() {
 
             {/* Hero Logo */}
             <div className="hero-logo-icon">
-              <Music size={32} />
+              <Music size={32} style={{ color: 'white' }} />
             </div>
             <h1 className="hero-title">SoloTab</h1>
             <p className="hero-subtitle">
@@ -749,61 +783,76 @@ export default function SoloTabApp() {
               </button>
             </div>
 
-            {/* Solo Guitar Mode Toggle */}
-            <label className="solo-toggle" onClick={(e) => e.stopPropagation()} style={{
-              display: 'flex', alignItems: 'center', gap: 8, margin: '12px auto 0',
-              cursor: 'pointer', fontSize: '0.85rem', color: 'var(--st-text-dim)',
-              userSelect: 'none', width: 'fit-content',
-            }}>
-              <input type="checkbox" checked={soloGuitar} onChange={(e) => setSoloGuitar(e.target.checked)}
-                style={{ accentColor: 'var(--st-accent)', width: 16, height: 16 }} />
-              <span>🎸 ソロギターモード <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>(Demucs分離スキップ・高速)</span></span>
-            </label>
+            {/* Options Section */}
+            <div style={{ width: '100%', maxWidth: 448, marginTop: 24 }}>
+              {/* Divider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, color: 'var(--st-text-muted)' }}>
+                <div style={{ flex: 1, height: 1, background: 'var(--st-border)' }} />
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2em' }}>オプション</span>
+                <div style={{ flex: 1, height: 1, background: 'var(--st-border)' }} />
+              </div>
 
-            {/* Guitar Type Selector */}
-            <div onClick={(e) => e.stopPropagation()} style={{
-              display: 'flex', alignItems: 'center', gap: 8, margin: '8px auto 0',
-              fontSize: '0.85rem', color: 'var(--st-text-dim)',
-              userSelect: 'none', width: 'fit-content',
-            }}>
-              <span>🎵 弦タイプ:</span>
-              <select value={guitarType} onChange={(e) => setGuitarType(e.target.value)}
-                style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 6,
-                  background: 'var(--st-surface-2)', color: 'var(--st-text)',
-                  border: '1px solid var(--st-border)', cursor: 'pointer' }}>
-                <option value="auto">自動判別</option>
-                <option value="steel">アコギ (スチール弦)</option>
-                <option value="nylon">クラシック (ナイロン弦)</option>
-              </select>
-            </div>
+              {/* Solo Guitar Mode Toggle */}
+              <label onClick={(e) => e.stopPropagation()} style={{
+                display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 10px',
+                cursor: 'pointer', fontSize: '0.85rem', color: 'var(--st-text-dim)',
+                userSelect: 'none',
+                padding: '10px 16px', borderRadius: 12,
+                background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+                transition: 'all 0.2s',
+              }}>
+                <input type="checkbox" checked={soloGuitar} onChange={(e) => setSoloGuitar(e.target.checked)}
+                  style={{ accentColor: 'var(--st-accent)', width: 16, height: 16, flexShrink: 0 }} />
+                <span>🎸 ソロギターモード <span style={{ opacity: 0.6, fontSize: '0.75rem' }}>(Demucs分離スキップ・高速)</span></span>
+              </label>
 
-            {/* Technique Toggles (Experimental) */}
-            <div onClick={(e) => e.stopPropagation()} style={{
-              display: 'flex', flexDirection: 'column', gap: 4, margin: '12px auto 0',
-              fontSize: '0.8rem', color: 'var(--st-text-dim)',
-              userSelect: 'none', width: 'fit-content',
-              padding: '8px 12px', borderRadius: 8,
-              background: 'var(--st-surface-2)', border: '1px solid var(--st-border)',
-            }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--st-accent)', marginBottom: 2 }}>🧪 テクニック表示（実験的）</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="checkbox" checked={techGp5}
-                  onChange={(e) => { setTechGp5(e.target.checked); localStorage.setItem('solotab-tech-gp5', e.target.checked); }}
-                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
-                TABに記号書込 (H/P/S/C)
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="checkbox" checked={techOverlay}
-                  onChange={(e) => { setTechOverlay(e.target.checked); localStorage.setItem('solotab-tech-overlay', e.target.checked); }}
-                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
-                オーバーレイ表示
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                <input type="checkbox" checked={techFingers}
-                  onChange={(e) => { setTechFingers(e.target.checked); localStorage.setItem('solotab-tech-fingers', e.target.checked); }}
-                  style={{ accentColor: 'var(--st-accent)', width: 14, height: 14 }} />
-                テクニック連動指修正
-              </label>
+              {/* Guitar Type Selector */}
+              <div onClick={(e) => e.stopPropagation()} style={{
+                display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 10px',
+                fontSize: '0.85rem', color: 'var(--st-text-dim)',
+                userSelect: 'none',
+                padding: '10px 16px', borderRadius: 12,
+                background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+              }}>
+                <span>🎵 弦タイプ:</span>
+                <select value={guitarType} onChange={(e) => setGuitarType(e.target.value)}
+                  style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 8,
+                    background: 'var(--st-surface-2)', color: 'var(--st-text)',
+                    border: '1px solid var(--st-border)', cursor: 'pointer' }}>
+                  <option value="auto">自動判別</option>
+                  <option value="steel">アコギ (スチール弦)</option>
+                  <option value="nylon">クラシック (ナイロン弦)</option>
+                </select>
+              </div>
+
+              {/* Technique Toggles (Experimental) */}
+              <div onClick={(e) => e.stopPropagation()} style={{
+                display: 'flex', flexDirection: 'column', gap: 6, margin: '0',
+                fontSize: '0.8rem', color: 'var(--st-text-dim)',
+                userSelect: 'none',
+                padding: '12px 16px', borderRadius: 12,
+                background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+              }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--st-accent)', marginBottom: 4 }}>🧪 テクニック表示（実験的）</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '2px 0' }}>
+                  <input type="checkbox" checked={techGp5}
+                    onChange={(e) => { setTechGp5(e.target.checked); localStorage.setItem('solotab-tech-gp5', e.target.checked); }}
+                    style={{ accentColor: 'var(--st-accent)', width: 14, height: 14, flexShrink: 0 }} />
+                  TABに記号書込 (H/P/S/C)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '2px 0' }}>
+                  <input type="checkbox" checked={techOverlay}
+                    onChange={(e) => { setTechOverlay(e.target.checked); localStorage.setItem('solotab-tech-overlay', e.target.checked); }}
+                    style={{ accentColor: 'var(--st-accent)', width: 14, height: 14, flexShrink: 0 }} />
+                  オーバーレイ表示
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '2px 0' }}>
+                  <input type="checkbox" checked={techFingers}
+                    onChange={(e) => { setTechFingers(e.target.checked); localStorage.setItem('solotab-tech-fingers', e.target.checked); }}
+                    style={{ accentColor: 'var(--st-accent)', width: 14, height: 14, flexShrink: 0 }} />
+                  テクニック連動指修正
+                </label>
+              </div>
             </div>
 
             {status === STATUS.FAILED && (
@@ -842,7 +891,7 @@ export default function SoloTabApp() {
         {(status === STATUS.UPLOADING || status === STATUS.PROCESSING) && (() => {
           const doneCount = stepsDone;
           const pct = Math.round((doneCount / STEPS.length) * 100);
-          const currentTip = TIPS[tipIndex];
+        
 
           return (
             <div className="processing-screen">
@@ -897,14 +946,30 @@ export default function SoloTabApp() {
                 </div>
               </div>
 
+              {/* Detailed status message */}
+              <div style={{
+                fontSize: 15, fontWeight: 700, color: 'var(--st-text)',
+                marginBottom: 16, textAlign: 'center', minHeight: 24,
+                background: 'linear-gradient(90deg, #f59e0b, #fb923c)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>
+                {progressMsg || "解析中..."}
+              </div>
+
               {/* Step progress message */}
               <div style={{
                 fontSize: 13, fontWeight: 600, color: 'var(--st-accent)',
                 marginBottom: 8, letterSpacing: '0.02em',
-                display: 'flex', alignItems: 'center', gap: 6,
+                display: 'flex', alignItems: 'center', gap: 12,
               }}>
-                <span style={{ fontSize: 14 }}>⏱</span>
-                ステップ {doneCount}/{STEPS.length}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>⏱</span>
+                  ステップ {doneCount}/{STEPS.length}
+                </span>
+                <span style={{ color: 'var(--st-text-dim)', fontWeight: 500 }}>
+                  経過時間: {Math.floor(elapsedSeconds / 60)}分{(elapsedSeconds % 60).toString().padStart(2, '0')}秒
+                </span>
               </div>
 
               {/* Mini audio player */}
@@ -976,6 +1041,7 @@ export default function SoloTabApp() {
               </div>
 
 
+
             </div>
           );
         })()}
@@ -983,36 +1049,148 @@ export default function SoloTabApp() {
         {/* ── COMPLETED: Result ── */}
         {status === STATUS.COMPLETED && session && (
           <>
-            {/* Compact Song Info Bar */}
+            {/* 1. Song Header (NextChord Style) */}
             <div className="result-header" style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
+              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px',
               background: 'var(--st-surface)', borderBottom: '1px solid var(--st-border)',
               flexWrap: 'wrap', minHeight: 44,
             }}>
-              <h1 style={{ fontSize: 15, fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 300 }}>
-                {session.fileName || "Untitled"}
+              <h1 style={{ fontSize: 16, fontWeight: 800, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 400 }}>
+                {session.fileName || "Untitled Track"}
               </h1>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                {session.detectedKey && <span className="badge" style={{ color: '#10b981', fontSize: 11 }}>🎵 {session.detectedKey}</span>}
-                {session.bpm && <span className="badge amber" style={{ fontSize: 11 }}>♩ {Math.round(session.bpm)}</span>}
-                {session.totalNotes && <span className="badge accent" style={{ fontSize: 11 }}>♪ {session.totalNotes}</span>}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginLeft: 8 }}>
+                {session.detectedKey && <span className="badge" style={{ color: '#10b981', fontSize: 11 }}>Key: {session.detectedKey}</span>}
+                {session.bpm && <span className="badge amber" style={{ fontSize: 11 }}>♩ {Math.round(session.bpm)} BPM</span>}
+                {session.totalNotes && <span className="badge accent" style={{ fontSize: 11 }}>♪ {session.totalNotes} notes</span>}
                 {session.detectedCapo > 0 && <span className="badge" style={{
                   color: '#fff', fontSize: 11, fontWeight: 700,
                   background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                   padding: '2px 8px', borderRadius: 10,
                 }}>🎸 Capo {session.detectedCapo} (AI推定)</span>}
               </div>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+            </div>
+
+            {/* 2. Playback Control Bar (NextChord Style) */}
+            <div className="player-control-bar" style={{
+              display: 'flex', alignItems: 'center', background: '#252528', color: '#a0a0a5',
+              padding: '0 24px', height: '64px', borderBottom: '1px solid #1a1a1c', gap: '20px',
+              fontFamily: 'Inter, sans-serif',
+              boxSizing: 'border-box'
+            }}>
+              {/* 1. Play / Skip Controls */}
+              <div style={{ display: 'flex', height: '40px', borderRadius: '4px', overflow: 'hidden', gap: '4px' }}>
+                <button 
+                  onClick={() => handleSeek(0)}
+                  style={{ background: '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title="最初に戻る"
+                >
+                  <SkipBack size={20} color="#fff" />
+                </button>
+                <button 
+                  onClick={togglePlay}
+                  style={{ background: '#22c55e', border: 'none', width: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title={isPlaying ? "一時停止" : "再生"}
+                >
+                  {isPlaying ? <Pause size={24} fill="currentColor" color="#000" /> : <Play size={24} fill="currentColor" color="#000" style={{ marginLeft: 3 }} />}
+                </button>
+                <button 
+                  onClick={toggleScrollOnly}
+                  style={{ background: scrollOnly ? '#f59e0b' : '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
+                  title={scrollOnly ? "スクロール停止" : "スクロールのみ（音なし）"}
+                >
+                  <span style={{ fontSize: '18px' }}>{scrollOnly ? '⏸' : '📜'}</span>
+                </button>
+              </div>
+
+              {/* Central Timeline */}
+              <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '12px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px', textAlign: 'right' }}>{formatTime(currentTime)}</span>
+                
+                <div style={{ position: 'relative', flexGrow: 1, height: '24px', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ position: 'absolute', width: '100%', height: '8px', background: '#1a1a1c', borderRadius: '4px', pointerEvents: 'none' }}>
+                    <div style={{ width: `${progress}%`, background: '#22c55e', height: '100%', borderRadius: '4px' }} />
+                    {loopA !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
+                    {loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopB/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
+                    {loopA !== null && loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: `${((loopB-loopA)/duration)*100}%`, background: 'rgba(77, 166, 255, 0.3)' }} />}
+                  </div>
+                  
+                  <input 
+                    type="range"
+                    min={0}
+                    max={duration || 100}
+                    step={0.01}
+                    value={currentTime}
+                    onChange={(e) => handleSeek(Number(e.target.value))}
+                    style={{
+                      position: 'absolute',
+                      width: '100%',
+                      margin: 0,
+                      opacity: 0,
+                      cursor: 'pointer',
+                      height: '100%'
+                    }}
+                  />
+                </div>
+
+                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px' }}>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* 3. Control Ribbon (NextChord Style, SoloTab Features) */}
+            <div className="control-ribbon scrollbar-hide">
+              {/* ① Speed (BPM Linked) */}
+              <div className="ribbon-item">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                  <button onClick={decreaseBpm} title="BPMを下げる" style={{ background: 'transparent', border: 'none', color: 'var(--st-text)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronLeft size={14} /></button>
+                  <span 
+                    style={{ fontSize: 13, fontWeight: 900, fontStyle: 'italic', color: 'var(--st-text)', width: 60, textAlign: 'center', cursor: 'pointer' }}
+                    onDoubleClick={resetBpm}
+                    title="ダブルクリックで元のテンポにリセット"
+                  >
+                    ♩ {currentBpm}
+                  </span>
+                  <button onClick={increaseBpm} title="BPMを上げる" style={{ background: 'transparent', border: 'none', color: 'var(--st-text)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><ChevronRight size={14} /></button>
+                </div>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>速度: {Math.round(speed * 100)}%</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ② Loop */}
+              <button 
+                onClick={() => {
+                  if (loopA !== null && loopB !== null) { setLoopA(null); setLoopB(null); }
+                  else if (loopA === null) setLoopA(currentTime);
+                  else if (loopB === null && currentTime > loopA) setLoopB(currentTime);
+                }}
+                className={`ribbon-btn ${loopA !== null ? 'active' : ''}`}
+                title={loopA === null ? "ループA点" : loopB === null ? "ループB点" : "ループ解除"}
+              >
+                <Repeat size={18} />
+                <span style={{ fontSize: 9, marginTop: 4, fontWeight: 'bold' }}>ループ{loopA !== null && loopB === null ? ' (A)' : ''}</span>
+              </button>
+
+              <div className="ribbon-divider" />
+
+              {/* ③ Tuning */}
+              <div className="ribbon-item">
                 <select className="tuning-select" value={session.tuning || "standard"}
                   onChange={(e) => handleRetune(e.target.value)} disabled={retuning}
-                  style={{ fontSize: 11, padding: '4px 6px', maxWidth: 160 }}>
+                  style={{ fontSize: 11, padding: '4px 6px', maxWidth: 160, marginBottom: 2 }}>
                   {TUNING_GROUPS.map(group => (
                     <optgroup key={group.label} label={group.label}>
                       {group.options.map(t => (<option key={t.value} value={t.value}>{t.label}</option>))}
                     </optgroup>
                   ))}
                 </select>
-                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>チューニング {retuning && <span style={{ color: 'var(--st-amber)' }}>⏳</span>}</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ④ Capo */}
+              <div className="ribbon-item">
+                <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginBottom: 2 }}>
                   <select className="tuning-select" value={capo}
                     onChange={(e) => { const v = Number(e.target.value); setCapo(v); handleRetune(null, v); }}
                     style={{
@@ -1039,70 +1217,70 @@ export default function SoloTabApp() {
                       }}>AI:{session.detectedCapo}</button>
                   )}
                 </div>
-                <div className="transpose-controls" style={{ gap: 2 }}>
-                  <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調 −1'); }} style={{ width: 24, height: 24, fontSize: 14 }}>−</button>
-                  <span className="transpose-label" style={{ fontSize: 11, minWidth: 28 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
-                  <button className="transpose-btn" onClick={() => { setTranspose(t => t + 1); _showToast('移調 +1'); }} style={{ width: 24, height: 24, fontSize: 14 }}>+</button>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>カポ設定</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ⑤ Transpose */}
+              <div className="ribbon-item">
+                <div className="transpose-controls" style={{ gap: 2, marginBottom: 2 }}>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t - 1); _showToast('移調 −1'); }} style={{ width: 20, height: 20, fontSize: 12 }}>−</button>
+                  <span className="transpose-label" style={{ fontSize: 11, minWidth: 24 }}>{transpose >= 0 ? '+' : ''}{transpose}</span>
+                  <button className="transpose-btn" onClick={() => { setTranspose(t => t + 1); _showToast('移調 +1'); }} style={{ width: 20, height: 20, fontSize: 12 }}>+</button>
                 </div>
-                {retuning && <span style={{ fontSize: 10, color: 'var(--st-amber)' }}>⏳</span>}
-                <button className="home-btn" title="PDF"
-                  onClick={() => window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank')}
-                  style={{ fontSize: 11, padding: '4px 8px' }}>
-                  <Printer size={12} style={{ marginRight: 2 }} />PDF
-                </button>
-                <button className="home-btn" title="Guitar Pro用 (.gp5) &#10;Guitar Pro / MuseScore で開けます"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
-                      if (!res.ok) throw new Error("取得失敗");
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp5`;
-                      a.style.display = 'none';
-                      document.body.appendChild(a);
-                      a.click();
-                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                    } catch(e) { _showToast("GP5: " + e.message); }
-                  }}
-                  style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#f59e0b', fontWeight: 700 }}>
-                  <Download size={11} style={{ marginRight: 2 }} />Guitar Pro
-                </button>
-                <button className="home-btn" title="MusicXML (.musicxml) &#10;MuseScore / Finale で開けます"
-                  onClick={async () => {
-                    try {
-                      const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
-                      if (!res.ok) throw new Error("取得失敗");
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.musicxml`;
-                      a.style.display = 'none';
-                      document.body.appendChild(a);
-                      a.click();
-                      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                    } catch(e) { _showToast("MusicXML: " + e.message); }
-                  }}
-                  style={{ fontSize: 10, padding: '4px 8px' }}>
-                  <Download size={11} style={{ marginRight: 2 }} />MusicXML
-                </button>
-                <button className="home-btn" title="TuxGuitarで開く（ローカル） / GP5ダウンロード（リモート）"
-                  onClick={async () => {
-                    const isLocal = API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
-                    if (isLocal) {
-                      // ローカル環境: サーバー側でTuxGuitarを起動
-                      try {
-                        const res = await fetch(`${API_BASE}/result/${session.id}/open-tuxguitar`, { method: 'POST' });
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => ({}));
-                          throw new Error(err.detail || "起動失敗");
-                        }
-                        _showToast("TuxGuitarを起動しました");
-                      } catch(e) { _showToast("TuxGuitar: " + e.message); }
-                    } else {
-                      // リモート環境 (Vercel等): GP5ファイルをダウンロード
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>転調</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ⑥ Noise Gate */}
+              <div className="ribbon-item" title="AIのノイズ除去レベル。右にするほど低velocity音が消えてシンプルになります">
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                  <input
+                    type="range" min="0" max="0.8" step="0.05"
+                    value={noiseGate}
+                    onChange={(e) => setNoiseGate(parseFloat(e.target.value))}
+                    style={{ width: '80px', accentColor: '#4da6ff', cursor: 'pointer' }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!session?.id) return;
+                      handleRetune(null, null, noiseGate);
+                    }}
+                    style={{
+                      padding: '2px 6px', borderRadius: 4, border: 'none',
+                      background: noiseGate > 0 ? '#4da6ff' : '#334155',
+                      color: 'white', fontSize: 10, fontWeight: 700,
+                      cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                  >適用</button>
+                </div>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>ノイズ除去 (CUT: {Math.round(noiseGate * 100)}%)</span>
+              </div>
+
+              {/* ⑦ Writes / Exports (Aligned Right) */}
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginLeft: 'auto' }}>
+                {/* PDF */}
+                <div className="ribbon-item">
+                  <button 
+                    className="ribbon-action-btn"
+                    onClick={() => window.open(`${API_BASE}/result/${session.id}/pdf`, '_blank')}
+                    title="PDFでTAB譜を印刷または保存します"
+                  >
+                    <Printer size={16} />
+                    <span>PDF</span>
+                  </button>
+                  <span className="ribbon-label">PDF印刷</span>
+                </div>
+
+                <div className="ribbon-divider" />
+
+                {/* Guitar Pro */}
+                <div className="ribbon-item">
+                  <button 
+                    className="ribbon-action-btn gp5"
+                    onClick={async () => {
                       try {
                         const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
                         if (!res.ok) throw new Error("取得失敗");
@@ -1115,142 +1293,91 @@ export default function SoloTabApp() {
                         document.body.appendChild(a);
                         a.click();
                         setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
-                        _showToast("GP5をダウンロードしました。TuxGuitar/Guitar Proで開いてください");
                       } catch(e) { _showToast("GP5: " + e.message); }
-                    }
-                  }}
-                  style={{ fontSize: 10, padding: '4px 8px', background: 'var(--st-surface-3)', color: '#10b981', fontWeight: 700 }}>
-                  🎸 TuxGuitar
-                </button>
-              </div>
-            </div>
-
-            {/* === Songsterr-Style Player Bar === */}
-            <div className="player-control-bar" style={{
-              display: 'flex', alignItems: 'center', background: '#252528', color: '#a0a0a5',
-              padding: '0 16px', height: '64px', borderTop: '1px solid #1a1a1c', gap: '20px',
-              fontFamily: 'Inter, sans-serif',
-              position: 'fixed', bottom: 0, left: 0, width: '100%', zIndex: 100,
-              boxSizing: 'border-box'
-            }}>
-              
-              {/* 1. Play / Skip Controls */}
-              <div style={{ display: 'flex', height: '40px', borderRadius: '4px', overflow: 'hidden', gap: '4px' }}>
-                <button 
-                  onClick={() => handleSeek(0)}
-                  style={{ background: '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
-                  title="最初に戻る"
-                >
-                  <SkipBack size={20} color="#fff" />
-                </button>
-                <button 
-                  onClick={togglePlay}
-                  style={{ background: '#22c55e', border: 'none', width: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
-                  title={isPlaying ? "一時停止" : "再生"}
-                >
-                  {isPlaying ? <Pause size={24} fill="currentColor" color="#000" /> : <Play size={24} fill="currentColor" color="#000" style={{ marginLeft: 3 }} />}
-                </button>
-                <button 
-                  onClick={toggleScrollOnly}
-                  style={{ background: scrollOnly ? '#f59e0b' : '#3a3a3c', border: 'none', width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: '4px' }}
-                  title={scrollOnly ? "スクロール停止" : "スクロールのみ（音なし）"}
-                >
-                  <span style={{ fontSize: '18px' }}>{scrollOnly ? '⏸' : '📜'}</span>
-                </button>
-              </div>
-
-              {/* Central Timeline (Time + Draggable Progress) */}
-              <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, gap: '12px', minWidth: '150px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px', textAlign: 'right' }}>{formatTime(currentTime)}</span>
-                
-                <div style={{ position: 'relative', flexGrow: 1, height: '24px', display: 'flex', alignItems: 'center' }}>
-                  {/* Visual Progress Bar (Background + Fill + Loop Markers) */}
-                  <div style={{ position: 'absolute', width: '100%', height: '8px', background: '#1a1a1c', borderRadius: '4px', pointerEvents: 'none' }}>
-                    <div style={{ width: `${progress}%`, background: '#22c55e', height: '100%', borderRadius: '4px' }} />
-                    {loopA !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
-                    {loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopB/duration)*100}%`, width: '2px', background: '#4da6ff', zIndex: 10 }} />}
-                    {loopA !== null && loopB !== null && duration > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${(loopA/duration)*100}%`, width: `${((loopB-loopA)/duration)*100}%`, background: 'rgba(77, 166, 255, 0.3)' }} />}
-                  </div>
-                  
-                  {/* Interactive Range Slider overlay */}
-                  <input 
-                    type="range"
-                    min={0}
-                    max={duration || 100}
-                    step={0.01}
-                    value={currentTime}
-                    onChange={(e) => handleSeek(Number(e.target.value))}
-                    style={{
-                      position: 'absolute',
-                      width: '100%',
-                      margin: 0,
-                      opacity: 0, /* 透明にして見た目は下のバーを活かしつつ、操作はRangeで受ける */
-                      cursor: 'pointer',
-                      height: '100%'
                     }}
-                  />
+                    title="Guitar Pro用ファイル (.gp5) をダウンロードします"
+                  >
+                    <Download size={16} />
+                    <span>GP5</span>
+                  </button>
+                  <span className="ribbon-label">Guitar Pro</span>
                 </div>
 
-                <span style={{ fontSize: '11px', fontWeight: 'bold', width: '36px' }}>{formatTime(duration)}</span>
-              </div>
+                <div className="ribbon-divider" />
 
-              {/* Right Toolbar Group */}
-              <div style={{ display: 'flex', gap: '2px' }}>
-                {/* 速度 (Speed) */}
-                <button 
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', background: 'transparent', border: 'none', color: speed !== 1.0 ? '#4da6ff' : '#a0a0a5', cursor: 'pointer' }}
-                  onClick={() => setSpeed(s => s === 1.0 ? 0.75 : s === 0.75 ? 0.5 : 1.0)}
-                  title="速度 (クリックで変更)"
-                >
-                  <Activity size={18} />
-                  <span style={{ fontSize: '9px', marginTop: '4px', fontWeight: 'bold' }}>{speed*100}%</span>
-                </button>
-
-                {/* ループ (Loop) */}
-                <button 
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', background: 'transparent', border: 'none', color: (loopA !== null) ? '#22c55e' : '#a0a0a5', cursor: 'pointer' }}
-                  onClick={() => {
-                    if (loopA !== null && loopB !== null) { setLoopA(null); setLoopB(null); }
-                    else if (loopA === null) setLoopA(currentTime);
-                    else if (loopB === null && currentTime > loopA) setLoopB(currentTime);
-                  }}
-                  title={loopA === null ? "ループA点" : loopB === null ? "ループB点" : "ループ解除"}
-                >
-                  <Repeat size={18} />
-                  <span style={{ fontSize: '9px', marginTop: '4px', fontWeight: 'bold' }}>ループ{loopA !== null && loopB === null ? ' (A)' : ''}</span>
-                </button>
-
-                {/* ======= NOISE CUT SLIDER ======= */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: '0 10px', minWidth: '180px' }} title="AIのノイズ除去レベル。右にするほど低velocity音が消えてシンプルになります">
-                  <span style={{ fontSize: '9px', color: '#a0a0a5', fontWeight: 'bold', marginBottom: '2px' }}>CUT: {Math.round(noiseGate * 100)}%</span>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input
-                      type="range" min="0" max="0.8" step="0.05"
-                      value={noiseGate}
-                      onChange={(e) => setNoiseGate(parseFloat(e.target.value))}
-                      style={{ width: '100px', accentColor: '#4da6ff', cursor: 'pointer' }}
-                    />
-                    <button
-                      onClick={async () => {
-                        if (!session?.id) return;
-                        handleRetune(null, null, noiseGate);
-                      }}
-                      style={{
-                        padding: '2px 8px', borderRadius: 6, border: 'none',
-                        background: noiseGate > 0 ? '#4da6ff' : '#334155',
-                        color: 'white', fontSize: 10, fontWeight: 700,
-                        cursor: 'pointer', whiteSpace: 'nowrap',
-                      }}
-                    >適用</button>
-                  </div>
+                {/* MusicXML */}
+                <div className="ribbon-item">
+                  <button 
+                    className="ribbon-action-btn"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch(`${API_BASE}/result/${session.id}/musicxml`);
+                        if (!res.ok) throw new Error("取得失敗");
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.musicxml`;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                      } catch(e) { _showToast("MusicXML: " + e.message); }
+                    }}
+                    title="MusicXMLファイルをダウンロードします"
+                  >
+                    <Download size={16} />
+                    <span>XML</span>
+                  </button>
+                  <span className="ribbon-label">MusicXML</span>
                 </div>
 
+                <div className="ribbon-divider" />
 
+                {/* TuxGuitar */}
+                <div className="ribbon-item">
+                  <button 
+                    className="ribbon-action-btn tux"
+                    onClick={async () => {
+                      const isLocal = API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
+                      if (isLocal) {
+                        try {
+                          const res = await fetch(`${API_BASE}/result/${session.id}/open-tuxguitar`, { method: 'POST' });
+                          if (!res.ok) {
+                            const err = await res.json().catch(() => ({}));
+                            throw new Error(err.detail || "起動失敗");
+                          }
+                          _showToast("TuxGuitarを起動しました");
+                        } catch(e) { _showToast("TuxGuitar: " + e.message); }
+                      } else {
+                        try {
+                          const res = await fetch(`${API_BASE}/result/${session.id}/gp5`);
+                          if (!res.ok) throw new Error("取得失敗");
+                          const blob = await res.blob();
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${(session.fileName || 'tab').replace(/\.[^.]+$/, '')}.gp5`;
+                          a.style.display = 'none';
+                          document.body.appendChild(a);
+                          a.click();
+                          setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+                          _showToast("GP5をダウンロードしました");
+                        } catch(e) { _showToast("GP5: " + e.message); }
+                      }
+                    }}
+                    title="ローカルのTuxGuitarを起動、またはGP5をダウンロードします"
+                  >
+                    <Music size={16} />
+                    <span>Tux</span>
+                  </button>
+                  <span className="ribbon-label">TuxGuitar</span>
+                </div>
               </div>
             </div>
 
-            {/* TAB View (Pushed up to allow space for the player bar without overlap) */}
-            <div className="tab-container" style={{ paddingBottom: '64px' }}>
+            {/* TAB View */}
+            <div className="tab-container" style={{ paddingBottom: 0 }}>
               <TabView
                 key={retuneKey}
                 sessionId={session.id}
@@ -1267,6 +1394,9 @@ export default function SoloTabApp() {
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+      <footer style={{ padding: '12px 0', textAlign: 'center', fontSize: '0.7rem', color: 'rgba(255,255,255,0.25)', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 'auto' }}>
+        © 2026 <a href="https://baseline-designs.com" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">BaseLineDesigns Inc.</a> All rights reserved.
+      </footer>
     </div>
   );
 }

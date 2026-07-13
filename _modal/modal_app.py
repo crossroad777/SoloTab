@@ -157,20 +157,22 @@ def solotab_api():
                     print(f"[save] Volume commit warning: {e}")
 
     def load_session(sid):
-        """Volume からセッションを復元"""
-        if sid in sessions:
-            return sessions[sid]
+        """Volume から最新のセッションを復元。コンテナ間で同期するため、常にVolumeを確認する。"""
+        try:
+            session_vol.reload()
+        except Exception as e:
+            print(f"[load_session] Volume reload warning: {e}")
         sd = UPLOAD_DIR / sid
         sp = sd / "session.json"
-        if not sp.exists():
-            try:
-                session_vol.reload()
-            except Exception as e:
-                print(f"[load_session] Volume reload warning: {e}")
         if sp.exists():
-            s = json.loads(sp.read_text(encoding="utf-8"))
-            sessions[sid] = s
-            return s
+            try:
+                s = json.loads(sp.read_text(encoding="utf-8"))
+                sessions[sid] = s
+                return s
+            except Exception as e:
+                print(f"[load_session] Read json error: {e}")
+        if sid in sessions:
+            return sessions[sid]
         return None
 
     def load_all_sessions():
@@ -189,13 +191,50 @@ def solotab_api():
 
     load_all_sessions()
 
+    def preload_models():
+        try:
+            print("[Lifespan] Starting background model preloading...", flush=True)
+            from pure_moe_transcriber import _DOMAINS, _FULL_STAGES, _CACHED_MODELS
+            from model import architecture
+            import torch
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            
+            models_to_load = []
+            for dname in _DOMAINS:
+                for suffix in _FULL_STAGES:
+                    candidate = f"finetuned_{dname}_{suffix}"
+                    candidate_path = f"/app/music-transcription/python/_processed_guitarset_data/training_output/{candidate}/best_model.pth"
+                    if os.path.exists(candidate_path):
+                        models_to_load.append((candidate, candidate_path))
+            
+            for name, path in models_to_load:
+                if name not in _CACHED_MODELS:
+                    print(f"[Lifespan] Preloading {name}...", flush=True)
+                    model = architecture.GuitarTabCRNN(
+                        num_frames_rnn_input_dim=1280, rnn_type="GRU", 
+                        rnn_hidden_size=768, rnn_layers=2, rnn_dropout=0.3, rnn_bidirectional=True
+                    )
+                    state_dict = torch.load(path, map_location=device, weights_only=True)
+                    if list(state_dict.keys())[0].startswith("module."):
+                        state_dict = {k[7:]: v for k, v in state_dict.items()}
+                    model.load_state_dict(state_dict, strict=False)
+                    model.to(device)
+                    model.eval()
+                    _CACHED_MODELS[name] = model
+            print(f"[Lifespan] Successfully preloaded {len(_CACHED_MODELS)} models.", flush=True)
+        except Exception as e:
+            print(f"[Lifespan] Failed to preload models: {e}", flush=True)
+
     @asynccontextmanager
-    async def lifespan(_): yield
+    async def lifespan(_):
+        import threading
+        threading.Thread(target=preload_models, daemon=True).start()
+        yield
 
     fa = FastAPI(title="SoloTab API", version="2.0.0", lifespan=lifespan)
     fa.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://solotab.vercel.app", "http://localhost:5173", "http://localhost:3000", "http://localhost:8001"],
+        allow_origins=["https://solotab.vercel.app", "http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://localhost:8001"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -360,8 +399,8 @@ def solotab_api():
                     s["progress"] = info[1]
                 if info[0] is not None:
                     s["steps_done"] = info[0]
-                # commit は重いので省略、save のみ
-                save(sid, commit=False)
+                # 進捗は他のコンテナに即座に伝える必要があるため、commit=True にする
+                save(sid, commit=True)
 
             from pipeline import run_pipeline
 
@@ -678,6 +717,62 @@ def solotab_api():
         backing_notes.sort(key=lambda x: float(x.get("start", 0)))
         return melody_notes, backing_notes
 
+    def _patch_gp5_note(sid, note_data, old_fret, old_string, new_fret, new_string):
+        """既存GP5ファイルの該当ノートだけを直接書き換える（全体再生成を回避）"""
+        try:
+            import guitarpro as gp
+            s = load_session(sid)
+            if s is None:
+                return False
+            sd = Path(s["session_dir"])
+            gp5_path = sd / "tab.gp5"
+            if not gp5_path.exists():
+                print(f"[_patch_gp5_note] GP5 file not found")
+                return False
+
+            song = gp.parse(str(gp5_path))
+            target_bar = note_data.get("bar")
+
+            patched = False
+            for track in song.tracks:
+                for measure in track.measures:
+                    for voice in measure.voices:
+                        for beat in voice.beats:
+                            for note in beat.notes:
+                                if note.value == old_fret and note.string == old_string:
+                                    if target_bar is not None:
+                                        header_num = measure.header.number if hasattr(measure, 'header') and hasattr(measure.header, 'number') else None
+                                        if header_num is not None and header_num != target_bar:
+                                            continue
+                                    note.value = new_fret
+                                    note.string = new_string
+                                    patched = True
+                                    print(f"[_patch_gp5_note] Patched: fret {old_fret}→{new_fret}, string {old_string}→{new_string}, bar {target_bar}")
+                                    break
+                            if patched: break
+                        if patched: break
+                    if patched: break
+                if patched: break
+
+            if patched:
+                gp.write(song, str(gp5_path))
+                try:
+                    gp.write(song, str(sd / "tab.gp4"))
+                except Exception:
+                    pass
+                # notes_assigned.json も更新
+                np_ = sd / "notes_assigned.json"
+                notes_data = json.loads(np_.read_text(encoding="utf-8"))
+                np_.write_text(json.dumps(notes_data, ensure_ascii=False, indent=2), encoding="utf-8")
+                return True
+            else:
+                print(f"[_patch_gp5_note] No match found (fret={old_fret}, string={old_string}, bar={target_bar})")
+                return False
+        except Exception as e:
+            print(f"[_patch_gp5_note] Error: {e}")
+            import traceback; traceback.print_exc()
+            return False
+
     def _regenerate_tab(sid, notes, tuning=None, noise_gate=None):
         """notes → tab.gp5 + tab.musicxml + tab.gp4 を一括再生成する"""
         s = load_session(sid)
@@ -869,6 +964,7 @@ def solotab_api():
         if actual_index < 0 or actual_index >= len(notes_data):
             raise HTTPException(400, f"Invalid note index: {actual_index}")
 
+        note_before_edit = dict(notes_data[actual_index])  # 編集前のノート情報を保存
         if body.get("delete"):
             # ノート削除
             notes_data.pop(actual_index)
@@ -898,8 +994,26 @@ def solotab_api():
                 note["pitch"] = tuning[string_idx] + capo_val + new_fret
             note["fret"] = new_fret
 
-        # 一括再生成
-        _regenerate_tab(sid, notes_data)
+        # 編集 vs 削除で処理を分ける
+        if body.get("delete"):
+            # 削除の場合は全体再生成が必要
+            _regenerate_tab(sid, notes_data)
+        else:
+            # 編集の場合: GP5を直接パッチ（楽譜レイアウトを保持）
+            old_fret_val = int(note_before_edit.get("fret", 0))
+            old_string_val = int(note_before_edit.get("string", 1))
+            new_fret_val = int(notes_data[actual_index].get("fret", 0))
+            new_string_val = int(notes_data[actual_index].get("string", 1))
+            # notes_assigned.json を先に保存
+            np_.write_text(json.dumps(notes_data, ensure_ascii=False, indent=2), encoding="utf-8")
+            patched = _patch_gp5_note(
+                sid, note_before_edit,
+                old_fret=old_fret_val, old_string=old_string_val,
+                new_fret=new_fret_val, new_string=new_string_val,
+            )
+            if not patched:
+                print(f"[edit_note] GP5 patch failed, falling back to full regeneration")
+                _regenerate_tab(sid, notes_data)
 
         # Volume同期
         try:

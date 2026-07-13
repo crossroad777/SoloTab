@@ -181,21 +181,32 @@ def detect_techniques(
                 if tech:
                     curr["technique"] = tech
 
-    # --- ナチュラルハーモニクス（フレット位置ベース）---
-    for note in notes:
-        if not note.get("technique") or note["technique"] == "normal":
-            if note.get("fret") in NH_FRETS:
-                _check_harmonic(note)
+    # --- ハーモニクス全般 of 検出 (nh, ah, th) ---
+    if audio is not None:
+        _detect_all_harmonics(notes, audio, audio_sr)
+    else:
+        # フォールバック (音声がない場合)
+        for note in notes:
+            if not note.get("technique") or note["technique"] == "normal":
+                if note.get("fret") in NH_FRETS:
+                    _check_harmonic(note)
 
     # --- パームミュート（スペクトル重心ベース）---
     if audio is not None and global_f0 is not None:
         _detect_palm_mute_batch(notes, audio, audio_sr)
 
-    # --- ブラッシング/デッドノート（YG Ex-22: ×）---
-    # 音程のない打楽器的なノートを検出する
-    # 方法: PYIN voiced_ratio < 0.3 + スペクトル平坦度 > 0.6
+    # --- パーカッシブテクニックの検出 (x, na, bh) ---
     if audio is not None and global_f0 is not None:
-        _detect_dead_notes(notes, audio, audio_sr, global_f0, global_voiced)
+        _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
+
+    # --- トレモロピッキング検出 ---
+    _detect_tremolo_picking(notes)
+
+    # --- アルペジオ検出 ---
+    _detect_arpeggios(notes)
+
+    # --- ピッキング方向推定 (ダウン/アップ) ---
+    _estimate_picking_directions(notes)
 
     return notes
 
@@ -354,18 +365,48 @@ def _classify_from_f0(
     abs_jump = abs(jump_semi)
     abs_diff = abs(pitch_diff)
 
-    # ── ベンド: F0が上昇してピークを形成し、終点が高い or 元に戻る ──
-    # 開放弦(fret=0)はベンド不可能、ローフレット(1-2)も困難
     prev_fret = prev.get("fret", 0)
     curr_fret = curr.get("fret", 0)
+
+    # ── スライドイン / スライドアウト (F0傾きによる精密判定) ──
+    valid_f0 = f0[~np.isnan(f0)]
+    if len(valid_f0) >= 6:
+        # スライドイン
+        onset_f0 = valid_f0[:2]
+        mid_f0 = valid_f0[2:5]
+        if len(onset_f0) >= 1 and len(mid_f0) >= 1:
+            ratio_in = 12 * np.log2(np.mean(mid_f0) / np.mean(onset_f0)) if np.mean(onset_f0) > 0 else 0
+            if ratio_in >= 1.5 and fret_diff == 0 and curr_fret >= 3:
+                return "slide_in"
+        
+        # スライドアウト
+        mid_out_f0 = valid_f0[-5:-2]
+        offset_f0 = valid_f0[-2:]
+        if len(mid_out_f0) >= 1 and len(offset_f0) >= 1:
+            ratio_out = 12 * np.log2(np.mean(offset_f0) / np.mean(mid_out_f0)) if np.mean(mid_out_f0) > 0 else 0
+            if ratio_out <= -1.5 and fret_diff == 0 and prev_fret >= 3:
+                return "slide_out"
+
+    # ── ベンドのバリエーション (pre-bend / release / quarter) ──
     if (ioi <= bend_max + 0.05
-            and peak_rise >= 0.8        # 0.8半音以上のピーク上昇（誤検出防止）
-            and peak_ratio < 0.85       # ピークが最後でない
-            and pitch_diff == 0         # 同フレット
-            and fret_diff == 0
-            and prev_fret >= 3          # 開放弦・ローフレットはベンド不可
-            and curr_fret >= 3):
-        return "b"
+            and prev_fret >= 3
+            and curr_fret >= 3
+            and fret_diff == 0):
+        
+        # 1. チョーキング (Bend) / チョーキング・リリース (Pre-bend-release)
+        if peak_rise >= 0.8:
+            if pitch_diff == 0:
+                if abs(jump_semi) < 0.4:
+                    return "bend_release"
+                return "b"
+            elif pitch_diff >= 1:
+                return "b"
+        # 2. リリースベンド
+        elif jump_semi <= -0.8:
+            return "release_bend"
+        # 3. クォーターベンド
+        elif 0.25 <= peak_rise < 0.8 and pitch_diff == 0:
+            return "quarter_bend"
 
     # ── H / P: 急峻なジャンプ（線形でない、R²低い）──
     if ioi <= hp_max and abs_diff >= 1 and abs_diff <= 6:
@@ -483,19 +524,18 @@ def _rule_based(
     #     （アルペジオの繰り返し音を誤検出するため）
     #     F0解析がある場合のみベンドを検出する（_classify_from_f0が優先）
     if curr_fret >= 3 and prev_fret >= 3:
-        if 0 < ioi <= bend_max and fret_diff == 0 and pitch_diff >= 1:
-            if pitch_diff == 1:
-                return "b_half"      # H.C: 半音
-            elif pitch_diff == 2:
-                return "b"           # C:   1音
-            elif pitch_diff == 3:
-                return "b_1half"     # 1H.C: 1音半
-            elif pitch_diff >= 4:
-                return "b_2"         # 2C: 2音以上
-        # クォーターベンド: ルールベースでは無効（誤検出が多すぎる）
-        # F0解析（_classify_from_f0）で検出された場合のみ有効
-        # if 0 < ioi <= bend_max and fret_diff == 0 and pitch_diff == 0:
-        #     return "b_quarter"
+        if 0 < ioi <= bend_max and fret_diff == 0:
+            if pitch_diff >= 1:
+                if pitch_diff == 1:
+                    return "b_half"      # H.C: 半音
+                elif pitch_diff == 2:
+                    return "b"           # C:   1音
+                elif pitch_diff == 3:
+                    return "b_1half"     # 1H.C: 1音半
+                elif pitch_diff >= 4:
+                    return "b_2"         # 2C: 2音以上
+            elif pitch_diff <= -1:
+                return "release_bend"
 
 
     return None
@@ -509,28 +549,81 @@ HARMONIC_FRETS = {12: 12, 7: 19, 5: 24}
 DEFAULT_OPEN_STRINGS = [40, 45, 50, 55, 59, 64]
 
 def _check_harmonic(note: dict) -> None:
-    """
-    ナチュラルハーモニクス判定。
-    重要: フレット位置だけでなく弦番号も照合する。
-    フレット5の通常音（例: 2弦5フレット=E4）が
-    6弦のハーモニクスと誤判定されるバグを防ぐ。
-    """
+    """ナチュラルハーモニクス判定 (フォールバック用)"""
     fret = note.get("fret", -1)
     pitch = note.get("pitch", 0)
-    string_num = note.get("string", -1)  # 1=1弦(最高音), 6=6弦(最低音)
+    string_num = note.get("string", -1)
     if fret not in HARMONIC_FRETS:
         return
     expected_harmonic_pitch = HARMONIC_FRETS[fret]
     open_pitch = pitch - expected_harmonic_pitch
     if open_pitch not in DEFAULT_OPEN_STRINGS:
         return
-    # 弦番号と開放弦音高が一致するか確認
     if string_num >= 1 and string_num <= 6:
-        string_idx = 6 - string_num  # 0=6弦(E2), 5=1弦(E4)
+        string_idx = 6 - string_num
         actual_open = DEFAULT_OPEN_STRINGS[string_idx]
         if open_pitch != actual_open:
-            return  # 別の弦のハーモニクスと誤認 → スキップ
+            return
     note["technique"] = "harmonic"
+
+
+def _detect_all_harmonics(
+    notes: List[dict],
+    audio: np.ndarray,
+    sr: int
+) -> None:
+    """ナチュラル、人工(ah)、タッピング(th) ハーモニクスを精密に分類"""
+    try:
+        import librosa
+        DEFAULT_OPEN_STRINGS = [40, 45, 50, 55, 59, 64]
+        NH_FRETS = {5, 7, 12}
+        HARMONIC_FRETS = {12: 12, 7: 19, 5: 24}
+        
+        for note in notes:
+            if note.get("technique") and note["technique"] not in ("normal", ""):
+                continue
+            
+            fret = note.get("fret", 0)
+            pitch = note.get("pitch", 0)
+            string_num = note.get("string", 1)
+            string_idx = 6 - string_num
+            open_pitch = DEFAULT_OPEN_STRINGS[string_idx] if 0 <= string_idx < 6 else 40
+            
+            # 1. ナチュラルハーモニクス (nh / harmonic)
+            if fret in NH_FRETS:
+                expected_harmonic_pitch = HARMONIC_FRETS[fret]
+                if pitch == open_pitch + expected_harmonic_pitch:
+                    note["technique"] = "harmonic"
+                    continue
+            
+            # 2. 人工 / タッピングハーモニクス (ah / th)
+            # 押弦状態で、検出ピッチが理論上のピッチ(open+fret)より12, 19, 24半音高い場合
+            pitch_diff = pitch - (open_pitch + fret)
+            if fret > 0 and pitch_diff in (12, 19, 24):
+                # アタックの瞬峻さによるthとahの識別
+                dur = note["end"] - note["start"]
+                s = max(0, int(note["start"] * sr))
+                e_attack = min(len(audio), int((note["start"] + 0.035) * sr))
+                e_sustain = min(len(audio), int((note["start"] + 0.12) * sr))
+                
+                seg_att = audio[s:e_attack]
+                seg_sus = audio[e_attack:e_sustain]
+                
+                is_sharp_attack = False
+                if len(seg_att) >= 128 and len(seg_sus) >= 128:
+                    rms_att = np.sqrt(np.mean(seg_att**2))
+                    rms_sus = np.sqrt(np.mean(seg_sus**2))
+                    # タッピングは叩く衝撃のためアタック瞬間の振幅が持続音に比べて非常に大きい
+                    if rms_sus > 0 and (rms_att / rms_sus) > 1.7:
+                        is_sharp_attack = True
+                
+                if is_sharp_attack:
+                    note["technique"] = "th"
+                else:
+                    note["technique"] = "ah"
+
+    except Exception as e:
+        print(f"[TechDet] Harmonic detection error: {e}")
 
 
 # =============================================================================
@@ -544,14 +637,9 @@ def _detect_palm_mute_batch(
 ) -> None:
     """
     スペクトル重心を用いてパームミュートを検出する。
-
-    パームミュートの特徴:
-      - スペクトル重心が低い（通常音の 40〜50% 以下）
-      - 持続時間が短い（減衰が速い）
     """
     try:
         import librosa
-        # 全ノートの平均スペクトル重心を基準値として計算
         centroids = []
         for note in notes:
             if note.get("technique") and note["technique"] != "normal":
@@ -584,10 +672,10 @@ def _detect_palm_mute_batch(
 
 
 # =============================================================================
-# ブラッシング / デッドノート (YG Ex-22: ×)
+# パーカッシブテクニック検出 (ブラッシングx / ネイルアタックna / ボディヒットbh)
 # =============================================================================
 
-def _detect_dead_notes(
+def _detect_percussive_techniques(
     notes: List[dict],
     audio: np.ndarray,
     sr:    int,
@@ -595,8 +683,7 @@ def _detect_dead_notes(
     global_voiced: np.ndarray = None,
 ) -> None:
     """
-    ブラッシング（デッドノート）を検出する。
-    ★ 高速化: グローバルF0のvoiced_ratioを使い、per-note pyinを廃止。
+    ピッチ感、スペクトル平坦度、スペクトル重心から、ブラッシング(x)、ネイルna、ボディ叩きbhを精密分類
     """
     try:
         import librosa
@@ -610,7 +697,7 @@ def _detect_dead_notes(
             if dur < 0.02:
                 continue
 
-            # ── 特徴量1: voiced_ratio（グローバルF0からスライス）──
+            # 1. voiced_ratio（ピッチ有無）
             if global_voiced is not None:
                 start_frame = max(0, int(note["start"] * fps))
                 end_frame = min(len(global_voiced), int((note["start"] + min(dur, 0.15)) * fps))
@@ -621,24 +708,32 @@ def _detect_dead_notes(
             else:
                 voiced_ratio = 1.0
 
-            # ── 特徴量2: スペクトル平坦度 ──
+            # 2. スペクトル特徴
             s = max(0, int(note["start"] * sr))
             e = min(len(audio), int((note["start"] + min(dur, 0.15)) * sr))
             seg = audio[s:e]
             if len(seg) < 256:
                 continue
+            
             flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
+            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr).mean())
 
-            # ── 判定ロジック ──
-            is_unvoiced  = voiced_ratio < 0.35
-            is_noisy     = flatness > 0.30  # 0.12は低すぎ（通常音もnoisy判定される）
+            is_unvoiced = voiced_ratio < 0.28
             is_very_short = dur < 0.08
 
-            if (is_unvoiced and is_noisy) or (is_unvoiced and is_very_short):
-                note["technique"] = "x"
+            if is_unvoiced or (voiced_ratio < 0.40 and flatness > 0.35):
+                if centroid < 250.0:
+                    # 空洞共振による極低域のみの打音 -> ボディヒット (bh)
+                    note["technique"] = "bh"
+                elif centroid > 2600.0 and flatness > 0.35:
+                    # 高周波ノイズによるアタック音 -> ネイルアタック (na)
+                    note["technique"] = "na"
+                else:
+                    # 一般的なデッドノート/ブラッシング (x)
+                    note["technique"] = "x"
 
     except Exception as e:
-        print(f"[TechDet] Dead note detection error: {e}")
+        print(f"[TechDet] Percussive detection error: {e}")
 
 
 # =============================================================================
@@ -680,7 +775,108 @@ def add_techniques_to_musicxml_notes(notes: List[dict]) -> List[dict]:
                 notes[ci]["technique"] = "tr"
 
     return notes
-"""
-"""
-"""
-"""
+
+
+# =============================================================================
+# 追加のギター特殊奏法検出 (トレモロ, アルペジオ, ピッキング)
+# =============================================================================
+
+def _detect_tremolo_picking(notes: List[dict]) -> None:
+    """同一ピッチで短いIOIの連打をトレモロピッキングに分類"""
+    if len(notes) < 4:
+        return
+    
+    pitch_groups = {}
+    for idx, note in enumerate(notes):
+        p = note.get("pitch", 0)
+        pitch_groups.setdefault(p, []).append(idx)
+        
+    for p, indices in pitch_groups.items():
+        sorted_indices = sorted(indices, key=lambda i: notes[i]["start"])
+        chain = []
+        for idx in sorted_indices:
+            note = notes[idx]
+            if note.get("technique") and note["technique"] != "normal":
+                if chain:
+                    _apply_tremolo_chain(notes, chain)
+                    chain = []
+                continue
+                
+            if not chain:
+                chain.append(idx)
+            else:
+                prev_note = notes[chain[-1]]
+                ioi = note["start"] - prev_note["start"]
+                if ioi < 0.15:  # 150ms未満 (16分音符の連打相当)
+                    chain.append(idx)
+                else:
+                    _apply_tremolo_chain(notes, chain)
+                    chain = [idx]
+        _apply_tremolo_chain(notes, chain)
+
+def _apply_tremolo_chain(notes: List[dict], chain: List[int]) -> None:
+    if len(chain) >= 4:
+        for idx in chain:
+            notes[idx]["technique"] = "tremolo"
+
+
+def _detect_arpeggios(notes: List[dict]) -> None:
+    """複数弦の極小時間差開始をアルペジオコードとして検出"""
+    if len(notes) < 2:
+        return
+    
+    sorted_notes = sorted(notes, key=lambda n: n["start"])
+    
+    i = 0
+    while i < len(sorted_notes) - 1:
+        arp_group = [sorted_notes[i]]
+        j = i + 1
+        while j < len(sorted_notes):
+            curr = sorted_notes[j]
+            prev = arp_group[-1]
+            diff = curr["start"] - prev["start"]
+            
+            if 0.012 <= diff <= 0.075:
+                used_strings = [n.get("string") for n in arp_group]
+                if curr.get("string") not in used_strings:
+                    arp_group.append(curr)
+                    j += 1
+                else:
+                    break
+            else:
+                break
+        
+        if len(arp_group) >= 3:
+            for n in arp_group:
+                if not n.get("technique") or n["technique"] == "normal":
+                    n["technique"] = "arpeggio"
+            i = j
+        else:
+            i += 1
+
+
+def _estimate_picking_directions(notes: List[dict]) -> None:
+    """拍位置や弦高に基づいてダウン/アップピッキング方向を推定"""
+    sorted_notes = sorted(notes, key=lambda n: n["start"])
+    
+    last_direction = "down"
+    last_time = -999.0
+    
+    for note in sorted_notes:
+        if note.get("pluck_direction"):
+            continue
+            
+        t = note["start"]
+        string_num = note.get("string", 1)
+        
+        if t - last_time < 0.20:
+            direction = "up" if last_direction == "down" else "down"
+        else:
+            if string_num >= 4:
+                direction = "down"
+            else:
+                direction = "up"
+                
+        note["pluck_direction"] = direction
+        last_direction = direction
+        last_time = t

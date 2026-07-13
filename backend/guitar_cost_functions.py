@@ -74,6 +74,9 @@ _DEFAULT_WEIGHTS = {
     # Radicioni CSP (維持)
     "w_radicioni_stretch":     19.4,
     "w_radicioni_independence": 1.0,
+
+    # 開放弦カットオフペナルティ
+    "w_open_string_cutoff":   10.0,
 }
 
 
@@ -469,6 +472,10 @@ def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 14) ->
 
         pattern = (s_prev, s_curr, s_next)
         if pattern in _PIMA_AMA_PATTERNS:
+            current_fret = notes[i].get('fret', 0)
+            if current_fret == 0:
+                continue  # 元が開放弦の場合は、右手PIMA交替回避のためにわざわざ押弦に変える必要はない
+
             # a-m-a detected: try to reassign middle note
             pitch = notes[i].get('pitch', 0)
             # Inline position computation to avoid circular import
@@ -480,7 +487,6 @@ def pima_r5_postprocess(notes: list, tuning: list = None, max_fret: int = 14) ->
                     positions.append((string_num, fret))
 
             # Find an alternative string that breaks the pattern
-            current_fret = notes[i].get('fret', 0)
             best_alt = None
             best_cost = float('inf')
 

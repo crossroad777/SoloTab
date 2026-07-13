@@ -154,7 +154,9 @@ def _load_model(device: torch.device | None = None) -> tuple:
         if list(state_dict.keys())[0].startswith("module."):
             state_dict = {k[7:]: v for k, v in state_dict.items()}
 
-        model.load_state_dict(state_dict)
+        load_result = model.load_state_dict(state_dict, strict=False)
+        if load_result.missing_keys:
+            print(f"[guitar_transcriber] Missing keys (will be randomly initialized): {load_result.missing_keys}")
         model.to(device)
         model.eval()
 
@@ -280,6 +282,136 @@ def _frames_to_notes(
     return notes
 
 
+def _activity_to_notes(
+    activity_probs: np.ndarray,
+    onset_probs: np.ndarray,
+    fret_indices: np.ndarray,
+    tuning_pitches: dict | None = None,
+    onset_threshold: float = DEFAULT_ONSET_THRESHOLD,
+    activity_threshold: float = 0.5,
+) -> list[dict]:
+    """
+    Activity確率からノートを検出する。
+    onset headが見逃した音（アタックのないテクニック音）を補完する。
+    
+    条件: activity_prob > activity_threshold かつ onset_prob < onset_threshold
+    → onset headでは検出されなかったが、音が鳴っている区間を検出。
+    """
+    if tuning_pitches is None:
+        tuning_pitches = OPEN_STRING_PITCHES
+
+    time_per_frame = HOP_LENGTH / SAMPLE_RATE
+    num_frames, num_strings = activity_probs.shape
+    notes = []
+
+    for string_idx in range(num_strings):
+        act = activity_probs[:, string_idx]
+        ons = onset_probs[:, string_idx]
+        
+        # activity > threshold かつ onset < threshold の区間を見つける
+        # （onset headが既に検出したフレームは除外）
+        activity_only = (act > activity_threshold) & (ons < onset_threshold)
+        
+        # 連続するactivity区間をグループ化してノートにする
+        in_note = False
+        note_start = 0
+        
+        for frame_idx in range(num_frames):
+            if activity_only[frame_idx] and not in_note:
+                # ノート開始
+                in_note = True
+                note_start = frame_idx
+            elif not activity_only[frame_idx] and in_note:
+                # ノート終了
+                in_note = False
+                note_end = frame_idx
+                
+                # 最低持続フレーム数チェック
+                if note_end - note_start < MIN_NOTE_DURATION_FRAMES:
+                    continue
+                
+                # フレット値を区間内の最頻値で決定
+                fret_segment = fret_indices[note_start:note_end, string_idx]
+                valid_frets = fret_segment[
+                    (fret_segment != FRET_SILENCE_CLASS) & 
+                    (fret_segment >= 0) & 
+                    (fret_segment <= MAX_FRETS)
+                ]
+                if len(valid_frets) == 0:
+                    continue
+                
+                # 最頻値
+                fret_val = int(np.bincount(valid_frets.astype(int)).argmax())
+                
+                musicxml_string = 6 - string_idx
+                pitch = tuning_pitches[string_idx] + fret_val
+                
+                # activity確率の平均をvelocityに使用
+                avg_activity = float(act[note_start:note_end].mean())
+                
+                notes.append({
+                    "start":    round(note_start * time_per_frame, 4),
+                    "end":      round(note_end * time_per_frame, 4),
+                    "pitch":    int(pitch),
+                    "string":   musicxml_string,
+                    "fret":     fret_val,
+                    "velocity": round(min(0.5 + avg_activity * 0.5, 1.0), 4),
+                    "_source":  "activity",  # デバッグ用タグ
+                })
+        
+        # ループ終了時にノートが続いていた場合
+        if in_note:
+            note_end = num_frames
+            if note_end - note_start >= MIN_NOTE_DURATION_FRAMES:
+                fret_segment = fret_indices[note_start:note_end, string_idx]
+                valid_frets = fret_segment[
+                    (fret_segment != FRET_SILENCE_CLASS) & 
+                    (fret_segment >= 0) & 
+                    (fret_segment <= MAX_FRETS)
+                ]
+                if len(valid_frets) > 0:
+                    fret_val = int(np.bincount(valid_frets.astype(int)).argmax())
+                    musicxml_string = 6 - string_idx
+                    pitch = tuning_pitches[string_idx] + fret_val
+                    avg_activity = float(act[note_start:note_end].mean())
+                    notes.append({
+                        "start":    round(note_start * time_per_frame, 4),
+                        "end":      round(note_end * time_per_frame, 4),
+                        "pitch":    int(pitch),
+                        "string":   musicxml_string,
+                        "fret":     fret_val,
+                        "velocity": round(min(0.5 + avg_activity * 0.5, 1.0), 4),
+                        "_source":  "activity",
+                    })
+
+    notes.sort(key=lambda n: (n["start"], n["pitch"]))
+    return notes
+
+
+def _merge_notes(
+    onset_notes: list[dict],
+    activity_notes: list[dict],
+    overlap_window: float = 0.05,
+) -> list[dict]:
+    """
+    onset検出ノートとactivity検出ノートをマージする。
+    onset_notesと時間的に近い（overlap_window秒以内）activity_notesは除外。
+    """
+    merged = list(onset_notes)
+    
+    for a_note in activity_notes:
+        is_duplicate = False
+        for o_note in onset_notes:
+            if (o_note["string"] == a_note["string"] and
+                abs(o_note["start"] - a_note["start"]) < overlap_window):
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            merged.append(a_note)
+    
+    merged.sort(key=lambda n: (n["start"], n["pitch"]))
+    return merged
+
 def transcribe_guitar(
     wav_path: str,
     *,
@@ -322,6 +454,8 @@ def transcribe_guitar(
     all_onset_probs: list[np.ndarray] = []
     all_fret_preds:  list[np.ndarray] = []
 
+    all_activity_probs: list[np.ndarray] = []
+
     with torch.no_grad():
         start = 0
         while start < total_frames:
@@ -329,9 +463,14 @@ def transcribe_guitar(
             chunk = cqt_features[:, :, start:end]           # [1, N_BINS, chunk_T]
             x = chunk.unsqueeze(0).to(device)               # [1, 1, N_BINS, chunk_T]
 
-            onset_logits, fret_logits = model(x)
-            # onset_logits: [1, reduced_T, 6]
-            # fret_logits:  [1, reduced_T, 6, 22]
+            model_output = model(x)
+            # Support both 2-output (legacy) and 3-output (activity head) models
+            if len(model_output) == 3:
+                onset_logits, fret_logits, activity_logits = model_output
+                activity_probs_chunk = torch.sigmoid(activity_logits[0]).cpu().numpy()
+            else:
+                onset_logits, fret_logits = model_output
+                activity_probs_chunk = None
 
             onset_probs_chunk = torch.sigmoid(onset_logits[0]).cpu().numpy()
             fret_preds_chunk  = torch.argmax(fret_logits[0], dim=-1).cpu().numpy()
@@ -340,9 +479,13 @@ def transcribe_guitar(
                 # 先頭の overlap フレームは前チャンクとの重複部分 → 捨てる [FIX-2]
                 onset_probs_chunk = onset_probs_chunk[overlap:]
                 fret_preds_chunk  = fret_preds_chunk[overlap:]
+                if activity_probs_chunk is not None:
+                    activity_probs_chunk = activity_probs_chunk[overlap:]
 
             all_onset_probs.append(onset_probs_chunk)
             all_fret_preds.append(fret_preds_chunk)
+            if activity_probs_chunk is not None:
+                all_activity_probs.append(activity_probs_chunk)
 
             # 次チャンクは overlap 分だけ手前から始める
             next_start = start + chunk_frames - overlap
@@ -354,14 +497,38 @@ def transcribe_guitar(
     onset_probs_full = np.concatenate(all_onset_probs, axis=0)  # [T', 6]
     fret_preds_full  = np.concatenate(all_fret_preds,  axis=0)  # [T', 6]
 
-    print(f"[guitar_transcriber] Model output frames: {onset_probs_full.shape[0]}")
+    has_activity = len(all_activity_probs) > 0
+    if has_activity:
+        activity_probs_full = np.concatenate(all_activity_probs, axis=0)  # [T', 6]
+    else:
+        activity_probs_full = None
 
+    print(f"[guitar_transcriber] Model output frames: {onset_probs_full.shape[0]}"
+          f"{' (with activity head)' if has_activity else ''}")
+
+    # --- 1. 従来のonsetベース検出 ---
     notes = _frames_to_notes(
         onset_probs_full,
         fret_preds_full,
         tuning_pitches=tuning_pitches,
         onset_threshold=onset_threshold,
     )
+
+    # --- 2. Activityベース補完検出 ---
+    if has_activity:
+        activity_notes = _activity_to_notes(
+            activity_probs_full,
+            onset_probs_full,
+            fret_preds_full,
+            tuning_pitches=tuning_pitches,
+            onset_threshold=onset_threshold,
+            activity_threshold=0.5,
+        )
+        if activity_notes:
+            # onset検出済みノートと重複しないもののみ追加
+            notes = _merge_notes(notes, activity_notes)
+            print(f"[guitar_transcriber] Activity补完: +{len(activity_notes)} candidates, "
+                  f"merged total: {len(notes)}")
 
     # -------------------------------------------------------------------------
     # [FIX-9] 12th Fret Octave Resonance Correction (Harmonic Overdrive)

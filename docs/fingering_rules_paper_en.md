@@ -1496,7 +1496,88 @@ Ensemble changed from ctx=7+15 → **ctx=5+7** for complementary context scales.
 | `backend/optuna_finger_weights.py` | Optuna weight optimization script |
 | `backend/gp5_training/test_finger_assigner.py` | 18-case regression test suite |
 
-### 14.20 References (Section-Specific)
+
+### 14.20 v14.0 to v23.0: Biomechanical Models, Dynamic Right-Hand PIMA, and Constraint-Preserving Optimization
+
+To further bridge the gap between algorithmic tablature generation and actual human performance, a series of improvements (v14.0 to v23.0) were integrated into the constraint engine and weight tuning pipeline.
+
+#### 14.20.1 Biomechanical and Ergonomic Left-Hand Constraints
+1. **Polyphonic Tone Preservation (v14.0)**:
+   Integrated Abel Carlevaro's concept of sound preservation (*Fijación prolongation*). We introduced a sustain finger hold bonus `w_bass_sustain_bonus` to reward transitioning states that keep the same finger on the string while a bass note is sustaining.
+2. **Fret-Width Dependent Position Shift Scaling (v15.0)**:
+   Following Radicioni (2004)'s physical distance model, position shifts at higher frets are physically shorter. We scaled the position shift cost dynamically using `pos_scale = max(0.4, 1.0 - (avg_pos - 1) * 0.05)`, reducing the shifting penalty at higher registers by up to 60%.
+3. **Low-String Tension and Wrist Angle Penalties (v16.0 / v18.0)**:
+   Thick low strings (strings 5 & 6) require higher finger pressure, and fretting them at high registers with weak fingers (ring 3 or pinky 4) forces extreme wrist rotation. We introduced `w_lh_fatigue_penalty` and `w_wrist_angle_penalty` to penalize these biomechanically taxing configurations in both melody DP and chord resolution (`_resolve_chord_conflicts`).
+
+#### 14.20.2 Dynamic Right-Hand PIMA Assignment (v19.0)
+1. **Alternation and Same-Finger Crossing Avoidance**:
+   Replaced the static string-to-finger map with a dynamic assignment engine `_assign_right_hand_fingers`. It enforces right-hand finger alternation (e.g., `a-m` or `i-m`) for rapid repetitions on the same string (< 0.4s) and avoids using the same finger across different strings sequentially (Skarha R1).
+2. **Chord Finger Duplication Avoidance**:
+   Simultaneous notes (chords) are sorted and assigned unique right-hand fingers (prioritizing `p` for low bass and `a, m, i` for high strings) to prevent anatomically impossible duplicate finger plucks.
+3. **Bi-directional Coordination**:
+   The dynamic right-hand PIMA assignment is run before left-hand Viterbi DP, enabling coordination costs (such as left-hand shift/right-hand repeat penalty) to function with realistic right-hand data.
+
+#### 14.20.3 Constraint-Preserving Objective for Large-Scale Tuning (v21.0 to v23.0)
+1. **Cached Annotation Loader (v21.0)**:
+   Added fallback support in `optuna_finger_weights.py` to parse `finger_annotated_notes.json` (18,760 notes, 830 phrases mined from GP5 corpus) to enable large-scale optimization without raw files.
+2. **Constraint-Preserving Objective (v23.0)**:
+   Tuning weights directly on large corpus can cause regression on critical edge-case rules. To prevent this, we split the evaluation set into synthetic regression cases and cache data. We penalize trials that fail to achieve 100% synthetic accuracy and optimize using a soft-weighted average score: `score = syn_acc * 0.3 + real_acc * 0.7 + consistency_weight * consistency`.
+
+#### 14.20.4 Final Evaluation Results
+- **Dataset**: **18,945 ground truth notes** (18,760 cache + 185 synthetic)
+- **Regression Tests**: **41 / 41 cases 100% Passed** (including new right-hand PIMA tests)
+- **Real-world Accuracy (Baseline)**: **84.4%** (Consistency: 0.847)
+
+
+### 14.21 v24.0: Formulation of the "Unified Hybrid Fingering Model" Integrating Music Theory, Biomechanics, and GP5 Data-Driven Priors
+
+To address the user's request for deeper music theory and data-driven learning, we formulated the "Scale Position Box," "Chord Voice Leading," and "GP5 Corpus N-gram Priors," and integrated them into the Viterbi transition/emission engine alongside the biomechanical models of Sayegh (1989) and Radicioni (2005).
+
+#### 14.21.1 Expansion of the Emission Cost Function
+The emission cost \(C_{emit}(n, f, p)\) (cost of assigning finger \(f\) and position \(p\) to note \(n\)) was updated to include scale box matching rewards and string-finger priors:
+
+\[
+C_{emit}(n, f, p) = C_{base}(n, f, p) + S_{scale}(n, f) + P_{string}(n, f)
+\]
+
+Where:
+- \(S_{scale}(n, f)\): If the note sequence matches a standard scale box (e.g., Pentatonic Box 1), it rewards matching the suggested pedagogical finger \(f_{sug}\):
+  \[
+  S_{scale}(n, f) = \begin{cases} w_{scale\_box\_bonus} & (f = f_{sug}) \\ 0 & (\text{otherwise}) \end{cases}
+  \]
+- \(P_{string}(n, f)\): Rewards the prior probability \(Pr(f|s)\) of using finger \(f\) on string \(s\) derived from chords-db (3,283 voicings):
+  \[
+  P_{string}(n, f) = - w_{string\_finger\_prior} \cdot Pr(f | \text{string}(n))
+  \]
+
+#### 14.21.2 Expansion of the Transition Cost Function
+The transition cost \(C_{trans}(f, f_{prev}, p, p_{prev}, n, n_{prev})\) was updated to integrate voice leading rules and data-driven N-gram priors:
+
+\[
+C_{trans} = C_{phys} + V_{voice\_leading} + T_{gp5\_prior}
+\]
+
+1. **Voice Leading Costs \(V_{voice\_leading}\)**:
+   - **Common Tone Retention**: A reward applied when consecutive notes share the same pitch class \(pc\) and are played with the same finger and position:
+     \[
+     V_{common} = \begin{cases} w_{common\_tone\_bonus} & (pc(n) = pc(n_{prev}) \land f = f_{prev} \land p = p_{prev}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+   - **Conjunct Bass Line**: A reward applied when bass notes (on strings 5 & 6) transition smoothly (half/whole step) and a penalty applied for large jumps of an octave or more:
+     \[
+     V_{bass} = \begin{cases} w_{conjunct\_bass\_bonus} & (0 < |\Delta pitch| \le 2) \\ w_{disjunct\_bass\_penalty} & (|\Delta pitch| \ge 12) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+2. **GP5 N-gram Transition Prior \(T_{gp5\_prior}\)**:
+   - A logarithmic reward based on the frequency \(Count_{run}\) of the 2-note transition run (\(s\)-\(fret_{prev}\)-\(fret\) - e.g., 6-2-2) mined from the 4.8-million-note GP5 corpus. This biases Viterbi DP toward fingerings commonly preferred by human guitarists:
+     \[
+     T_{gp5\_prior} = \begin{cases} w_{data\_prior} \cdot \log(\max(2.0, Count_{run})) & (\text{if matched in GP5 database}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+#### 14.21.3 Evaluation Results
+- **Regression Tests**: With the addition of new scale box matching and voice leading tests, the system achieved **53 / 53 Passed (100% Pass Rate)**. This ensures that the new musical and data-driven rules function safely without causing regressions in core ergonomic constraints.
+
+
+### 14.22 References (Section-Specific)
 
 1. Sayegh, S. I. (1989). "Fingering for String Instruments with the Optimum Path Paradigm." *Computer Music Journal*, 13(3), 76-84.
 2. Miura, M. et al. (2004). "Constructing a System for Finger-Position Determination and Tablature Generation." *IEICE Trans. Info. Sys.*

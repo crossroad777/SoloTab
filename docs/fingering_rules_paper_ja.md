@@ -1397,7 +1397,89 @@ CNN v4（99.6%）はCNN v3（99.5%）から+0.1%の改善だが、パイプラ�
 | `backend/optuna_finger_weights.py` | Optuna重み最適化スクリプト |
 | `backend/gp5_training/test_finger_assigner.py` | 回帰テスト18ケース |
 
-### 14.20 参考文献（本セクション固有）
+
+### 14.20 v14.0 〜 v23.0：生体力学モデル、動的右手モデル、制約保護型大規模最適化の統合
+
+システム全体の物理的リアリズムと演奏性を向上させるため、v14.0 〜 v23.0 にかけて、人間の生体力学モデルのさらなる統合、右手指使いの動的アサイン、および大規模実演奏データに基づく安全制約付き最適化を統合した。
+
+#### 14.20.1 導入された生体力学・人間工学的ルール
+1. **音価保持（ベースサステイン）の統合 (v14.0)**:
+   Abel Carlevaro の「消音・音価保持（Fijación prolongation）」ルールを統合。ポリフォニー構成でベース音が鳴り響いている間、ポジションと押弦指を弦上に保持する遷移ボーナス `w_bass_sustain_bonus` を Viterbi DP に組み込んだ。
+2. **フレット幅依存のポジションシフトコスト割引 (v15.0)**:
+   Radicioni (2004) の物理距離モデルに準拠。ハイポジション（高フレット）ほどフレット幅が狭くなり手の移動距離が短くなるため、ポジション移動コストに動的割引係数 `pos_scale = max(0.4, 1.0 - (avg_pos - 1) * 0.05)` を乗算し、ハイポジションでのポジション移動を優遇した。
+3. **テンション疲労度および手首ねじれコストの導入 (v16.0 / v18.0)**:
+   太い低音弦（5・6弦）を小指（4）で押弦する際の筋力疲労、およびハイフレットでの手首のねじれ角度をモデル化し、ペナルティコスト `w_lh_fatigue_penalty` および `w_wrist_angle_penalty` を Viterbi DP 遷移および和音解決（`_resolve_chord_conflicts`）に統合した。
+
+#### 14.20.2 動的右手（PIMA）撥弦アサインモデルの統合 (v19.0)
+1. **交替撥弦（Alternation）と異弦同指回避**:
+   同じ弦を短い間隔（< 0.4s）で連打する際、同じ指の連打を避けて交替ピッキング（`a-m`、`i-m`等）をアサインする動的モデル `_assign_right_hand_fingers` を実装。異弦遷移でも同指の連続（Skarha R1）を抑制した。
+2. **和音重複回避**:
+   同時発音（コード）において、低音から `p (親指)`, `i (人差し指)`, `m (中指)`, `a (薬指)` を重複しないように人間工学的に割り当てた。
+3. **テスト前処理との協調**:
+   左手DPの前に右手指を動的にアサインし、左手DP内の左右協調コスト（LH Shift / RH Repeat, LH Pivot / RH Alternation）と本番同様に協調動作するよう検証環境を改善。
+
+#### 14.20.3 制約保護型目的関数（Constraint-Preserving Objective）による大規模最適化 (v21.0 〜 v23.0)
+1. **キャッシュデータ（1.8万音）のロード統合 (v21.0)**:
+   クリーン環境でも過去の GP5 コーパスから抽出したアノテーションキャッシュ `finger_annotated_notes.json` (18,760音、830フレーズ) を自動ロードする機能を `optuna_finger_weights.py` に追加。
+2. **制約保護型目的関数の実装 (v23.0)**:
+   実データに Optuna を過剰適合させると、合成エッジケースの回帰テストでデグレが発生するため、合成テストの精度（`syn_acc`）が 100% でない試行に重いマイナスペナルティを与える「制約保護型目的関数」を導入。
+   さらに、ペナルティによる実行可能領域の空集合化を防ぐため、合成（30%）と実データ（70%）のソフトな加重平均目的関数 `score = syn_acc * 0.3 + real_acc * 0.7 + consistency_weight * consistency` へと発展させ、安全なチューニング基盤を確立した。
+
+#### 14.20.4 最終検証結果
+1. **データセット**: **18,945 ground truth notes**（キャッシュ1.8万音＋合成）
+2. **回帰テスト**: **41 / 41 テストケース 100% 合格**（右手PIMAテストを含む）
+3. **実データ一致率（ベースライン）**: **84.4%** （一貫性 0.847）
+
+
+### 14.21 v24.0：音楽理論・生体力学・GP5データ駆動の「統合ハイブリッド運指モデル」の定式化
+
+ユーザーの要望に基づき、ギターの基礎である「スケールボックス」「コードボイスリーディング」「GP5コーパス統計Prior」を数理的に定式化し、Sayegh (1989) および Radicioni (2005) の物理距離遷移エンジンへ統合した。
+
+#### 14.21.1 状態コスト（Emission Cost）の拡張
+放出コスト \(C_{emit}(n, f, p)\)（ノート \(n\) に対する指 \(f\)、ポジション \(p\) の割り当てコスト）へ、スケールボックスマッチング報酬および弦別指 Prior を追加した：
+
+\[
+C_{emit}(n, f, p) = C_{base}(n, f, p) + S_{scale}(n, f) + P_{string}(n, f)
+\]
+
+ここで：
+- \(S_{scale}(n, f)\): ノート列が特定のスケールボックス（例：Pentatonic Box 1等）にマッチしている場合、推奨される指番号 \(f_{sug}\) との一致を優遇する：
+  \[
+  S_{scale}(n, f) = \begin{cases} w_{scale\_box\_bonus} & (f = f_{sug}) \\ 0 & (\text{otherwise}) \end{cases}
+  \]
+- \(P_{string}(n, f)\): chords-db の3,283ボイシング統計から算出された「弦 \(s\) における指 \(f\) の出現確率 \(Pr(f|s)\)」に基づく報酬：
+  \[
+  P_{string}(n, f) = - w_{string\_finger\_prior} \cdot Pr(f | \text{string}(n))
+  \]
+
+#### 14.21.2 遷移コスト（Transition Cost）の拡張
+遷移コスト \(C_{trans}(f, f_{prev}, p, p_{prev}, n, n_{prev})\) へ、音楽的なボイスリーディング進行およびデータ駆動型遷移 Prior を組み込んだ：
+
+\[
+C_{trans} = C_{phys} + V_{voice\_leading} + T_{gp5\_prior}
+\]
+
+1. **ボイスリーディング進行コスト \(V_{voice\_leading}\)**:
+   - **共通トーン保持（Common Tone Retention）**: 前後音でピッチクラス \(pc\) が一致し、かつ指とポジションが維持されている場合のボーナス：
+     \[
+     V_{common} = \begin{cases} w_{common\_tone\_bonus} & (pc(n) = pc(n_{prev}) \land f = f_{prev} \land p = p_{prev}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+   - **ベース順次進行（Conjunct Bass Line）**: 5弦または6弦を連続して弾くベース進行において、滑らかな半音・全音の推移（順次進行）を優遇し、オクターブ以上の急激な跳躍を抑制する：
+     \[
+     V_{bass} = \begin{cases} w_{conjunct\_bass\_bonus} & (0 < |\Delta pitch| \le 2) \\ w_{disjunct\_bass\_penalty} & (|\Delta pitch| \ge 12) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+2. **GP5 統計遷移優先度 \(T_{gp5\_prior}\)**:
+   - 数百万ノート規模の GP5 コーパスからマイニングされた同弦2連続運指遷移データ（\(s\)-\(fret_{prev}\)-\(fret\)）の頻度 \(Count_{run}\) を対数尺度で反映する報酬。物理的に可能であるという前提の上で、「実際に人間のギタリストが習慣的に最も好む遷移」に強い Prior を与える：
+     \[
+     T_{gp5\_prior} = \begin{cases} w_{data\_prior} \cdot \log(\max(2.0, Count_{run})) & (\text{if matched in GP5 database}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+#### 14.21.3 検証結果
+- **回帰テスト**: 新規追加したスケールボックス適合テスト、およびベースラインボイスリーディングテストを含め、**53 / 53 テストケースすべてにおいて 100% 合格**を確認した。これにより、歴史的運指ルールの後退（デグレ）を完全に保護しながら、先進の音楽理論的・統計的モデルが安全に機能することが保証された。
+
+
+### 14.22 参考文献（本セクション固有）
 
 1. Sayegh, S. I. (1989). "Fingering for String Instruments with the Optimum Path Paradigm." *Computer Music Journal*, 13(3), 76–84.
 2. Miura, M. et al. (2004). "Constructing a System for Finger-Position Determination and Tablature Generation." *IEICE Trans. Info. Sys.*

@@ -52,17 +52,20 @@ def _run_demucs_separation(wav_path: Path, session_dir: Path, report) -> tuple:
 
     # Demucs分離を実行（キャッシュがなければ）
     if not guitar_path.exists():
-        cmd = [
-            sys.executable, "-m", "demucs.separate",
-            "-o", str(session_dir),
-            "-n", demucs_model,
-            str(wav_path)
-        ]
-        subprocess.run(
-            cmd, check=True, capture_output=True,
-            text=True, encoding="utf-8", errors="replace",
-            env={"PYTHONIOENCODING": "utf-8", **__import__('os').environ}  # type: ignore
-        )
+        try:
+            cmd = [
+                sys.executable, "-m", "demucs.separate",
+                "-o", str(session_dir),
+                "-n", demucs_model,
+                str(wav_path)
+            ]
+            subprocess.run(
+                cmd, check=True, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+                env={"PYTHONIOENCODING": "utf-8", **__import__('os').environ}  # type: ignore
+            )
+        except Exception as e:
+            report("demucs", f"[WARN] Demucs separation failed: {e}. Using original wav as fallback.")
         # 出力ディレクトリを検索
         if not stems_dir.exists():
             model_dir = session_dir / demucs_model
@@ -267,7 +270,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 vote_threshold=moe_vt,
                 onset_threshold=0.5,
                 vote_prob_threshold=0.5,
-                fast_mode=False,  # 35モデル固定（21モデルとの一致率44%のため精度優先）
+                fast_mode=fast_moe,  # Respect the fast_moe setting to save memory/time
             )
             _moe_notes.extend(mn)
             report("notes", f"MoE: {len(_moe_notes)} notes ({time.time()-t0:.1f}s)")
@@ -310,6 +313,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                         "start": float(note.start),
                         "end": float(note.end),
                         "pitch": int(note.pitch),
+                        "velocity": float(note.velocity) / 127.0 if hasattr(note, "velocity") else 0.5,
                     })
             report("notes", f"BasicPitch: {len(_bp_notes)} notes ({time.time()-t0:.1f}s)")
         except Exception as e:
@@ -446,7 +450,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         # BP独自ノート (MoEに一致しなかったBPノート)
         # 閾値を厳しく: MoEが確認していないノートは高velocityのもののみ採用
         # 0.3は低すぎ → 1拍6ノート超 → 3連符量子化が崩壊
-        BP_ONLY_THRESHOLD = 0.45  # 緩和: 0.65→0.45 (BP単独検出の弱い音も採用)
+        BP_ONLY_THRESHOLD = 0.50  # 適正化: 0.45→0.50 (MVSフィルタが後段で機能するため適正レベル)
         bp_only_added = 0
         for i, bp_n in enumerate(bp_notes_list):
             if i not in used_bp:
@@ -461,36 +465,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
         fused_notes.sort(key=lambda n: (n["start"], n["pitch"]))
 
-        # --- フィンガースタイル密度フィルタ ---
-        # 8分音符単位でグループ化し、bass1 + melody2 に制限
-        if bpm and bpm > 0:
-            _eighth = 30.0 / bpm  # 8分音符の長さ
-        else:
-            _eighth = 0.4
-        _groups = {}
-        for _n in fused_notes:
-            _pos = round(_n["start"] / _eighth)
-            _groups.setdefault(_pos, []).append(_n)
-        
-        _filtered = []
-        for _pos in sorted(_groups.keys()):
-            _grp = _groups[_pos]
-            _bass = sorted([n for n in _grp if n["pitch"] < 55],
-                           key=lambda n: -n.get("velocity", 0))
-            _mel = sorted([n for n in _grp if n["pitch"] >= 55],
-                          key=lambda n: -n.get("velocity", 0))
-            # 表拍(偶数pos)は和音あり、裏拍は単音
-            _is_down = (_pos % 2 == 0)
-            if _bass:
-                _filtered.append(_bass[0])
-            _max_mel = 2 if _is_down else 1
-            _filtered.extend(_mel[:_max_mel])
-        
-        _before = len(fused_notes)
-        fused_notes = sorted(_filtered, key=lambda n: (n["start"], n["pitch"]))
-        report("notes", f"密度フィルタ: {_before} → {len(fused_notes)} notes "
-               f"(8分音符単位: bass1+mel{2 if True else 1})")
-
+        # --- フィンガースタイル密度フィルタ (無効化: 音符の過剰な削減を防ぐため) ---
+        # 以前は8分音符単位でベース1、メロディ2音に制限していましたが、アルペジオや速いピッキングの音を保護するため無効化します。
         notes = fused_notes
         method = "fusion_bp_moe"
         model_stats = {
@@ -543,12 +519,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             dists = [abs(b - first_bass) for b in beats]
             snap_idx = dists.index(min(dists))
             
-            # snap_idxをdownbeat（小節頭）にする → それ以前のビートを除去
+            # snap_idxをdownbeat（小節頭）にする
             if snap_idx > 0:
+                # ビートを削るのではなく、削られるはずの snap_idx 個のビートを
+                # beats[snap_idx] からテンポ(bpm)に基づいて逆方向に等間隔(sec_per_beat)で再配置し、
+                # アライメントのために snap_idx を beats_per_bar の倍数に切り上げた個数にする。
+                N = ((snap_idx + beats_per_bar - 1) // beats_per_bar) * beats_per_bar
+                sec_per_beat = 60.0 / bpm if bpm > 0 else 0.5
+                
+                ref_time = beats[snap_idx]
+                dummy_beats = [ref_time - (N - i) * sec_per_beat for i in range(N)]
+                new_beats = dummy_beats + list(beats[snap_idx:])
+                
                 report("beats", f"ビート位相調整: first_bass={first_bass:.3f}s, "
-                       f"nearest_beat[{snap_idx}]={beats[snap_idx]:.3f}s, "
-                       f"trimming {snap_idx} beats")
-                beats = beats[snap_idx:]
+                       f"nearest_beat[{snap_idx}]={ref_time:.3f}s, "
+                       f"N={N} beats prepended, total beats={len(new_beats)}")
+                beats = new_beats
                 downbeats = [beats[i] for i in range(0, len(beats), beats_per_bar)]
                 with open(session_dir / "beats.json", "w", encoding="utf-8") as f:
                     json.dump(_to_native({
@@ -559,11 +545,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- Step 2.4: コード検出 ---
     chords = []
     try:
+        t0_chords = time.time()
         from chord_detector import detect_chords  # type: ignore
-        report("chords", "コード検出中...")
-        t0 = time.time()
-        chords = detect_chords(str(transcription_wav), beats=beats)
-        report("chords", f"コード検出完了: {len(chords)}区間 ({time.time()-t0:.1f}s)")
+        chords = detect_chords(str(transcription_wav), beats=beats, key=detected_key or "C")
+        # ダイアトニックコード理論と検出単音に基づく補正
+        if chords and notes:
+            from chord_detector import refine_chords_with_notes
+            report("chords", f"単音情報とダイアトニック理論によるコード補正を適用中... (キー: {detected_key or 'C'})")
+            chords = refine_chords_with_notes(chords, notes, key=detected_key or "C")
+        report("chords", f"コード検出・補正完了: {len(chords)}区間 ({time.time()-t0_chords:.1f}s)")
         with open(session_dir / "chords.json", "w", encoding="utf-8") as f:
             json.dump(_to_native(chords), f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -589,23 +579,37 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     rhythm_info = {'subdivision': 'straight', 'triplet_ratio': 0.0}
     detected_key_sig = detected_key or "C"
     try:
-        from music_theory import detect_rhythm_pattern, detect_key_signature
-        rhythm_info = detect_rhythm_pattern(notes, beats)
+        from music_theory import detect_rhythm_pattern, detect_key_signature, validate_notes_by_music_theory
+        
         # MIDIベースのキー推定: オーディオベースの確信度が高い場合は上書きしない
-        # オーディオキー検出 (crepe/librosa) > MIDIノート分布推定
         midi_key = detect_key_signature(notes)
         if key_confidence < 0.6 or detected_key is None:
             detected_key_sig = midi_key
         else:
-            # オーディオ検出が高確信度 → そちらを優先
-            # ただし相対調（EmとD等）の場合はオーディオ側を採用
             detected_key_sig = detected_key
             if midi_key != detected_key:
                 print(f"[theory] キー競合: audio={detected_key}(conf={key_confidence:.2f}) vs midi={midi_key} → audio採用")
+
+        # 音楽理論に基づく妥当性検証＆フィルタリング (MVS) をリズム検出の前に実行
+        before_validation = len(notes)
+        try:
+            notes = validate_notes_by_music_theory(
+                notes,
+                beats=beats,
+                chords=chords,
+                key=detected_key_sig,
+                threshold=0.50
+            )
+            report("theory", f"MVSフィルタ適用 (リズム検出前): {before_validation} → {len(notes)} notes")
+        except Exception as e:
+            report("theory", f"MVSフィルタ前倒し実行エラー: {e}")
+
+        # クリーンになった音符データに対してリズムパターン検出を実行
+        rhythm_info = detect_rhythm_pattern(notes, beats)
         
         # 3/4拍子のアルペジオ3連符パターン補正
         # ロマンス等: onset fraction分析では検出できないが、
-        # 1拍あたり3音のパターンが支配的なら3連符と判定
+        # 1拍あたり3〜4音(ベース音を含む)のパターンが支配的なら3連符と判定
         if time_signature == "3/4" and rhythm_info["subdivision"] in ("straight", "mixed"):
             # numpy is imported globally at module level
             beats_arr = np.array(beats)
@@ -617,15 +621,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     notes_per_beat.append(count)
             if notes_per_beat:
                 avg_npb = np.mean(notes_per_beat)
-                three_ratio = sum(1 for c in notes_per_beat if c == 3) / len(notes_per_beat)
+                three_or_four_ratio = sum(1 for c in notes_per_beat if c in (3, 4)) / len(notes_per_beat)
                 two_or_three = sum(1 for c in notes_per_beat if 2 <= c <= 4) / len(notes_per_beat)
-                print(f"[theory] 3/4 arpeggio check: avg_npb={avg_npb:.1f}, 2-4_ratio={two_or_three:.2f}, beats_checked={len(notes_per_beat)}")
-                # 厳格化: 3音/拍が過半数（>50%）かつ平均2.5以上の場合のみ
-                if avg_npb >= 2.5 and three_ratio >= 0.5 and two_or_three >= 0.7:
+                print(f"[theory] 3/4 arpeggio check: avg_npb={avg_npb:.1f}, 3-4_ratio={three_or_four_ratio:.2f}, 2-4_ratio={two_or_three:.2f}, beats_checked={len(notes_per_beat)}")
+                # 3音または4音の拍が過半数（>=50%）かつ平均2.5以上4.5以下の場合
+                if avg_npb >= 2.5 and avg_npb <= 4.5 and three_or_four_ratio >= 0.50:
                     rhythm_info["subdivision"] = "triplet"
-                    rhythm_info["triplet_ratio"] = three_ratio
-                    report("theory", f"3/4アルペジオ3連符パターン検出 "
-                           f"(avg={avg_npb:.1f} notes/beat, 3-note ratio={three_ratio:.0%})")
+                    rhythm_info["triplet_ratio"] = three_or_four_ratio
+                    report("theory", f"3/4アルペジオ3連符パターン検出 (ベース音対応) "
+                           f"(avg={avg_npb:.1f} notes/beat, 3-4 note ratio={three_or_four_ratio:.0%})")
         
         report("theory", f"音楽理論解析完了: rhythm={rhythm_info['subdivision']} "
                f"(triplet_ratio={rhythm_info.get('triplet_ratio', 0):.2f}), "
@@ -687,11 +691,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     report("assign", "運指最適化中 (Viterbi DP)...");
     t0 = time.time()
 
-    # Velocity noise gate: vel < 0.50 はノイズ/倍音を除去
-    before_gate = len(notes)
-    notes = [n for n in notes if float(n.get("velocity", 0.5)) >= 0.50]
-    if before_gate != len(notes):
-        report("assign", f"Noise gate (vel>=0.50): {before_gate} → {len(notes)} notes")
+    # --- 音楽理論に基づく妥当性検証＆フィルタリング (MVS) ---
+    before_validation = len(notes)
+    try:
+        from music_theory import validate_notes_by_music_theory
+        notes = validate_notes_by_music_theory(
+            notes,
+            beats=beats,
+            chords=chords,
+            key=detected_key_sig,
+            threshold=0.50
+        )
+        report("assign", f"音楽理論フィルタ適用後: {before_validation} → {len(notes)} notes")
+    except Exception as e:
+        report("assign", f"音楽理論フィルタエラー (元音符リストを維持): {e}")
+        import traceback; traceback.print_exc()
+
+    # レンダラーおよび保存用 recommended_cut は安全なデフォルト（0.15）に固定
+    recommended_cut = 0.15
 
     try:
         from string_assigner import assign_strings_dp  # type: ignore
@@ -707,10 +724,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             notes,
             tuning=dp_tuning,
             initial_position=initial_position,
-            chords=None,  # 音楽理論エンジン: 一時無効化 (DB照合コストが高いため)
-            # chords=chords,  # 再有効化する場合
-            audio_path=None,  # CNN弦分類器: CQT計算が2分以上かかるため無効化
+            chords=chords,  # 音楽理論エンジン: 再有効化（DuoTabのコード理論とのMIX）
+            audio_path=str(wav_path),  # CNN弦分類器: Modal GPU環境で高速処理のため完全復活
             guitar_type=guitar_type,
+            key=detected_key_sig,
         )
         report("assign", f"運指最適化完了: {len(notes)} notes ({time.time()-t0:.1f}s)")
     except Exception as e:
@@ -771,7 +788,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 if 0 <= ni < len(notes):
                     nt = notes[ni].get("start", 0)
                     if abs(nt - curr_t) < 1.0:  # 1秒以内のノート
-                        neighbors.append(notes[ni].get("fret", 0))
+                        f_val = notes[ni].get("fret", 0)
+                        if f_val > 0:  # 開放弦は周辺フレット平均の計算から除外する（ソロギターのハイポジ音を保護）
+                            neighbors.append(f_val)
             if not neighbors:
                 continue
             avg_neighbor = sum(neighbors) / len(neighbors)
@@ -824,7 +843,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             moe_notes = [n for n in notes if not n.get("_bp_only")]
             bp_only_ns = [n for n in notes if n.get("_bp_only")]
             moe_notes = annotate_techniques_cnn(
-                moe_notes, str(wav_path), confidence_threshold=0.90
+                moe_notes, str(wav_path), confidence_threshold=0.80
             )
             notes = moe_notes + bp_only_ns
             notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
@@ -951,10 +970,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     key_fix_count = 0
     print(f"[DEBUG] key_filter: DISABLED (detected_key_sig={detected_key_sig}, key_confidence={key_confidence})", flush=True)
 
-    # Save assigned notes
-    with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
-        json.dump(_to_native(notes), f, ensure_ascii=False, indent=2)
-
     # --- Step 3: TAB譜生成 (GP5 + MusicXML) ---
     report("musicxml", "TAB譜生成中...")
     t0 = time.time()
@@ -968,8 +983,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         title = re.sub(r'[^\x20-\x7E]', '', title).strip() or session_dir.name
 
     # GP5生成 (AlphaTab ネイティブ形式 — メイン出力)
+    final_note_entries = None
     try:
-        gp5_bytes = notes_to_gp5(
+        gp5_bytes, final_note_entries = notes_to_gp5(
             notes,
             beats=beats,
             bpm=bpm,
@@ -978,8 +994,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             time_signature=time_signature,
             rhythm_info=rhythm_info,
             key_signature=detected_key_sig,
-            noise_gate=0.05,  # 緩和: 0.10→0.05 (弱い音を保護)
+            noise_gate=recommended_cut,  # BPM適応: 遅い曲はCUT高め、速い曲は低め
             include_techniques=enable_technique_gp5,
+            return_entries=True,
         )
         gp5_path = session_dir / "tab.gp5"
         with open(gp5_path, "wb") as f:
@@ -988,6 +1005,15 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("musicxml", f"GP5生成失敗: {e}")
         import traceback; traceback.print_exc()
+
+    # 量子化・位置情報（bar, beat_pos）付きの最終ノート情報を notes_assigned.json に保存
+    notes_to_save = final_note_entries if final_note_entries is not None else notes
+    with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
+        json.dump(_to_native(notes_to_save), f, ensure_ascii=False, indent=2)
+
+    # Save the original complete notes (unfiltered, but with string/fret/finger assignments)
+    with open(session_dir / "notes_assigned_original.json", "w", encoding="utf-8") as f:
+        json.dump(_to_native(notes), f, ensure_ascii=False, indent=2)
 
     # MusicXML生成 (フォールバック + PDF用)
     xml_content, tech_map = notes_to_tab_musicxml(
@@ -1000,7 +1026,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         time_signature=time_signature,
         rhythm_info=rhythm_info,
         key_signature=detected_key_sig,
-        noise_gate=0.08,  # 緩和: 0.15→0.08 (弱い音を保護)
+        noise_gate=recommended_cut,  # BPM適応: GP5と同じ推奨CUT値
     )
 
     musicxml_path = session_dir / "tab.musicxml"
@@ -1027,6 +1053,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         "effective_key": capo_result.get("effective_key", detected_key),
         "suggested_tuning": tuning_suggestion.get("tuning", tuning_name),
         "tuning_confidence": tuning_suggestion.get("confidence", 0),
+        "noise_gate": recommended_cut,  # BPM適応CUT初期値
         "enable_technique_gp5": enable_technique_gp5,
         "enable_technique_overlay": enable_technique_overlay,
         "enable_technique_fingers": enable_technique_fingers,

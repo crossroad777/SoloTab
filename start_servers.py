@@ -44,14 +44,16 @@ def main():
     
     # --- ゾンビプロセスの確実な掃除 ---
     print("[cleanup] 残存プロセスを掃除中...")
-    _kill_port(8001)
+    _kill_port(8002)
     _kill_port(5174)
     
     import shutil
     from pathlib import Path
 
+    PROJECT_ROOT = Path(__file__).resolve().parent
+
     # 前回セッションの中間生成ファイルを削除（tab_dual, pdf等の古い結果）
-    uploads_dir = Path(r"D:\Music\nextchord-solotab\uploads")
+    uploads_dir = PROJECT_ROOT / "uploads"
     if uploads_dir.exists():
         stale_files = ["tab_dual.musicxml", "tab.pdf"]
         stale_count = 0
@@ -69,9 +71,13 @@ def main():
         if stale_count:
             print(f"[cleanup] 前回セッションの中間ファイル x{stale_count} を削除しました")
 
+    # 仮想環境があれば優先使用し、無ければシステムの python を使用する
+    venv_python = PROJECT_ROOT.parent / "nextchord" / "venv312" / "Scripts" / "python.exe"
+    python_bin = str(venv_python) if venv_python.exists() else "python"
+
     backend_cmd = [
-        "D:\\Music\\nextchord\\venv312\\Scripts\\python.exe",
-        "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001",
+        python_bin,
+        "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002",
         # --reload は削除: ファイル変更のたびにワーカーが再起動し、
         # 処理中のMoE推論(約4分)とSSE接続を強制切断するため。
         # コード変更後はサーバーを手動で再起動すること。
@@ -95,10 +101,10 @@ def main():
     # Windowsでプロセスグループを作ってCtrl+Cでまとめてキルしやすくするフラグ
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
     
-    print("[1/2] Starting Backend...  (Port 8001)")
+    print("[1/2] Starting Backend...  (Port 8002)")
     p_backend = subprocess.Popen(
         backend_cmd,
-        cwd="D:\\Music\\nextchord-solotab\\backend",
+        cwd=str(PROJECT_ROOT / "backend"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=backend_env,
@@ -108,7 +114,7 @@ def main():
     print("[2/2] Starting Frontend... (Port 5174)")
     p_frontend = subprocess.Popen(
         frontend_cmd,
-        cwd="D:\\Music\\nextchord-solotab\\frontend",
+        cwd=str(PROJECT_ROOT / "frontend"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=frontend_env,
@@ -124,7 +130,7 @@ def main():
     t_backend.start()
     t_frontend.start()
     
-    print("\n>>> Done! \n>>> Backend: http://localhost:8001 \n>>> Frontend: http://localhost:5174")
+    print("\n>>> Done! \n>>> Backend: http://localhost:8002 \n>>> Frontend: http://localhost:5174")
     print(">>> 終了時は [Ctrl+C] を押してください。\n")
     
     try:

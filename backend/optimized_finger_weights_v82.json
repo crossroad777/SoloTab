@@ -1,0 +1,37 @@
+{
+  "weights": {
+    "w_cnn_prior": 12.0,
+    "w_offset_rule": 8.0,
+    "w_std_offset": 4.0,
+    "w_position_same": -6.0,
+    "w_position_shift": 25.0,
+    "w_position_shift_free": 3.0,
+    "w_same_finger_diff": 15.0,
+    "w_span_excess": 8.0,
+    "w_tendon_coupling": 5.0,
+    "w_continuity_2fret": -4.0,
+    "w_guide_finger": -5.0,
+    "w_minimax_threshold": 50.0,
+    "w_minimax_excess": 3.0,
+    "w_barre_continuity": -8.0,
+    "w_anchor_penalty": 25.0,
+    "w_chord_pos_bonus": -5.0,
+    "w_finger_cross": 200.0
+  },
+  "finger_accuracy": 0.9823529411764705,
+  "position_consistency": 0.9801075268817204,
+  "baseline_accuracy": 0.9823529411764705,
+  "baseline_consistency": 0.9801075268817204,
+  "n_trials": 200,
+  "n_eval_phrases": 31,
+  "n_eval_notes": 170,
+  "data_sources": {
+    "test": 10,
+    "synthetic": 21
+  },
+  "method": "finger_viterbi_dp_optuna",
+  "timestamp": "2026-05-24 10:23:53",
+  "fixed_weights": {
+    "w_finger_cross": 200.0
+  }
+}

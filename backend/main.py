@@ -9,6 +9,14 @@ NextChord SoloTab — FastAPI Backend
 # type: ignore
 # flake8: noqa
 
+# v2.2: 既知の無害な警告を抑制
+import warnings
+warnings.filterwarnings("ignore", message=".*n_fft.*too large.*")  # librosa short segment
+warnings.filterwarnings("ignore", message=".*urllib3.*chardet.*charset_normalizer.*")  # requests
+warnings.filterwarnings("ignore", message=".*tf.lite.Interpreter is deprecated.*")  # tensorflow
+warnings.filterwarnings("ignore", message=".*Empty filters detected.*")  # librosa mel
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="madmom")  # numpy/madmom
+
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, BackgroundTasks, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -70,105 +78,6 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_all_sessions()
-    # 全モデルを1つのバックグラウンドスレッドで一括プリロード
-    # （サーバー応答をブロックしない。初回リクエストのコールドスタートを回避）
-    import threading
-    def _preload_all():
-        t_total = time.time()
-        loaded = []
-
-        # --- 1. MoEモデル (35個, ~8s, GPU) ---
-        try:
-            t0 = time.time()
-            from pure_moe_transcriber import _FULL_STAGES, _DOMAINS, _CACHED_MODELS
-            import torch
-            mt_dir = os.path.join(os.path.dirname(__file__), "..", "music-transcription", "python")
-            if mt_dir not in sys.path:
-                sys.path.insert(0, mt_dir)
-            from model import architecture  # type: ignore
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            moe_count = 0
-            for dname in _DOMAINS:
-                for suffix in _FULL_STAGES:
-                    key = f"finetuned_{dname}_{suffix}"
-                    path = os.path.join(mt_dir, "_processed_guitarset_data", "training_output", key, "best_model.pth")
-                    if os.path.exists(path) and key not in _CACHED_MODELS:
-                        model = architecture.GuitarTabCRNN(
-                            num_frames_rnn_input_dim=1280, rnn_type="GRU",
-                            rnn_hidden_size=768, rnn_layers=2, rnn_dropout=0.3, rnn_bidirectional=True
-                        )
-                        sd = torch.load(path, map_location=device, weights_only=False)
-                        if list(sd.keys())[0].startswith("module."):
-                            sd = {k[7:]: v for k, v in sd.items()}
-                        model.load_state_dict(sd)
-                        model.to(device)
-                        model.eval()
-                        _CACHED_MODELS[key] = model
-                        moe_count += 1
-            loaded.append(f"MoE×{moe_count} ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"MoE FAIL: {e}")
-
-        # --- 2. madmom ビートプロセッサ (~0.5s, CPU) ---
-        try:
-            t0 = time.time()
-            from beat_detector import _get_beat_processors
-            _get_beat_processors()
-            loaded.append(f"madmom ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"madmom FAIL: {e}")
-
-        # --- 3. CRNN ギターモデル (~1s, GPU) ---
-        try:
-            t0 = time.time()
-            from guitar_transcriber import _load_model
-            _load_model()
-            loaded.append(f"CRNN ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"CRNN FAIL: {e}")
-
-        # --- 4. BTC コードモデル (~0.7s, CPU) ---
-        try:
-            t0 = time.time()
-            btc_dir = r'D:\Music\nextchord\BTC-ISMIR19'
-            if btc_dir not in sys.path:
-                sys.path.insert(0, btc_dir)
-            for cp in [r'D:\Music\nextchord\fastapi-backend']:
-                if cp not in sys.path and os.path.isdir(cp):
-                    sys.path.insert(0, cp)
-            from btc_engine import get_btc_engine
-            get_btc_engine()
-            loaded.append(f"BTC ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"BTC FAIL: {e}")
-
-        # --- 5. CNN弦分類器 (~0.3s, GPU) ---
-        try:
-            t0 = time.time()
-            from string_assigner import _load_string_classifier
-            _load_string_classifier()
-            loaded.append(f"CNN-Str ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"CNN-Str FAIL: {e}")
-
-        # --- 6. BasicPitch ONNX (~2s, CPU) ---
-        try:
-            t0 = time.time()
-            from basic_pitch.inference import predict as bp_predict, Model as BPModel
-            import basic_pitch
-            onnx_model_path = os.path.join(
-                os.path.dirname(basic_pitch.__file__),
-                'saved_models', 'icassp_2022', 'nmp.onnx'
-            )
-            if os.path.exists(onnx_model_path):
-                _bp_model = BPModel(onnx_model_path)
-            loaded.append(f"BasicPitch ({time.time()-t0:.1f}s)")
-        except Exception as e:
-            loaded.append(f"BasicPitch FAIL: {e}")
-
-        print(f"[Preload] All models ready in {time.time()-t_total:.1f}s: {', '.join(loaded)}", flush=True)
-
-    threading.Thread(target=_preload_all, daemon=True).start()
     yield
 
 app = FastAPI(
@@ -180,7 +89,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://solotab.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "http://localhost:8001",
+        "http://127.0.0.1:5174",
+    ],
+    allow_origin_regex=r"https://.*\.trycloudflare\.com|http://192\.168\.\d+\.\d+:\d+|http://10\.\d+\.\d+\.\d+:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -215,13 +132,18 @@ class SessionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+import threading
+_SESSIONS_LOCK = threading.Lock()
 sessions: dict = {}
 
 def save_session(session_id: str):
-    if session_id in sessions:
-        session_dir = Path(sessions[session_id]["session_dir"])
-        with open(session_dir / "session.json", "w", encoding="utf-8") as f:
-            json.dump(sessions[session_id], f, ensure_ascii=False, indent=2)
+    with _SESSIONS_LOCK:
+        if session_id not in sessions:
+            return
+        session_data = dict(sessions[session_id])
+    session_dir = Path(session_data["session_dir"])
+    with open(session_dir / "session.json", "w", encoding="utf-8") as f:
+        json.dump(session_data, f, ensure_ascii=False, indent=2)
 
 SESSION_MAX_COUNT = 20
 
@@ -249,11 +171,14 @@ def load_all_sessions():
             continue
 
     all_sessions.sort(key=lambda x: x[0], reverse=True)
-    for i, item in enumerate(all_sessions):
-        if i >= SESSION_MAX_COUNT:
-            break
-        sid, data = item
-        sessions[sid] = data
+    with _SESSIONS_LOCK:
+        sessions.clear()
+        for i, item in enumerate(all_sessions):
+            if i >= SESSION_MAX_COUNT:
+                # ディレクトリは残すがメモリにはロードしない
+                continue
+            sid, data = item
+            sessions[sid] = data
 
     print(f"[SoloTab] Loaded {min(len(all_sessions), SESSION_MAX_COUNT)} sessions")
 
@@ -327,22 +252,23 @@ async def upload_audio(file: UploadFile = File(...),
         shutil.copy2(str(audio_path), str(wav_path))
 
     # Create session
-    sessions[session_id] = {
-        "session_dir": str(session_dir),
-        "filename": file.filename,
-        "wav_path": str(wav_path),
-        "status": SessionStatus.PENDING,
-        "progress": "アップロード完了",
-        "error": None,
-        "tuning": tuning if tuning in TUNINGS else "standard",
-        "skip_demucs": skip_demucs,
-        "fast_moe": fast_moe,
-        "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
-        "enable_technique_gp5": enable_technique_gp5,
-        "enable_technique_overlay": enable_technique_overlay,
-        "enable_technique_fingers": enable_technique_fingers,
-        "steps_done": 1,
-    }
+    with _SESSIONS_LOCK:
+        sessions[session_id] = {
+            "session_dir": str(session_dir),
+            "filename": file.filename,
+            "wav_path": str(wav_path),
+            "status": SessionStatus.PENDING,
+            "progress": "アップロード完了",
+            "error": None,
+            "tuning": tuning if tuning in TUNINGS else "standard",
+            "skip_demucs": skip_demucs,
+            "fast_moe": fast_moe,
+            "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
+            "enable_technique_gp5": enable_technique_gp5,
+            "enable_technique_overlay": enable_technique_overlay,
+            "enable_technique_fingers": enable_technique_fingers,
+            "steps_done": 1,
+        }
     save_session(session_id)
 
     # Start pipeline in background
@@ -424,16 +350,17 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
     session_dir = UPLOAD_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
-    sessions[session_id] = {
-        "session_dir": str(session_dir),
-        "filename": "YouTube Video",
-        "url": url,
-        "status": SessionStatus.PENDING,
-        "progress": "YouTube音声をダウンロード中...",
-        "error": None,
-        "tuning": request.tuning if request.tuning in TUNINGS else "standard",
-        "guitar_type": request.guitar_type if request.guitar_type in ("auto", "steel", "nylon") else "auto",
-    }
+    with _SESSIONS_LOCK:
+        sessions[session_id] = {
+            "session_dir": str(session_dir),
+            "filename": "YouTube Video",
+            "url": url,
+            "status": SessionStatus.PENDING,
+            "progress": "YouTube音声をダウンロード中...",
+            "error": None,
+            "tuning": request.tuning if request.tuning in TUNINGS else "standard",
+            "guitar_type": request.guitar_type if request.guitar_type in ("auto", "steel", "nylon") else "auto",
+        }
     save_session(session_id)
 
     def process_youtube():
@@ -504,9 +431,19 @@ def _run_pipeline_bg(session_id: str):
         "musicxml": 4, "pdf": 4,
     }
 
+    # ユーザー画面で見せるシンプルな進行メッセージ（デバッグログの混入を防ぐ）
+    DISPLAY_TEXTS = {
+        "beats": "ビート検出中...",
+        "notes": "ノート検出中 (MoE+BP)...",
+        "assign": "弦・フレット最適化中...",
+        "musicxml": "TAB譜生成中...",
+    }
+
     def progress_cb(step: str, msg: str):
-        session["progress"] = msg
         session["_current_step"] = step
+        if step in DISPLAY_TEXTS:
+            session["progress"] = DISPLAY_TEXTS[step]
+            
         # steps_done only increases (never regresses) — critical for parallel execution
         mapped = STEP_MAP.get(step, session.get("steps_done", 0))
         current = session.get("steps_done", 0)
@@ -546,6 +483,7 @@ def _run_pipeline_bg(session_id: str):
         session["key"] = result.get("key")
         session["capo"] = result.get("capo", 0)
         session["suggested_tuning"] = result.get("suggested_tuning")
+        session["noise_gate"] = result.get("noise_gate", 0.10)  # BPM適応CUT初期値
         session["result"] = result
         session["progress"] = "解析完了"
         session["steps_done"] = 4  # 全ステップ完了
@@ -856,9 +794,123 @@ async def get_pdf(session_id: str):
     )
 
 
+def separate_melody_backing(notes: list, beats: list, beats_per_bar: int = 4) -> tuple[list, list]:
+    if not notes or not beats:
+        return notes.copy(), []
+    
+    import numpy as np
+    beats_arr = np.array(beats)
+    
+    from collections import defaultdict
+    beat_groups = defaultdict(list)
+    
+    for n in notes:
+        t = float(n.get("start", n.get("start_time", 0.0)))
+        idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
+        idx = max(0, min(idx, len(beats_arr) - 1))
+        beat_groups[idx].append(n)
+        
+    melody_notes = []
+    backing_notes = []
+    
+    for beat_idx, group in beat_groups.items():
+        candidates = []
+        for n in group:
+            s = int(n.get("string", 1))
+            p = int(n.get("pitch", 60))
+            if s <= 3 and p > 52:
+                candidates.append(n)
+        
+        if candidates:
+            melody_note = max(candidates, key=lambda x: int(x.get("pitch", 0)))
+            for n in group:
+                if n is melody_note:
+                    melody_notes.append(n)
+                else:
+                    backing_notes.append(n)
+        else:
+            for n in group:
+                backing_notes.append(n)
+                
+    melody_notes.sort(key=lambda x: float(x.get("start", 0)))
+    backing_notes.sort(key=lambda x: float(x.get("start", 0)))
+    return melody_notes, backing_notes
+
+
+def _patch_gp5_note(session_id: str, note_data: dict, old_fret: int, old_string: int, new_fret: int, new_string: int, new_pitch: int):
+    """既存GP5ファイルの該当ノートだけを直接書き換える（全体再生成を回避）"""
+    try:
+        import guitarpro as gp
+        s = sessions[session_id]
+        session_dir = Path(s["session_dir"])
+        gp5_path = session_dir / "tab.gp5"
+        if not gp5_path.exists():
+            print(f"[_patch_gp5_note] GP5 file not found, falling back to full regeneration")
+            return False
+
+        song = gp.parse(str(gp5_path))
+
+        target_start = float(note_data.get("start", note_data.get("start_time", 0)))
+        target_bar = note_data.get("bar")
+        target_beat_pos = note_data.get("beat_pos_in_bar", note_data.get("beat_pos"))
+
+        patched = False
+        for track in song.tracks:
+            for measure in track.measures:
+                for voice in measure.voices:
+                    for beat in voice.beats:
+                        for note in beat.notes:
+                            # Match by old fret + old string
+                            if note.value == old_fret and note.string == old_string:
+                                # If we have bar info, check bar number
+                                if target_bar is not None:
+                                    measure_num = measure.number if hasattr(measure, 'number') else None
+                                    header_num = measure.header.number if hasattr(measure, 'header') and hasattr(measure.header, 'number') else None
+                                    current_bar = measure_num or header_num
+                                    if current_bar is not None and current_bar != target_bar:
+                                        continue
+                                # Patch in place
+                                note.value = new_fret
+                                note.string = new_string
+                                patched = True
+                                print(f"[_patch_gp5_note] Patched note: fret {old_fret}→{new_fret}, string {old_string}→{new_string} in bar {target_bar}")
+                                break
+                        if patched:
+                            break
+                    if patched:
+                        break
+                if patched:
+                    break
+            if patched:
+                break
+
+        if patched:
+            gp.write(song, str(gp5_path))
+            # Also update GP4
+            try:
+                gp.write(song, str(session_dir / "tab.gp4"))
+            except Exception:
+                pass
+            print(f"[_patch_gp5_note] GP5 patched successfully")
+            return True
+        else:
+            print(f"[_patch_gp5_note] Could not find matching note (fret={old_fret}, string={old_string}, bar={target_bar}), falling back to full regeneration")
+            return False
+    except Exception as e:
+        print(f"[_patch_gp5_note] Error: {e}")
+        import traceback; traceback.print_exc()
+        return False
+
+
 def _regenerate_musicxml(session_id: str, notes: list,
                          tuning: list = None, noise_gate: float = None):
     """notes → tab.gp5 + tab.musicxml 再生成の共通関数"""
+    # 量子化済みデータは start_time を持ち start が欠落している場合がある
+    # gp_renderer / music_quantizer は n["start"] を参照するため、ここで補完する
+    for n in notes:
+        if "start" not in n and "start_time" in n:
+            n["start"] = n["start_time"]
+
     s = sessions[session_id]
     session_dir = Path(s["session_dir"])
 
@@ -880,6 +932,16 @@ def _regenerate_musicxml(session_id: str, notes: list,
         bpm = bd.get("bpm", bpm)
         time_sig = bd.get("time_signature", time_sig)
         rhythm_info = bd.get("rhythm_info")  # triplet/straight情報を復元
+
+    # 拍子から beats_per_bar を取得
+    beats_per_bar = 4
+    if time_sig == "3/4":
+        beats_per_bar = 3
+    elif time_sig == "6/8":
+        beats_per_bar = 6
+
+    # メロディとバッキングに分離
+    melody_notes, backing_notes = separate_melody_backing(notes, beats, beats_per_bar)
 
     title_raw = s.get("filename", session_id)
     # Remove audio extension first
@@ -912,15 +974,22 @@ def _regenerate_musicxml(session_id: str, notes: list,
     gate = noise_gate if noise_gate is not None else 0.20
 
     # --- GP5再生成 ---
+    final_note_entries = None
     try:
         from gp_renderer import notes_to_gp5
-        gp5_bytes = notes_to_gp5(
-            notes, beats=beats, bpm=bpm, title=title,
+        gp5_bytes, final_note_entries = notes_to_gp5(
+            melody_notes, backing_notes=backing_notes, beats=beats, bpm=bpm, title=title,
             tuning=tuning, time_signature=time_sig,
             rhythm_info=rhythm_info, noise_gate=gate,
+            return_entries=True,
         )
         with open(session_dir / "tab.gp5", "wb") as f:
             f.write(gp5_bytes)
+        
+        # 実際にGP5に書き込まれた、量子化・位置情報（bar, beat_pos）付きの最終ノート情報を notes_assigned.json に保存
+        if final_note_entries is not None:
+            with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
+                json.dump(final_note_entries, f, ensure_ascii=False, indent=2)
         # GP4 (TuxGuitar用) も同時生成
         try:
             import guitarpro as _gp
@@ -935,13 +1004,14 @@ def _regenerate_musicxml(session_id: str, notes: list,
     from tab_renderer import notes_to_tab_musicxml
     kwargs = dict(
         beats=beats, bpm=bpm,
+        backing_notes=backing_notes,
         title=title,
         tuning=tuning,
         time_signature=time_sig,
     )
     if noise_gate is not None:
         kwargs["noise_gate"] = noise_gate
-    xml_content, tech_map = notes_to_tab_musicxml(notes, **kwargs)
+    xml_content, tech_map = notes_to_tab_musicxml(melody_notes, **kwargs)
 
     with open(session_dir / "tab.musicxml", "w", encoding="utf-8") as f:
         f.write(xml_content)
@@ -965,13 +1035,24 @@ async def cut_noise(session_id: str, request: CutRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     s = sessions[session_id]
     session_dir = Path(s["session_dir"])
+
+    original_path = session_dir / "notes_assigned_original.json"
     assigned_path = session_dir / "notes_assigned.json"
-    if not assigned_path.exists():
-        raise HTTPException(status_code=404, detail="Notes not found")
-    with open(assigned_path, "r", encoding="utf-8") as f:
-        notes = json.load(f)
-    if isinstance(notes, dict):
-        notes = notes.get("notes", [])
+    notes_path = original_path if original_path.exists() else assigned_path
+    if not notes_path.exists():
+        notes_path = session_dir / "notes.json"
+
+    if not notes_path.exists():
+        raise HTTPException(status_code=404, detail="Notes data not found. Run analysis first.")
+
+    with open(notes_path, "r", encoding="utf-8") as f:
+        notes_data = json.load(f)
+
+    notes = notes_data if isinstance(notes_data, list) else notes_data.get("notes", [])
+
+    for n in notes:
+        if "start" not in n and "start_time" in n:
+            n["start"] = n["start_time"]
 
     _regenerate_musicxml(session_id, notes, noise_gate=request.noise_gate)
     s["noise_gate"] = request.noise_gate
@@ -1024,6 +1105,13 @@ async def retune(session_id: str, request: RetuneRequest):
 
     # notes_assigned.jsonはリスト直接、notes.jsonは{"notes": [...]}
     notes = copy.deepcopy(notes_data if isinstance(notes_data, list) else notes_data.get("notes", notes_data))
+
+    # 量子化済みデータは start_time を持ち start が欠落している場合がある
+    # music_quantizer / gp_renderer は n["start"] を参照するため、ここで補完する
+    for n in notes:
+        if "start" not in n and "start_time" in n:
+            n["start"] = n["start_time"]
+
     tuning = TUNINGS[tuning_name]
 
     # カポ対応: tuningにカポ分を加算
@@ -1112,12 +1200,29 @@ async def retune(session_id: str, request: RetuneRequest):
                 print(f"[retune] 共鳴音フィルタ: {sympa_removed}ノート修正/除去")
 
 
-    # Re-run string assignment
+    # Re-run string assignment (with chords and guitar_type to preserve fingering engine logic)
     from string_assigner import assign_strings_dp
-    notes = assign_strings_dp(notes, tuning=capo_tuning)
+    chords = []
+    chords_path = session_dir / "chords.json"
+    if chords_path.exists():
+        try:
+            with open(chords_path, "r", encoding="utf-8") as f:
+                chords = json.load(f)
+        except Exception:
+            pass
+    guitar_type = s.get("guitar_type", "auto")
+    key = s.get("key")
 
-    # フレットクランプ: パイプラインと同等の上限制約
-    MAX_FRET = 12
+    notes = assign_strings_dp(
+        notes,
+        tuning=capo_tuning,
+        chords=chords,
+        guitar_type=guitar_type,
+        key=key,
+    )
+
+    # フレットクランプ: パイプラインと同等の上限制約 (MAX_FRETを12から14に緩和)
+    MAX_FRET = 14
     for n in notes:
         if n.get("fret", 0) > MAX_FRET:
             pitch = n.get("pitch", 60)
@@ -1135,12 +1240,14 @@ async def retune(session_id: str, request: RetuneRequest):
     # 左手指番号割り当て
     try:
         from finger_assigner import assign_fingers
-        notes = assign_fingers(notes)
+        notes = assign_fingers(notes, detected_key=s.get("key"))
     except Exception as e:
         print(f"[retune] 指番号割り当てスキップ: {e}")
 
-    # Save reassigned notes（オリジナルは保持、表示用のみ上書き）
+    # Save reassigned notes (both assigned and original must be updated to keep them in sync with the new tuning)
     with open(assigned_path, "w", encoding="utf-8") as f:
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+    with open(original_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
     # Re-generate MusicXML
@@ -1213,40 +1320,115 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     if actual_index < 0 or actual_index >= len(notes):
         raise HTTPException(status_code=400, detail=f"Invalid note index: {actual_index}")
 
+    note_to_sync = dict(notes[actual_index])
     if request.delete:
         notes.pop(actual_index)
         action = "deleted"
     else:
         note = notes[actual_index]
-        old_val = f"fret={note.get('fret')} string={note.get('string')}"
+        old_val = f"fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
         if request.fret is not None:
             note["fret"] = request.fret
         if request.string is not None:
             note["string"] = request.string
-        action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')}"
+        # pitch再計算: tuning[6-string] + fret (+ capo)
+        tuning_name = s.get("tuning", "standard")
+        tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
+        capo_val = s.get("capo", 0) or 0
+        new_string = int(note.get("string", 1))
+        new_fret = int(note.get("fret", 0))
+        if 1 <= new_string <= 6:
+            open_pitch = tuning_arr[6 - new_string] + capo_val
+            note["pitch"] = open_pitch + new_fret
+        action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
 
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
+    # Also apply the edit/deletion to notes_assigned_original.json to keep them in sync
+    original_path = session_dir / "notes_assigned_original.json"
+    if original_path.exists():
+        try:
+            with open(original_path, "r", encoding="utf-8") as f:
+                orig_notes = json.load(f)
+            
+            target_start = note_to_sync.get("start")
+            target_pitch = int(note_to_sync.get("pitch", 0))
+            
+            match_idx = -1
+            best_dist = float('inf')
+            for i, n in enumerate(orig_notes):
+                n_start = n.get("start", n.get("start_time", 0.0))
+                d = abs(n_start - target_start)
+                if d < 0.15 and int(n.get("pitch", 0)) == target_pitch:
+                    if d < best_dist:
+                        best_dist = d
+                        match_idx = i
+            
+            if match_idx >= 0:
+                if request.delete:
+                    orig_notes.pop(match_idx)
+                else:
+                    orig_note = orig_notes[match_idx]
+                    if request.fret is not None:
+                        orig_note["fret"] = request.fret
+                    if request.string is not None:
+                        orig_note["string"] = request.string
+                    # Recalculate pitch for original note
+                    tuning_name = s.get("tuning", "standard")
+                    tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
+                    capo_val = s.get("capo", 0) or 0
+                    new_string = int(orig_note.get("string", 1))
+                    new_fret = int(orig_note.get("fret", 0))
+                    if 1 <= new_string <= 6:
+                        open_pitch = tuning_arr[6 - new_string] + capo_val
+                        orig_note["pitch"] = open_pitch + new_fret
+                
+                with open(original_path, "w", encoding="utf-8") as f:
+                    json.dump(orig_notes, f, ensure_ascii=False, indent=2)
+                print(f"[edit_note] Synced with notes_assigned_original.json at index {match_idx}")
+            else:
+                print(f"[edit_note] WARNING: Could not find matching note in notes_assigned_original.json for sync")
+        except Exception as e:
+            print(f"[edit_note] ERROR syncing with notes_assigned_original.json: {e}")
+
     # Verify write
     with open(assigned_path, "r", encoding="utf-8") as f:
         verify = json.load(f)
-    if not request.delete and note_index < len(verify):
-        v = verify[note_index]
-        print(f"[edit_note] VERIFY: note[{note_index}] fret={v.get('fret')}, string={v.get('string')}")
+    if not request.delete and actual_index < len(verify):
+        v = verify[actual_index]
+        print(f"[edit_note] VERIFY: note[{actual_index}] fret={v.get('fret')}, string={v.get('string')}, pitch={v.get('pitch')}")
 
     try:
-        _regenerate_musicxml(session_id, notes)
+        if request.delete:
+            # 削除の場合は全体再生成が必要
+            _regenerate_musicxml(session_id, notes)
+        else:
+            # 編集の場合: GP5を直接パッチ（全体再生成を回避して楽譜レイアウトを保持）
+            old_fret_val = note_to_sync.get("fret", 0)
+            old_string_val = note_to_sync.get("string", 1)
+            new_fret_val = notes[actual_index].get("fret", 0)
+            new_string_val = notes[actual_index].get("string", 1)
+            new_pitch_val = notes[actual_index].get("pitch", 0)
+            patched = _patch_gp5_note(
+                session_id, note_to_sync,
+                old_fret=int(old_fret_val), old_string=int(old_string_val),
+                new_fret=int(new_fret_val), new_string=int(new_string_val),
+                new_pitch=int(new_pitch_val),
+            )
+            if not patched:
+                print(f"[edit_note] GP5 patch failed, falling back to full regeneration")
+                _regenerate_musicxml(session_id, notes)
     except Exception as e:
-        print(f"[edit_note] Regeneration failed: {e}")
+        print(f"[edit_note] Regeneration/patch failed: {e}")
         import traceback; traceback.print_exc()
 
     # Verify file not overwritten by _regenerate_musicxml
     with open(assigned_path, "r", encoding="utf-8") as f:
         verify2 = json.load(f)
-    if not request.delete and note_index < len(verify2):
-        v2 = verify2[note_index]
-        print(f"[edit_note] AFTER REGEN: note[{note_index}] fret={v2.get('fret')}, string={v2.get('string')}")
+    if not request.delete and actual_index < len(verify2):
+        v2 = verify2[actual_index]
+        print(f"[edit_note] AFTER REGEN: note[{actual_index}] fret={v2.get('fret')}, string={v2.get('string')}, pitch={v2.get('pitch')}")
 
     s["total_notes"] = len(notes)
     save_session(session_id)
@@ -1299,6 +1481,26 @@ async def add_note(session_id: str, request: NoteAddRequest):
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
+    original_path = session_dir / "notes_assigned_original.json"
+    if original_path.exists():
+        try:
+            with open(original_path, "r", encoding="utf-8") as f:
+                orig_notes = json.load(f)
+            
+            insert_idx_orig = 0
+            for i, n in enumerate(orig_notes):
+                if float(n.get("start", 0)) > request.start:
+                    insert_idx_orig = i
+                    break
+                insert_idx_orig = i + 1
+            orig_notes.insert(insert_idx_orig, new_note)
+            
+            with open(original_path, "w", encoding="utf-8") as f:
+                json.dump(orig_notes, f, ensure_ascii=False, indent=2)
+            print(f"[add_note] Synced with notes_assigned_original.json at index {insert_idx_orig}")
+        except Exception as e:
+            print(f"[add_note] ERROR syncing with notes_assigned_original.json: {e}")
+
     _regenerate_musicxml(session_id, notes)
 
     s["total_notes"] = len(notes)
@@ -1306,19 +1508,6 @@ async def add_note(session_id: str, request: NoteAddRequest):
 
     return {"status": "ok", "action": "added", "note_index": insert_idx, "total_notes": len(notes)}
 
-
-@app.get("/result/{session_id}/notes")
-async def get_notes(session_id: str):
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    s = sessions[session_id]
-    session_dir = Path(s["session_dir"])
-    notes_path = session_dir / "notes_assigned.json"
-    if not notes_path.exists():
-        return {"notes": []}
-    with open(notes_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return {"notes": data}
 
 
 @app.get("/result/{session_id}/techniques")
@@ -1366,8 +1555,9 @@ async def get_file(session_id: str, filename: str):
 @app.get("/sessions")
 async def get_sessions():
     history = []
-    for sid in sorted(sessions.keys(), reverse=True):
-        s = sessions[sid]
+    with _SESSIONS_LOCK:
+        sessions_copy = list(sessions.items())
+    for sid, s in sorted(sessions_copy, key=lambda x: x[0], reverse=True):
         history.append({
             "session_id": sid,
             "filename": s.get("filename", "Unknown"),
@@ -1395,4 +1585,4 @@ if __name__ == "__main__":
         return _orig_bind(self, address)
     socket.socket.bind = _reuse_bind
 
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

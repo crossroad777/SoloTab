@@ -1,0 +1,32 @@
+{
+  "phase": 2,
+  "source": "chords-db guitar.json",
+  "baseline_accuracy": 0.6154,
+  "optimized_accuracy": 0.7293,
+  "improvement": 11.39,
+  "total_notes": 14755,
+  "trials": 100,
+  "elapsed_seconds": 74.6,
+  "weights": {
+    "w_cnn_prior": 3.07405717091876,
+    "w_offset_rule": 11.614542911057043,
+    "w_std_offset": 7.550320304367165,
+    "w_position_same": -0.7146262453471709,
+    "w_position_shift": 12.666102642642029,
+    "w_position_shift_free": 6.849119988620161,
+    "w_finger_cross": 200.0,
+    "w_same_finger_diff": 20.85029834689102,
+    "w_span_excess": 12.66749204802277,
+    "w_tendon_coupling": 4.936487793678391,
+    "w_continuity_2fret": -8.677980997411783,
+    "w_guide_finger": -10.208536410991552,
+    "w_minimax_threshold": 86.82203610045855,
+    "w_minimax_excess": 6.756830660344963,
+    "w_barre_continuity": -10.28754941340755,
+    "w_anchor_penalty": 35.123234261301164,
+    "w_chord_pos_bonus": -0.9424207459272171,
+    "w_string_cross": 4.30680993430715,
+    "w_voice_cross_discount": 0.9408425497511266,
+    "w_slide_shift_bonus": -9.933702802862715
+  }
+}

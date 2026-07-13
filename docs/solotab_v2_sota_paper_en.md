@@ -611,5 +611,176 @@ The discovery that the BPM cross-validation function was loading full audio (248
 
 ---
 
-*SoloTab V2.0 -- May 2026*
+## Step 15: Activity Head Learning and Fingering Pipeline Renovation (v2.1 - 2026-05-26)
 
+### 15.1 Background
+User feedback on v2.0 revealed two major issues:
+1. **Insufficient Note Duration Detection**: The CRNN model was only trained with `onset_head`, leaving the activity-detection layers (`activity_head`) untrained.
+2. **Unnatural Fingering**: Generated tablatures contained excessive position shifts that were physically unplayable.
+
+### 15.2 Activity Head Learning
+We added an `activity_fc` layer (9,222 parameters) to the `GuitarTabCRNN` model and trained it on GuitarSet.
+
+| Metric | Value |
+| :--- | :--- |
+| Additional Parameters | `activity_fc`: Linear(1536, 6) = 9,222 parameters |
+| Dataset | GuitarSet 286 songs (Leave-One-Out CV) |
+| Epochs | 50 |
+| Best Val Loss | 0.3878 |
+| Note F1 | **0.8603** |
+
+### 15.3 AG-PT-set Fine-Tuning
+The model was fine-tuned on the AG-PT-set (Guitar Playing Technique Dataset) to detect expressive techniques.
+
+| Epoch | Train Loss | Val Loss |
+| :---: | :---: | :---: |
+| 1 | 0.8358 | 0.3818 |
+| 10 | 0.0243 | **0.0522** |
+
+### 15.4 MoE FAST Benchmark (360 songs)
+Evaluating the new model configuration under the FAST mode:
+
+| Metric | v2.1 FAST (21 models, vote=9) |
+| :--- | :---: |
+| Mean F1 | **0.8352** |
+| Mean Precision | 0.8077 |
+| Mean Recall | 0.8667 |
+
+### 15.5 Fingering Pipeline Renovation
+We retired the "CNN-first" approach and unified the pipeline under **Viterbi DP**. We increased `w_movement` from 8.0 to 25.0.
+
+| Constraint | Before | After |
+| :--- | :---: | :---: |
+| `w_movement` | 8.0 | **25.0** |
+| `w_position_shift` | 50.0 | **80.0** |
+| Minimax Threshold | >100 & 50% | **>30 & 20%** |
+
+### 15.6 Large-scale Joint Fine-Tuning: GuitarSet + AG-PT-set
+Using the activity-head-pre-trained model as a baseline, we executed a joint fine-tuning process on both GuitarSet (486 songs) and AG-PT-set (497 samples).
+
+| Property | Value |
+| :--- | :--- |
+| Dataset size | GuitarSet 486 + AG-PT-set 448 = **934 train** |
+| Validation size | GuitarSet 36 + AG-PT-set 49 = **85 val** |
+| Trainable Parameters | 20,293,776 (CNN 388,800 layers frozen) |
+| Learning Rate | 3e-5 → 3e-6 (Cosine Annealing) |
+| Loss Function | Onset (BCE, pw=6, w=9) + Fret (CE, w=1) + Activity (BCE, pw=3, w=1) |
+| Best Epoch | **12 / 40** (Early stopping @ 22, patience=10) |
+| Best Val Loss | **1.1236** |
+| Total Training Time | ~95 mins (22 epochs × 258s, NVIDIA RTX 4060 Ti) |
+
+**Val Loss Trajectory:**
+
+| Epoch | Train Loss | Val Loss | LR |
+| :---: | :---: | :---: | :---: |
+| 1 | 1.4404 | 1.4466 | 3.0e-5 |
+| 6 | 0.4367 | 1.1758 | 2.9e-5 |
+| 9 | 0.3578 | 1.1453 | 2.7e-5 |
+| **12** | **0.3141** | **1.1236** | **2.5e-5** |
+| 22 | 0.2437 | 1.1656 | 1.5e-5 |
+
+**Bugs Discovered & Fixed (6 items):**
+1. Model outputs count mismatch (expected 3, got 2 variables).
+2. Attempted to access non-existent attribute `_last_rnn_output`.
+3. CNN input channel mismatch (expected 3 channels, got 1).
+4. Run configuration nested dict expansion omission.
+5. Invalid string index offset subtraction (`string_idx` off-by-one).
+6. Mismatch in GuitarSet file directory hierarchy.
+
+**Deployment:**
+- Best model deployed to production.
+- `activity_fc` weights injected into all **62 MoE models**.
+
+---
+
+## Step 16: Integration of Biomechanical Models, Dynamic Right-Hand PIMA, and Constraint-Preserving Optimization (v14.0 - v23.0)
+
+### 16.1 Motivation and Overview
+To improve the physical realism and playability of the generated tablatures, we integrated advanced human biomechanical models for the left hand, developed a dynamic right-hand PIMA assignment engine, and established a constraint-preserving optimization framework trained on a large-scale corpus of 18k annotated notes.
+
+### 16.2 Biomechanical Left-Hand Constraint Expansion
+1. **Polyphonic Tone Preservation (v14.0)**
+   Based on Abel Carlevaro's concept of sound preservation (*Fijación prolongation*), we added a sustain finger hold bonus `w_bass_sustain_bonus` to the Viterbi transition cost. This rewards transitioning states that keep the same finger on the string while a bass note is sustaining, eliminating awkward, choppy finger changes in arpeggio passages.
+2. **Fret-Width Dependent Position Shift Scaling (v15.0)**
+   Following Radicioni (2004)'s physical distance model, position shifts at higher frets are physically shorter due to narrowing fret gaps. We dynamically scaled the shifting cost using `pos_scale = max(0.4, 1.0 - (avg_pos - 1) * 0.05)`, which reduces the shift penalty in high registers by up to 60%.
+3. **Low-String Tension and Wrist Angle Penalties (v16.0 / v18.0)**
+   Pressing thick strings (5 & 6) in high registers requires significant thumb counter-pressure, and using weak fingers (3 or 4) forces extreme wrist rotation. We introduced `w_lh_fatigue_penalty` and `w_wrist_angle_penalty` to penalize these biomechanically taxing shapes in both melody DP and chord resolution (`_resolve_chord_conflicts`).
+
+### 16.3 Dynamic Right-Hand PIMA Assignment (v19.0)
+1. **Alternation and Same-Finger Crossing Avoidance**
+   We replaced the static string-to-finger mapping with a dynamic assignment engine `_assign_right_hand_fingers`. It enforces finger alternation (e.g., `i-m`, `a-m`) for rapid repetitions on the same string (< 0.4s) and applies a penalty to prevent reusing the same finger across different strings sequentially (Skarha R1).
+2. **Chord Finger Duplication Avoidance**
+   Simultaneous notes are sorted and assigned unique right-hand fingers (prioritizing `p` for the bass, and `a, m, i` for higher strings) to prevent anatomically impossible duplicate plucking.
+3. **Left-Right Hand Coordination**
+   The right-hand assignment is executed before left-hand Viterbi DP, allowing left-right coordination costs (e.g., left-hand shift / right-hand repeat penalties) to guide the Viterbi path choice with realistic right-hand data.
+
+### 16.4 Constraint-Preserving Objective for Large-Scale Tuning (v21.0 - v23.0)
+1. **18K Annotation Cache Loader (v21.0)**
+   We added fallback support to parse `finger_annotated_notes.json` (18,760 notes, 830 phrases mined from GP5 corpus) in `optuna_finger_weights.py` to enable large-scale optimization in isolated environments.
+2. **Constraint-Preserving Objective (v23.0)**
+   Tuning weights directly on large corpus data can cause Optuna to overfit, leading to regressions in critical edge-case rules tested by synthetic regression tests. 
+   To prevent this, we introduced a constraint-preserving objective function. It heavily penalizes parameter trials that fail to achieve 100% synthetic accuracy and optimizes using a soft-weighted score: `score = syn_acc * 0.3 + real_acc * 0.7 + consistency_weight * consistency`. This ensures all essential rules are preserved while maximizing accuracy on real-world data.
+
+### 16.5 Final Evaluation Results
+- **Dataset**: **18,945 ground truth notes** (18,760 cache + 185 synthetic)
+- **Regression Tests**: **41 / 41 cases 100% Passed** (including new right-hand PIMA tests)
+- **Real-world Accuracy (Baseline)**: **84.4%** (Consistency: 0.847)
+
+---
+
+## Step 17: Integrated Hybrid Fingering Model (v24.0)
+
+### 17.1 Overview
+To address the user's request for deeper music theory and data-driven learning, we formulated the "Scale Position Box," "Chord Voice Leading," and "GP5 N-gram Transition Priors," and integrated them into the Viterbi transition/emission engine alongside the biomechanical models of Sayegh (1989) and Radicioni (2005).
+
+### 17.2 Mathematical Formulation
+
+#### 17.2.1 Expansion of the Emission Cost Function
+The emission cost \(C_{emit}(n, f, p)\) (cost of assigning finger \(f\) and position \(p\) to note \(n\)) was updated to include scale box matching rewards and string-finger priors:
+
+\[
+C_{emit}(n, f, p) = C_{base}(n, f, p) + S_{scale}(n, f) + P_{string}(n, f)
+\]
+
+Where:
+1. **Scale Position Box Reward \(S_{scale}(n, f)\)**:
+   If the note sequence matches a standard scale box (e.g., Pentatonic Box 1), it rewards matching the suggested pedagogical finger \(f_{sug}\):
+   \[
+   S_{scale}(n, f) = \begin{cases} -w_{scale\_box\_bonus} & (f = f_{sug}) \\ 0 & (\text{otherwise}) \end{cases}
+   \]
+2. **String-Finger Prior Reward \(P_{string}(n, f)\)**:
+   Rewards the prior probability \(Pr(f|s)\) of using finger \(f\) on string \(s\) derived from chords-db (3,283 voicings):
+   \[
+   P_{string}(n, f) = - w_{string\_finger\_prior} \cdot Pr(f | \text{string}(n))
+   \]
+
+#### 17.2.2 Expansion of the Transition Cost Function
+The transition cost \(C_{trans}(f, f_{prev}, p, p_{prev}, n, n_{prev})\) was updated to integrate voice leading rules and data-driven N-gram priors:
+
+\[
+C_{trans} = C_{phys} + V_{voice\_leading} + T_{gp5\_prior}
+\]
+
+1. **Voice Leading Costs \(V_{voice\_leading}\)**:
+   - **Common Tone Retention**: A reward applied when consecutive notes share the same pitch class \(pc\) and are played with the same finger and position:
+     \[
+     V_{common} = \begin{cases} -w_{common\_tone\_bonus} & (pc(n) = pc(n_{prev}) \land f = f_{prev} \land p = p_{prev}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+   - **Conjunct Bass Line**: A reward applied when bass notes (on strings 5 & 6) transition smoothly (half/whole step) and a penalty applied for large jumps of an octave or more:
+     \[
+     V_{bass} = \begin{cases} -w_{conjunct\_bass\_bonus} & (0 < |\Delta pitch| \le 2) \\ w_{disjunct\_bass\_penalty} & (|\Delta pitch| \ge 12) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+2. **GP5 N-gram Transition Prior \(T_{gp5\_prior}\)**:
+   - A logarithmic reward based on the frequency \(Count_{run}\) of the 2-note transition run (\(s\)-\(fret_{prev}\)-\(fret\) - e.g., 6-2-2) mined from the 4.8-million-note GP5 corpus. This biases Viterbi DP toward fingerings commonly preferred by human guitarists:
+     \[
+     T_{gp5\_prior} = \begin{cases} -w_{data\_prior} \cdot \log(\max(2.0, Count_{run})) & (\text{if matched in GP5 database}) \\ 0 & (\text{otherwise}) \end{cases}
+     \]
+
+### 17.3 Evaluation Results
+- **Regression Tests**: With the addition of new scale box matching and voice leading tests, the system achieved **53 / 53 Passed (100% Pass Rate)**. This ensures that the new musical and data-driven rules function safely without causing regressions in core ergonomic constraints.
+- **Discussion**: The integration of musical theory and statistical priors on top of biomechanical rules significantly improves the playability and musical flow of the generated tablatures, matching the patterns professional guitarists instinctively use.
+
+---
+
+*SoloTab V2.1 -- June 2026*

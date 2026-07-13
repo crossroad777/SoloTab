@@ -25,47 +25,52 @@ import math
 import json
 import os
 import numpy as np
+import threading
 
-# =============================================================================
-# 弦分類器 (String Classifier CNN) — 音声CQT特徴量から弦を推定
-# =============================================================================
-
-_STRING_CLASSIFIER = None  # lazy-loaded
-_STRING_CLASSIFIER_CQT_CACHE = {}  # audio_path -> CQT array
+# 並行リクエスト時のスレッド安全性向上のためのロック定義
+_STRING_CLASSIFIER_LOCK = threading.Lock()
+_STRING_CLASSIFIER = None
+_CQT_CACHE_LOCK = threading.Lock()
+_STRING_CLASSIFIER_CQT_CACHE = {}
+_CHORD_FORMS_LOCK = threading.Lock()
+_HUMAN_PREF_LOCK = threading.Lock()
+_FINGERING_TRANSFORMER_LOCK = threading.Lock()
 
 def _load_string_classifier():
     """弦分類器CNNモデルをlazy-load。"""
     global _STRING_CLASSIFIER
-    if _STRING_CLASSIFIER is not None:
-        return _STRING_CLASSIFIER
-    
-    model_path = os.path.join(os.path.dirname(__file__), "string_classifier_mixed_v2.pth")
-    if not os.path.exists(model_path):
-        _STRING_CLASSIFIER = False  # モデルなし
-        return False
-    
-    try:
-        import torch
-        from string_classifier import StringClassifierCNN, N_BINS, CONTEXT_FRAMES
+    with _STRING_CLASSIFIER_LOCK:
+        if _STRING_CLASSIFIER is not None:
+            return _STRING_CLASSIFIER
         
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = StringClassifierCNN(n_bins=N_BINS, n_frames=CONTEXT_FRAMES).to(device)
-        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
-        model.eval()
+        model_path = os.path.join(os.path.dirname(__file__), "string_classifier_mixed_v2.pth")
+        if not os.path.exists(model_path):
+            _STRING_CLASSIFIER = False  # モデルなし
+            return False
         
-        _STRING_CLASSIFIER = {'model': model, 'device': device}
-        print(f"[string_assigner] 弦分類器ロード完了 (device={device})")
-        return _STRING_CLASSIFIER
-    except Exception as e:
-        print(f"[string_assigner] 弦分類器ロード失敗: {e}")
-        _STRING_CLASSIFIER = False
-        return False
+        try:
+            import torch
+            from string_classifier import StringClassifierCNN, N_BINS, CONTEXT_FRAMES
+            
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            model = StringClassifierCNN(n_bins=N_BINS, n_frames=CONTEXT_FRAMES).to(device)
+            model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+            model.eval()
+            
+            _STRING_CLASSIFIER = {'model': model, 'device': device}
+            print(f"[string_assigner] 弦分類器ロード完了 (device={device})")
+            return _STRING_CLASSIFIER
+        except Exception as e:
+            print(f"[string_assigner] 弦分類器ロード失敗: {e}")
+            _STRING_CLASSIFIER = False
+            return False
 
 
 def _compute_cqt_cached(audio_path: str) -> Optional[np.ndarray]:
     """CQTスペクトログラムをキャッシュ付きで計算。"""
-    if audio_path in _STRING_CLASSIFIER_CQT_CACHE:
-        return _STRING_CLASSIFIER_CQT_CACHE[audio_path]
+    with _CQT_CACHE_LOCK:
+        if audio_path in _STRING_CLASSIFIER_CQT_CACHE:
+            return _STRING_CLASSIFIER_CQT_CACHE[audio_path]
     
     try:
         import librosa
@@ -84,7 +89,8 @@ def _compute_cqt_cached(audio_path: str) -> Optional[np.ndarray]:
         cqt = (cqt + 80) / 80
         cqt = np.clip(cqt, 0, 1)
         
-        _STRING_CLASSIFIER_CQT_CACHE[audio_path] = cqt
+        with _CQT_CACHE_LOCK:
+            _STRING_CLASSIFIER_CQT_CACHE[audio_path] = cqt
         return cqt
     except Exception as e:
         print(f"[string_assigner] CQT計算エラー: {e}")
@@ -148,22 +154,23 @@ _CHORD_FORMS_LOOKUP = None
 def _load_chord_forms_db():
     """典型フォームDBをロードする（遅延初期化）。"""
     global _CHORD_FORMS_DB, _CHORD_FORMS_LOOKUP
-    if _CHORD_FORMS_DB is not None:
-        return
-    db_path = os.path.join(os.path.dirname(__file__), "chord_forms_db.json")
-    if os.path.exists(db_path):
-        with open(db_path, "r", encoding="utf-8") as f:
-            _CHORD_FORMS_DB = json.load(f)
-        # ルックアップテーブル構築
-        _CHORD_FORMS_LOOKUP = {}
-        for form in _CHORD_FORMS_DB:
-            chord = form["chord"]
-            if chord not in _CHORD_FORMS_LOOKUP:
-                _CHORD_FORMS_LOOKUP[chord] = []
-            _CHORD_FORMS_LOOKUP[chord].append(form)
-    else:
-        _CHORD_FORMS_DB = []
-        _CHORD_FORMS_LOOKUP = {}
+    with _CHORD_FORMS_LOCK:
+        if _CHORD_FORMS_DB is not None:
+            return
+        db_path = os.path.join(os.path.dirname(__file__), "chord_forms_db.json")
+        if os.path.exists(db_path):
+            with open(db_path, "r", encoding="utf-8") as f:
+                _CHORD_FORMS_DB = json.load(f)
+            # ルックアップテーブル構築
+            _CHORD_FORMS_LOOKUP = {}
+            for form in _CHORD_FORMS_DB:
+                chord = form["chord"]
+                if chord not in _CHORD_FORMS_LOOKUP:
+                    _CHORD_FORMS_LOOKUP[chord] = []
+                _CHORD_FORMS_LOOKUP[chord].append(form)
+        else:
+            _CHORD_FORMS_DB = []
+            _CHORD_FORMS_LOOKUP = {}
 
 # Human Position Preference Map (52万ノートのIDMTデータから学習)
 _HUMAN_PREF = None
@@ -171,14 +178,15 @@ _HUMAN_PREF = None
 def _load_human_pref():
     """人間の弦/フレット選好データをlazy-load。"""
     global _HUMAN_PREF
-    if _HUMAN_PREF is not None:
-        return
-    path = os.path.join(os.path.dirname(__file__), 'human_position_preference.json')
-    if os.path.exists(path):
-        with open(path, 'r') as f:
-            _HUMAN_PREF = json.load(f)
-    else:
-        _HUMAN_PREF = {}
+    with _HUMAN_PREF_LOCK:
+        if _HUMAN_PREF is not None:
+            return
+        path = os.path.join(os.path.dirname(__file__), 'human_position_preference.json')
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                _HUMAN_PREF = json.load(f)
+        else:
+            _HUMAN_PREF = {}
 
 
 # FingeringTransformer V3 (97.2% accuracy, 800万ノートで学習)
@@ -188,40 +196,41 @@ _FT_DEVICE = 'cpu'
 def _load_fingering_transformer():
     """V3 FingeringTransformer をlazy-load。"""
     global _FINGERING_TRANSFORMER, _FT_DEVICE
-    if _FINGERING_TRANSFORMER is not None:
-        return _FINGERING_TRANSFORMER
-    
-    import sys
-    train_dir = os.path.join(os.path.dirname(__file__), 'train')
-    if train_dir not in sys.path:
-        sys.path.insert(0, train_dir)
-    
-    # Fine-tuned model (98.8% acc, solo guitar特化) を優先、なければ元モデル
-    model_dir = os.path.join(os.path.dirname(__file__), '..', 
-                              'gp_training_data', 'v3', 'models')
-    model_path = os.path.join(model_dir, 'fingering_transformer_v3_finetuned.pt')
-    if not os.path.exists(model_path):
-        model_path = os.path.join(model_dir, 'fingering_transformer_v3_best.pt')
-    if not os.path.exists(model_path):
-        _FINGERING_TRANSFORMER = False
-        return False
-    
-    try:
-        import torch
-        from fingering_model_v3 import FingeringTransformer
+    with _FINGERING_TRANSFORMER_LOCK:
+        if _FINGERING_TRANSFORMER is not None:
+            return _FINGERING_TRANSFORMER
         
-        _FT_DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-        model = FingeringTransformer()
-        state = torch.load(model_path, map_location=_FT_DEVICE, weights_only=False)
-        model.load_state_dict(state['model_state_dict'])
-        model.to(_FT_DEVICE)
-        model.eval()
-        _FINGERING_TRANSFORMER = model
-        return model
-    except Exception as e:
-        print(f"[string_assigner] V3 Transformer load failed: {e}")
-        _FINGERING_TRANSFORMER = False
-        return False
+        import sys
+        train_dir = os.path.join(os.path.dirname(__file__), 'train')
+        if train_dir not in sys.path:
+            sys.path.insert(0, train_dir)
+        
+        # Fine-tuned model (98.8% acc, solo guitar特化) を優先、なければ元モデル
+        model_dir = os.path.join(os.path.dirname(__file__), '..', 
+                                  'gp_training_data', 'v3', 'models')
+        model_path = os.path.join(model_dir, 'fingering_transformer_v3_finetuned.pt')
+        if not os.path.exists(model_path):
+            model_path = os.path.join(model_dir, 'fingering_transformer_v3_best.pt')
+        if not os.path.exists(model_path):
+            _FINGERING_TRANSFORMER = False
+            return False
+        
+        try:
+            import torch
+            from fingering_model_v3 import FingeringTransformer
+            
+            _FT_DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model = FingeringTransformer()
+            state = torch.load(model_path, map_location=_FT_DEVICE, weights_only=False)
+            model.load_state_dict(state['model_state_dict'])
+            model.to(_FT_DEVICE)
+            model.eval()
+            _FINGERING_TRANSFORMER = model
+            return model
+        except Exception as e:
+            print(f"[string_assigner] V3 Transformer load failed: {e}")
+            _FINGERING_TRANSFORMER = False
+            return False
 
 
 def _transformer_string_probs(notes: List[dict], target_idx: int,
@@ -779,7 +788,7 @@ WEIGHTS = {
     "w_position_shift":      27.72,   # V3: ポジション移動緩和 (55→28, L04適合)
     "w_string_switch":        9.68,   # V3: 弦変更コスト適正化 (5.3→9.7)
     "w_string_skip":         35.95,   # V3: 弦飛ばし二次ペナルティ (隣弦率26→51%)
-    "w_same_string_repeat":  25.3,    # 同弦連打回避
+    "w_same_string_repeat":  10.0,    # 同弦連打回避
     "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
     "w_from_open":            0.05,   # 開放弦からの遷移 (論文: 準備時間あるので大幅軽減)
 
@@ -808,9 +817,9 @@ WEIGHTS = {
     "w_too_many_fingers":  5000.0,
 
     # 音色コスト — 開放弦優遇を法則に合わせて抑制
-    "w_open_string_bonus":   50.0,   # V3e: ペナルティ更に強化 (L05: 開放弦15.6%)
+    "w_open_string_bonus":   0.0,   # 開放弦ペナルティの撤廃
     "w_open_match_bonus":   -10.7,
-    "w_open_emission_bonus":  50.0,   # V3e: ペナルティ更に強化
+    "w_open_emission_bonus":  0.0,   # 開放弦出現ペナルティの撤廃
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
@@ -827,6 +836,20 @@ WEIGHTS = {
     "w_chord_f10_penalty":   53.6,
     "w_chord_f5_penalty":     0.9,
     "w_chord_f04_bonus":     19.5,
+
+    # 開放弦カットオフペナルティ
+    "w_open_string_cutoff":   10.0,
+
+    # サステイン競合（消音）ペナルティ (横道論文: 実行不可能解の除去)
+    "w_sustain_cutoff_bass":   150.0,
+    "w_sustain_cutoff_melody":  50.0,
+
+    # 指重複・交差先読みペナルティ (Radicioni & Lombardo / Skarha 準拠)
+    "w_same_finger_repeat_penalty": 15.0,
+    "w_transition_finger_cross":    10.0,
+
+    # 物理移行ロスタイム（消音時間）ペナルティ (愛知工大・林田論文準拠)
+    "w_loss_time_penalty":          150.0,
 }
 
 # --- ポジション定義 ---
@@ -876,9 +899,55 @@ def _human_pref_cost(s: int, f: int, pitch: int) -> float:
     return 0.0
 
 
-def _position_cost(s: int, f: int) -> float:
+def get_key_scale_positions(key: str) -> List[int]:
     """
-    位置コスト: 正解タブ分析に基づく。f0-f4が90%以上。
+    キー（調）からギター指板上での主要なスケールポジション（CAGED等）の
+    人差指フレット位置（アンカー）を動的に導出する。
+    """
+    if not key or key == "N.C.":
+        return [0, 2, 5, 7] # デフォルトの主要ポジション
+        
+    note_to_pc = {
+        'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
+        'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9,
+        'A#': 10, 'Bb': 10, 'B': 11
+    }
+    
+    key_clean = key.strip()
+    is_minor = key_clean.endswith('m')
+    root = key_clean[:-1] if is_minor else key_clean
+    root_pc = note_to_pc.get(root, 0)
+    
+    # 相対調のルートPCも追加（E minorならG major）
+    rel_pc = (root_pc + 3) % 12 if is_minor else (root_pc - 3) % 12
+    
+    anchors = set()
+    for pc in [root_pc, rel_pc]:
+        # 6弦ルート基準のスケールポジション (E2 = 40)
+        p6 = (pc - 4) % 12
+        anchors.add(p6)
+        anchors.add(p6 + 12)
+        
+        # 5弦ルート基準のスケールポジション (A2 = 45)
+        p5 = (pc - 9) % 12
+        anchors.add(p5)
+        anchors.add(p5 + 12)
+        
+        # 4弦ルート基準のスケールポジション (D3 = 50)
+        p4 = (pc - 2) % 12
+        anchors.add(p4)
+        anchors.add(p4 + 12)
+        
+    # 実用フレット上限 14 以内のアンカーを返す
+    valid_anchors = sorted([p for p in anchors if p <= 14])
+    return valid_anchors
+
+
+def _position_cost(s: int, f: int, scale_positions: Optional[List[int]] = None) -> float:
+    """
+    位置コスト: フレットの位置自体の弾きやすさ。
+    高フレットほどコストが高い。sweet spot (0-7f) は良いスコア。
+    音楽理論に基づく拡張: キーの主要スケールポジション内であればボーナスを付与。
     """
     cost = 0.0
 
@@ -907,6 +976,16 @@ def _position_cost(s: int, f: int) -> float:
     if 0 < f <= 4:
         cost += WEIGHTS["w_low_fret_bonus"]
 
+    # 音楽理論: スケールポジション適合ボーナス（開放弦は常にボーナス対象）
+    if f == 0:
+        cost -= 15.0  # 開放弦は常にポジション適合ボーナスと同等の優遇を受ける
+    elif scale_positions and f > 0:
+        pos_center = max(0, f - 1)
+        # 最名近いスケールポジションアンカーとの距離
+        dist = min(abs(pos_center - p) for p in scale_positions)
+        if dist <= 1:
+            cost -= 15.0  # スケールポジション適合ボーナス (ペナルティ相殺)
+
     return cost
 
 
@@ -922,9 +1001,37 @@ _PIMA_NATURAL = {
 _PIMA_ORDER = {'p': 0, 'i': 1, 'm': 2, 'a': 3}
 
 
+def _estimate_finger(s: int, f: int) -> int:
+    """
+    弦とフレットから、最も使われやすい指（1〜4）を推定する（0は開放弦）。
+    Radicioni & Lombardo / Skarha モデルの先読み用。
+    """
+    if f == 0:
+        return 0
+    # 主要なローフレットポジションの簡略統計マッピング
+    pdmx_simple = {
+        (1, 1): 1, (1, 2): 2, (1, 3): 3, (1, 4): 4,
+        (2, 1): 1, (2, 2): 2, (2, 3): 3, (2, 4): 4,
+        (3, 1): 1, (3, 2): 2, (3, 3): 3, (3, 4): 4,
+        (4, 1): 1, (4, 2): 2, (4, 3): 3, (4, 4): 4,
+        (5, 1): 1, (5, 2): 2, (5, 3): 3, (5, 4): 4,
+        (6, 1): 1, (6, 2): 2, (6, 3): 3, (6, 4): 4,
+    }
+    if (s, f) in pdmx_simple:
+        return pdmx_simple[(s, f)]
+    offset = f % 4
+    if offset == 1: return 1
+    elif offset == 2: return 2
+    elif offset == 3: return 3
+    else: return 4
+
+
 def _transition_cost(s: int, f: int,
                      prev_s: int, prev_f: int,
-                     pitch: int = None, prev_pitch: int = None) -> float:
+                     pitch: int = None, prev_pitch: int = None,
+                     ioi: float = None,
+                     prev_time: float = None, prev_duration: float = None,
+                     cur_time: float = None) -> float:
     """
     遷移コスト: 前のポジションから今のポジションへの移動コスト。
     ポジション移動量 + 弦切り替え距離 + ピッチ近接性 + PIMA制約に基づく。
@@ -932,6 +1039,8 @@ def _transition_cost(s: int, f: int,
     V4改善: ピッチ近接性ルールとPIMA制約を guitar_cost_functions.py から統合。
     """
     cost = 0.0
+    string_dist = abs(s - prev_s)
+    pos_shift = 0
 
     # フレット移動コスト（非対称: ハイ→ロー安い、ロー→ハイ高い）
     if f == 0:
@@ -941,36 +1050,88 @@ def _transition_cost(s: int, f: int,
         # 開放弦からの移動 (FretboardFlow: 開放弦中は左手フリー → 準備時間あり)
         base_cost = f * WEIGHTS["w_movement"] * WEIGHTS["w_from_open"]
         cost += base_cost * WEIGHTS.get("w_open_prep_discount", 0.3)
+        # Open String Ringing Cutoff Penalty
+        if f > 0:
+            cost += WEIGHTS.get("w_open_string_cutoff", 10.0)
     else:
         # 押弦同士の移動（非対称）
         fret_diff = abs(f - prev_f)
-        if f > prev_f:
-            # ロー→ハイ: 高コスト（人間はハイポジに行きたがらない）
-            cost += fret_diff * WEIGHTS["w_movement"] * WEIGHTS["w_movement_up"]
+        
+        # ポジション移動量（手のアンカー自体の移動）と指の開閉拡張（ストレッチ）の分離
+        # 4フレット幅（POSITION_WIDTH）内であれば、手の全体は動かさずに指の動きだけで弾ける
+        if fret_diff <= 3:
+            pos_shift = 0
+            finger_stretch = fret_diff
         else:
-            # ハイ→ロー: 安い（人間はローに戻りたがる）
-            cost += fret_diff * WEIGHTS["w_movement"] * WEIGHTS["w_movement_down"]
+            pos_shift = fret_diff - 3
+            finger_stretch = 3
+
+        # テンポ（IOI）に応じたポジション移動コストのスケーリング (Bontempi 2024 / Skarha 2018)
+        # 高速な演奏（IOIが小さい）では手の全体移動を厳しく制限し、遅い演奏では音色を優先して自由な移動を許容する
+        trans_scale = 1.0
+        if ioi is not None:
+            if ioi < 0.15:
+                trans_scale = 3.0    # 16分音符などの超高速フレーズ: ポジション移動コスト3倍
+            elif ioi < 0.3:
+                trans_scale = 1.5    # 8分音符などの高速フレーズ: コスト1.5倍
+            elif ioi > 0.8:
+                trans_scale = 0.3    # 全音符などの遅いフレーズ: 手の自由な移動を許可 (30%に軽減)
+
+        # 1. 手の位置の移動（ポジションシフト）コスト（大きな移動に対する重いペナルティ）
+        if pos_shift > 0:
+            if f > prev_f:
+                # ロー→ハイへの手の移動（高コスト）
+                cost += pos_shift * WEIGHTS["w_position_shift"] * trans_scale * WEIGHTS["w_movement_up"]
+            else:
+                # ハイ→ローへの手の移動（戻りやすい）
+                cost += pos_shift * WEIGHTS["w_position_shift"] * trans_scale * WEIGHTS["w_movement_down"]
+
+        # 2. 同一ポジション内での指の開閉コスト（比較的軽い）
+        if finger_stretch > 0:
+            cost += finger_stretch * WEIGHTS["w_movement"]
+
+        # 3. 指重複・交差の先読みペナルティ (Skarha / Radicioni & Lombardo 準拠)
+        finger = _estimate_finger(s, f)
+        prev_finger = _estimate_finger(prev_s, prev_f)
+        if finger > 0 and prev_finger > 0:
+            # 同じ指で異なる音を連続して弾くことへのペナルティ (スライド時を除く)
+            if finger == prev_finger and (s != prev_s or abs(f - prev_f) > 2):
+                cost += WEIGHTS.get("w_same_finger_repeat_penalty", 15.0)
+            
+            # 指の交差ペナルティ (高弦に低い指番号、低弦に高い指番号が来るねじれの防止)
+            if (s < prev_s and finger < prev_finger) or (s > prev_s and finger > prev_finger):
+                cost += WEIGHTS.get("w_transition_finger_cross", 10.0)
 
         # ガイドフィンガー (Radicioni 2005): 同弦で隣接フレット → スライドで到達可能
         if s == prev_s and fret_diff <= 2 and fret_diff > 0:
             cost += WEIGHTS.get("w_guide_finger", -15.0)
 
-        # ポジション跨ぎペナルティ
-        if fret_diff > POSITION_WIDTH:
-            # 開放弦後の場合は軽減済みなのでここには来ない (prev_f==0はelif)
-            cost += (fret_diff - POSITION_WIDTH) * WEIGHTS["w_position_shift"]
-
-    # 弦切り替えコスト
+    # 弦切り替え距離の計算
     string_dist = abs(s - prev_s)
-    if string_dist > 0:
-        cost += string_dist * WEIGHTS["w_string_switch"]
-        # === L09構造: 弦飛ばし二次ペナルティ (隣弦率59.2%目標) ===
-        # 2弦以上飛ばすと急激にコスト増加
-        if string_dist >= 2:
-            cost += (string_dist - 1) ** 2 * WEIGHTS.get("w_string_skip", 15.0)
-    else:
-        # 右手PIMA: 同じ弦の連打は右手の同指連打になり困難
-        cost += WEIGHTS["w_same_string_repeat"]
+
+    # 弦切り替えコスト（左右の弾きやすさ。開放弦が絡む場合は左手の移動がないためペナルティ対象外）
+    if f > 0 and prev_f > 0:
+        if string_dist > 0:
+            cost += string_dist * WEIGHTS["w_string_switch"]
+            # === L09構造: 弦飛ばし二次ペナルティ (隣弦率59.2%目標) ===
+            # 2弦以上飛ばすと急激にコスト増加
+            if string_dist >= 2:
+                cost += (string_dist - 1) ** 2 * WEIGHTS.get("w_string_skip", 15.0)
+
+    # 同弦連打ペナルティの動的スケーリング
+    if string_dist == 0:
+        if pitch is not None and prev_pitch is not None and pitch == prev_pitch:
+            # 同音連打は同じ弦で弾くのが自然なためペナルティ適用外
+            pass
+        else:
+            # テンポ（ioi）が速いほど、同じ弦で異なる音を連続して弾くのは難しい
+            current_ioi = ioi if ioi is not None else 0.3
+            if current_ioi < 0.3:
+                # 速いパッセージではペナルティを増幅 (IOI=0.1sなら3倍)
+                cost += WEIGHTS["w_same_string_repeat"] * (0.3 / max(0.05, current_ioi))
+            else:
+                # 遅いパッセージではペナルティを低減 (30%)
+                cost += WEIGHTS["w_same_string_repeat"] * 0.3
 
     # --- ピッチ近接性ルール (法則3: 3半音境界) ---
     # <3半音 → 同弦維持が優勢, ≥3半音 → 隣接弦遷移が優勢
@@ -1001,12 +1162,17 @@ def _transition_cost(s: int, f: int,
 
     # === L01構造: フレットジャンプ非線形ペナルティ ===
     # 2f以内=90.5%, 3f=5.5%, 4f+=3.6% → 3f以上で急激にコスト増
+    # 横道論文に基づく「実行不可能解」の厳格な除外 (5フレット以上のジャンプやポジションスパン超え)
     if f > 0 and prev_f > 0:
         fj = abs(f - prev_f)
-        if fj >= 3:
-            cost += (fj - 2) ** 2 * 8.0  # 3f=8, 4f=32, 5f=72
         if fj >= 5:
-            cost += 50.0  # L28: 5フレット以上は身体的限界
+            cost += WEIGHTS.get("w_unplayable", 10000.0)  # 5フレット以上は物理的限界
+        else:
+            max_stretch = _get_max_span(min(f, prev_f))
+            if fj > max_stretch:
+                cost += WEIGHTS.get("w_unplayable", 10000.0)  # ポジション依存スパン超え
+        if fj >= 3 and fj < 5:
+            cost += (fj - 2) ** 2 * 8.0  # 3f=8, 4f=32
 
     # --- 右手PIMA制約 (Skarha 2018) ---
     finger = _PIMA_NATURAL.get(s, 'p')
@@ -1027,6 +1193,25 @@ def _transition_cost(s: int, f: int,
         if (s < prev_s and curr_order < prev_order) or \
            (s > prev_s and curr_order > prev_order):
             cost += WEIGHTS["w_pima_crossing"]
+
+    # === サステイン重複時の同一弦競合ペナルティ (横道論文: 実行不可能解の除去) ===
+    if prev_time is not None and prev_duration is not None and cur_time is not None:
+        if prev_time + prev_duration > cur_time + 0.01:
+            if s == prev_s and pitch != prev_pitch:
+                # 低音弦（4, 5, 6弦）はベースの響きを残したいため、強力にペナルティ
+                if s >= 4:
+                    cost += WEIGHTS.get("w_sustain_cutoff_bass", 150.0)
+                else:
+                    cost += WEIGHTS.get("w_sustain_cutoff_melody", 50.0)
+
+    # 4. 物理移行ロスタイム（消音時間）ペナルティ (国内・林田論文準拠)
+    # 手の位置の移動距離と弦切り替えに伴う物理移行時間を計算し、IOI（音符間隔）を超過したロスタイム（秒）をペナルティ化
+    if ioi is not None:
+        # 簡易物理移行時間 (弦切り替え: 約40ms/弦, ポジション移動: 約70ms/F)
+        t_move = (string_dist * 0.04) + (pos_shift * 0.07)
+        t_loss = max(0.0, t_move - ioi)
+        if t_loss > 0.0:
+            cost += t_loss * WEIGHTS.get("w_loss_time_penalty", 150.0)
 
     return cost
 
@@ -1131,7 +1316,8 @@ def _ergonomic_cost_chord(combo: Tuple[Tuple[int, int], ...]) -> float:
 
 def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                           max_fret: int, initial_position: float,
-                          guitar_type: str = 'auto') -> List[dict]:
+                          guitar_type: str = 'auto',
+                          scale_positions: Optional[List[int]] = None) -> List[dict]:
     """
     Viterbi DPでフレーズ内の単音列の最適パスを探索する。
     和音グループはそのまま通過させ、単音のみDPで最適化する。
@@ -1203,7 +1389,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             # 音楽理論: コード名を取得して典型フォーム一致コストに使用
             chord_name = group[0].get("_chord_name", "")
             assigned = _assign_chord_notes(chord_notes, tuning, max_fret, prev_f,
-                                           chord_name=chord_name)
+                                           chord_name=chord_name, scale_positions=scale_positions)
             chord_results[gi] = assigned
             # 和音の結果をViterbi用の「固定候補」として設定
             fingering = tuple((n["string"], n["fret"]) for n in assigned)
@@ -1219,15 +1405,21 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         first_candidates = [(1, 0)]
 
     for s, f in first_candidates:
-        pos_cost = _position_cost(s, f)
+        pos_cost = _position_cost(s, f, scale_positions)
         tmb_cost = _timbre_cost(s, f, tuning)
-        # CNN弦推定ヒントを取り込む
+        # CNN弦推定ヒントを取り込む（確信度60%以上のみボーナス適用）
         cnn_bonus = 0.0
         if len(groups[0]) == 1:
             cnn_probs = groups[0][0].get('cnn_string_probs')
-            if cnn_probs and s in cnn_probs:
-                _w = groups[0][0].get('_cnn_weight', 30.0)
-                cnn_bonus = -cnn_probs[s] * _w  # CNN弦予測ボーナス（ナイロン弦時は低重み）
+            if cnn_probs:
+                prob = 0.0
+                if s in cnn_probs:
+                    prob = float(cnn_probs[s])
+                elif str(s) in cnn_probs:
+                    prob = float(cnn_probs[str(s)])
+                if prob >= 0.6:
+                    _w = groups[0][0].get('_cnn_weight', 5.0)
+                    cnn_bonus = -prob * _w  # CNN弦予測ボーナス
         # 初期ポジションからの距離
         init_cost = abs(f - initial_position) * WEIGHTS["w_movement"] * 0.3 if f > 0 else 0.0
         # ⑪ ソロギター用: コードフォーム内ポジション優先
@@ -1257,7 +1449,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         if not prev_trellis:
             # 前のtrellisが空の場合、初期化と同様に処理
             for s, f in candidates:
-                pos_cost = _position_cost(s, f)
+                pos_cost = _position_cost(s, f, scale_positions)
                 tmb_cost = _timbre_cost(s, f, tuning)
                 trellis[gi][(s, f)] = (pos_cost + tmb_cost, None)
             continue
@@ -1267,16 +1459,22 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             best_prev = None
 
             # Emission cost (このポジション自体のコスト)
-            pos_cost = _position_cost(s, f)
+            pos_cost = _position_cost(s, f, scale_positions)
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
 
-            # CNN弦分類器ヒント
+            # CNN弦分類器ヒント（確信度60%以上のみ）
             if is_single:
                 cnn_probs = groups[gi][0].get('cnn_string_probs')
-                if cnn_probs and s in cnn_probs:
-                    _w = groups[gi][0].get('_cnn_weight', 30.0)
-                    emission -= cnn_probs[s] * _w
+                if cnn_probs:
+                    prob = 0.0
+                    if s in cnn_probs:
+                        prob = float(cnn_probs[s])
+                    elif str(s) in cnn_probs:
+                        prob = float(cnn_probs[str(s)])
+                    if prob >= 0.6:
+                        _w = groups[gi][0].get('_cnn_weight', 5.0)
+                        emission -= prob * _w
             if f == 0:
                 emission += WEIGHTS["w_open_emission_bonus"]
 
@@ -1299,25 +1497,52 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 
             # 全ての前状態からの遷移を評価
             # IOI制約 (Bontempi 2024): 音符間の時間差に応じたフレット移動制限
-            ioi = 999.0  # デフォルト: 制限なし
-            prev_time = groups[gi - 1][0].get("start", 0)
-            cur_time = groups[gi][0].get("start", 0)
+            prev_note = groups[gi - 1][0]
+            cur_note = groups[gi][0]
+            
+            # 防衛的な数値変換 (TypeError/ValueErrorの回避)
+            try:
+                prev_time = float(prev_note.get("start", prev_note.get("start_time", 0.0)))
+            except (TypeError, ValueError):
+                prev_time = 0.0
+                
+            try:
+                cur_time = float(cur_note.get("start", cur_note.get("start_time", 0.0)))
+            except (TypeError, ValueError):
+                cur_time = prev_time + 0.3
+                
+            try:
+                prev_duration = float(prev_note.get("duration", prev_note.get("end", prev_time) - prev_time))
+            except (TypeError, ValueError):
+                prev_duration = 0.3
+            
             ioi = max(0.01, cur_time - prev_time)
             # 人間の指の移動速度: 約12フレット/秒が限界
-            # IOI=0.1s → max_reach=1.2f, IOI=0.5s → max_reach=6f, IOI=1s → 12f
             max_fret_reach = min(MAX_FRET, max(2, int(ioi * 12)))
 
             # ピッチ情報をtransition_costに渡す (V4改善)
-            cur_pitch = groups[gi][0].get("pitch") if is_single else None
-            prev_pitch = groups[gi-1][0].get("pitch") if len(groups[gi-1]) == 1 else None
+            cur_pitch = cur_note.get("pitch") if is_single else None
+            prev_pitch = prev_note.get("pitch") if len(groups[gi-1]) == 1 else None
 
             for (prev_s, prev_f), (prev_cost, _) in prev_trellis.items():
-                trans = _transition_cost(s, f, prev_s, prev_f, cur_pitch, prev_pitch)
+                trans = _transition_cost(
+                    s, f, prev_s, prev_f, cur_pitch, prev_pitch,
+                    ioi=ioi, prev_time=prev_time, prev_duration=prev_duration, cur_time=cur_time
+                )
                 
                 # コード境界検出: コードが変わった場合、手全体を動かすのは自然
                 prev_chord = groups[gi-1][0].get("_chord_name", "")
                 if chord_name and prev_chord and chord_name != prev_chord:
                     trans *= 0.15  # コード変更時は遷移コストほぼ無視
+
+                # --- アルペジオにおけるコードフォーム・ロッキング (対策3) ---
+                if chord_name:
+                    # 前の状態と今の状態が共に現在のコードフォームに適合しているかチェック
+                    prev_form_cost = _chord_form_position_cost(prev_s, prev_f, chord_name, tuning)
+                    curr_form_cost = _chord_form_position_cost(s, f, chord_name, tuning)
+                    if prev_form_cost < -5.0 and curr_form_cost < -5.0:
+                        # 共にコードフォームに一致 → ポジションを移動させずにフォームをキープする遷移を優遇
+                        trans = trans * 0.1 - 25.0
                 
                 # コードフォームに向かう移動は安い（先読み）
                 # 「次のポジションを予測して押さえやすい位置に移動する」
@@ -1350,8 +1575,14 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                         # フレットが低い順に上位3候補のみ評価
                         top3 = sorted(next_candidates_list, key=lambda x: x[1])[:3]
                         next_pitch = groups[gi + 1][0].get('pitch') if len(groups[gi + 1]) == 1 else None
+                        next_note = groups[gi + 1][0]
+                        next_time = next_note.get("start", next_note.get("start_time", 0.0))
+                        next_ioi = max(0.01, next_time - cur_time)
                         min_next_trans = min(
-                            _transition_cost(ns, nf, s, f, next_pitch, cur_pitch)
+                            _transition_cost(
+                                ns, nf, s, f, next_pitch, cur_pitch,
+                                ioi=next_ioi, prev_time=cur_time, prev_duration=cur_note.get("duration", 0.2), cur_time=next_time
+                            )
                             for ns, nf in top3
                         )
                         # 次が楽な弦選びにボーナス（コスト低減）
@@ -1421,7 +1652,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 
 
 def _minimax_postprocess(notes: List[dict], tuning: List[int],
-                         max_fret: int) -> List[dict]:
+                         max_fret: int,
+                         scale_positions: Optional[List[int]] = None) -> List[dict]:
     """
     Minimax Viterbi DP (Hori & Sagayama, ISMIR 2016) による後処理。
     
@@ -1455,13 +1687,18 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     
     # 初期化: 最初のノートのステップコストは位置コストのみ
     for s, f in candidates_list[0]:
-        step_cost = _position_cost(s, f) + _timbre_cost(s, f, tuning)
-        # CNN弦予測ボーナス
+        step_cost = _position_cost(s, f, scale_positions) + _timbre_cost(s, f, tuning)
+        # CNN弦予測ボーナス（確信度60%以上のみ）
         cnn_probs = notes[0].get('cnn_string_probs')
-        if cnn_probs and str(s) in cnn_probs:
-            step_cost -= float(cnn_probs[str(s)]) * 30.0
-        elif cnn_probs and s in cnn_probs:
-            step_cost -= float(cnn_probs[s]) * 30.0
+        if cnn_probs:
+            prob = 0.0
+            if str(s) in cnn_probs:
+                prob = float(cnn_probs[str(s)])
+            elif s in cnn_probs:
+                prob = float(cnn_probs[s])
+            if prob >= 0.6:
+                _w = notes[0].get('_cnn_weight', 5.0)
+                step_cost -= prob * _w
         mm_trellis[0][(s, f)] = (step_cost, step_cost, None)
     
     # Forward pass (minimax semiring)
@@ -1477,18 +1714,47 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
             best_sum_cost = float('inf')
             best_prev = None
             
-            emission = _position_cost(s, f) + _timbre_cost(s, f, tuning)
-            # CNN弦予測ボーナス
+            emission = _position_cost(s, f, scale_positions) + _timbre_cost(s, f, tuning)
+            # CNN弦予測ボーナス（確信度60%以上のみ）
             cnn_probs = notes[i].get('cnn_string_probs')
-            if cnn_probs and str(s) in cnn_probs:
-                emission -= float(cnn_probs[str(s)]) * 30.0
-            elif cnn_probs and s in cnn_probs:
-                emission -= float(cnn_probs[s]) * 30.0
+            if cnn_probs:
+                prob = 0.0
+                if str(s) in cnn_probs:
+                    prob = float(cnn_probs[str(s)])
+                elif s in cnn_probs:
+                    prob = float(cnn_probs[s])
+                if prob >= 0.6:
+                    _w = notes[i].get('_cnn_weight', 5.0)
+                    emission -= prob * _w
             if f == 0:
                 emission -= 30.0
             
+            prev_note = notes[i - 1]
+            cur_note = notes[i]
+            
+            try:
+                prev_time = float(prev_note.get("start", prev_note.get("start_time", 0.0)))
+            except (TypeError, ValueError):
+                prev_time = 0.0
+                
+            try:
+                cur_time = float(cur_note.get("start", cur_note.get("start_time", 0.0)))
+            except (TypeError, ValueError):
+                cur_time = prev_time + 0.3
+                
+            try:
+                prev_duration = float(prev_note.get("duration", prev_note.get("end", prev_time) - prev_time))
+            except (TypeError, ValueError):
+                prev_duration = 0.3
+            
+            cur_pitch = cur_note.get("pitch")
+            prev_pitch = prev_note.get("pitch")
+
             for (prev_s, prev_f), (prev_max, prev_sum, _) in mm_trellis[i - 1].items():
-                trans = _transition_cost(s, f, prev_s, prev_f)
+                trans = _transition_cost(
+                    s, f, prev_s, prev_f, cur_pitch, prev_pitch,
+                    ioi=ioi, prev_time=prev_time, prev_duration=prev_duration, cur_time=cur_time
+                )
                 
                 # IOI制約
                 fret_jump = abs(f - prev_f) if (f > 0 and prev_f > 0) else 0
@@ -1531,7 +1797,18 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     for i in range(1, n):
         s, f = notes[i].get("string", 1), notes[i].get("fret", 0)
         ps, pf = notes[i-1].get("string", 1), notes[i-1].get("fret", 0)
-        step = _transition_cost(s, f, ps, pf) + _position_cost(s, f)
+        
+        prev_note = notes[i - 1]
+        cur_note = notes[i]
+        prev_time = prev_note.get("start", prev_note.get("start_time", 0.0))
+        cur_time = cur_note.get("start", cur_note.get("start_time", 0.0))
+        prev_duration = prev_note.get("duration", prev_note.get("end", prev_time) - prev_time)
+        ioi = max(0.01, cur_time - prev_time)
+        
+        step = _transition_cost(
+            s, f, ps, pf, cur_note.get("pitch"), prev_note.get("pitch"),
+            ioi=ioi, prev_time=prev_time, prev_duration=prev_duration, cur_time=cur_time
+        ) + _position_cost(s, f, scale_positions)
         sum_max_step = max(sum_max_step, step)
     
     # minimax-optimalの最大ステップコスト
@@ -1596,7 +1873,8 @@ def _fallback_position(pitch: int, tuning: List[int],
 def _score_chord(combo: Tuple[Tuple[int, int], ...],
                  prev_fingering: Optional[List[Tuple[int, int]]],
                  tuning: List[int],
-                 chord_name: str = "") -> float:
+                 chord_name: str = "",
+                 scale_positions: Optional[List[int]] = None) -> float:
     """
     和音のスコアリング (高いほど良い)。
     音楽理論コスト（典型フォーム一致、ルート音制約、構成音一致）を統合。
@@ -1618,7 +1896,7 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
 
     # 2. 位置コスト (平均)
     for s, f in combo:
-        score -= _position_cost(s, f)
+        score -= _position_cost(s, f, scale_positions)
 
     # 2.5 和音フレット高ペナルティ（人間はローポジを好む）
     max_f = max(f for _, f in combo) if combo else 0
@@ -1680,7 +1958,8 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
 def _assign_chord_notes(notes: List[dict], tuning: List[int],
                         max_fret: int,
                         prev_fingering: Optional[List[Tuple[int, int]]],
-                        chord_name: str = "") -> List[dict]:
+                        chord_name: str = "",
+                        scale_positions: Optional[List[int]] = None) -> List[dict]:
     """
     和音のフィンガリング割り当て。
     全組み合わせを列挙し、_score_chord でスコアリング。
@@ -1729,7 +2008,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
         if len(set(strings_used)) != len(strings_used):
             continue
 
-        score = _score_chord(combo, prev_fingering, tuning, chord_name=chord_name)
+        score = _score_chord(combo, prev_fingering, tuning, chord_name=chord_name, scale_positions=scale_positions)
 
         if score > best_score:
             best_score = score
@@ -1764,10 +2043,12 @@ def _group_simultaneous(notes: List[dict], threshold: float = 0.03) -> List[List
     """Group notes that start within `threshold` seconds of each other."""
     if not notes:
         return []
-    sorted_notes = sorted(notes, key=lambda n: (n["start"], n["pitch"]))
+    def get_start(n):
+        return float(n.get("start", n.get("start_time", 0.0)))
+    sorted_notes = sorted(notes, key=lambda n: (get_start(n), n.get("pitch", 0)))
     groups = [[sorted_notes[0]]]
     for n in sorted_notes[1:]:
-        if abs(n["start"] - groups[-1][0]["start"]) < threshold:
+        if abs(get_start(n) - get_start(groups[-1][0])) < threshold:
             groups[-1].append(n)
         else:
             groups.append([n])
@@ -1783,7 +2064,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                       initial_position: float = 0.0,
                       chords: List[dict] = None,
                       audio_path: str = None,
-                      guitar_type: str = 'auto') -> List[dict]:
+                      guitar_type: str = 'auto',
+                      key: str = None) -> List[dict]:
     """
     Assign (string, fret) to each note using Viterbi DP + Minimax postprocessing.
 
@@ -1808,6 +2090,10 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     """
     if tuning is None:
         tuning = STANDARD_TUNING
+
+    # 音楽理論: キーに基づく主要スケールポジションの導出
+    scale_positions = get_key_scale_positions(key)
+    print(f"[string_assigner] キー '{key}' に基づくスケールポジション: {scale_positions}")
 
     if not notes:
         return notes
@@ -1874,11 +2160,13 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
                   f"est_position={estimated_position:.1f}")
     
-    # CNN重み: steel=30.0 (CQT信頼大), nylon=25.0 (CNN-first有効化)
-    # 分析結果: CNN argmax=70.8% > Viterbi=66.9% → ナイロンでもCNNを信頼
-    cnn_weight = 25.0 if is_nylon else 30.0
+    # CNN重み: ユーザー要望に基づきAI依存度をさらに軽減 (steel=5.0, nylon=4.0)
+    # DP(動的計画法)による人間工学的コストおよび運指の滑らかさを最優先とする
+    cnn_weight = 4.0 if is_nylon else 5.0
     if is_nylon:
-        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight} (CNN-first有効)")
+        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight}")
+    else:
+        print(f"[string_assigner] スチール弦モード: CNN重み={cnn_weight}")
     
     # CNNの弦確率にギタータイプ別重みを反映
     for note in notes:
@@ -1925,7 +2213,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         # 純Transformer-first → 14.1%エラー（遷移コストなしで跳躍多発）
         # Viterbi + TF emission bonus → 3.4%エラー（滑らかさ＋学習データ活用）
         phrase_result = _viterbi_single_notes(
-            phrase, tuning, max_fret, initial_position, guitar_type
+            phrase, tuning, max_fret, initial_position, guitar_type, scale_positions=scale_positions
         )
         result.extend(phrase_result)
 
@@ -1934,7 +2222,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     result = pima_r5_postprocess(result, tuning, max_fret)
 
     # Minimax後処理: 最大遷移コストの箇所を局所再最適化
-    result = _minimax_postprocess(result, tuning, max_fret)
+    result = _minimax_postprocess(result, tuning, max_fret, scale_positions=scale_positions)
 
     # === V3 Transformer 2パス目: 無効化 ===
     # V3b: f0-4過集中(89%)の原因がこの段階のハイ→ロー変換と判明
@@ -1965,8 +2253,11 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         if n_overrides > 0:
             print(f"[Transformer V3] {n_overrides}ノートを修正")
 
-    # 軽量スムージング
+    # 軌道スムージング
     result = _smooth_jumps(result, tuning, max_fret)
+
+    # v19.0: 動的右手運指（PIMA）アサインモデルの適用
+    result = _assign_right_hand_fingers(result)
 
     return result
 
@@ -2083,7 +2374,6 @@ def _smooth_jumps(result: List[dict], tuning: List[int], max_fret: int) -> List[
         if cur_f == 0 or prev_f == 0:
             continue
 
-        # 前後両方から6f以上離れている = 孤立ハイポジ
         if abs(cur_f - prev_f) > 6 and abs(cur_f - next_f) > 6:
             pitch = note.get('pitch', 60)
             # より近いフレットを探す
@@ -2104,3 +2394,157 @@ def _smooth_jumps(result: List[dict], tuning: List[int], max_fret: int) -> List[
     if fixes > 0:
         print(f"[Smooth] {fixes} jumps smoothed")
     return result
+
+
+def _assign_right_hand_fingers(notes: List[dict]) -> List[dict]:
+    """
+    v19.0: 動的右手運指（PIMA）アサインモデル。
+    時系列に並んだノートに対して、同弦連打時の交替運指（alternation）や、
+    和音（同時発音）時における指の重複回避を考慮して、右手のピッキング指（r_finger）を割り当てます。
+    1: p (親指), 2: i (人差し指), 3: m (中指), 4: a (薬指)
+    """
+    if not notes:
+        return notes
+
+    # 1. 開始時間 'start' でソートした上で同時発音（和音）のグループ化
+    # 既に時系列順になっている前提だが、念のため複製して安定ソート
+    sorted_notes = sorted(notes, key=lambda n: n.get('start', 0.0))
+    groups: List[List[dict]] = []
+    
+    for note in sorted_notes:
+        if not groups:
+            groups.append([note])
+        else:
+            # 0.03秒以内は同時発音（和音）とみなす
+            if abs(note.get('start', 0.0) - groups[-1][0].get('start', 0.0)) <= 0.03:
+                groups[-1].append(note)
+            else:
+                groups.append([note])
+
+    # 2. グループごとに右手指を割り当て
+    # 直前の単音で使われた指と弦の履歴（連打交替用）
+    prev_single_finger = None
+    prev_single_string = None
+    prev_single_time = -100.0
+
+    pima_natural = {1: 4, 2: 3, 3: 2, 4: 1, 5: 1, 6: 1}  # 自然な対応（1:a, 2:m, 3:i, 4-6:p）
+
+    for group in groups:
+        if len(group) == 1:
+            note = group[0]
+            s = note.get('string', 1)
+            t = note.get('start', 0.0)
+            natural_f = pima_natural.get(s, 1)
+
+            # 同弦連打時の交替ルール (Alternation)
+            if prev_single_string == s and (t - prev_single_time) < 0.4:
+                if natural_f in (2, 3, 4):  # i, m, a の場合
+                    # 直前が i なら次は m
+                    if prev_single_finger == 2:
+                        finger = 3
+                    # 直前が m なら次は i (1弦なら a も候補だが、基本は i で交替)
+                    elif prev_single_finger == 3:
+                        finger = 4 if s == 1 else 2
+                    # 直前が a なら次は m
+                    elif prev_single_finger == 4:
+                        finger = 3
+                    else:
+                        finger = natural_f
+                else:
+                    # 親指(p)は連打を許容する
+                    finger = 1
+            else:
+                # 異弦だが前の指と同じ指になるのを避ける（異弦同指の回避）
+                if prev_single_string != s and (t - prev_single_time) < 0.3:
+                    if natural_f == prev_single_finger and natural_f in (2, 3, 4):
+                        # 前の指と同じになるのを避けるために隣の指にずらす
+                        if natural_f == 2:    # i -> m(3)
+                            finger = 3
+                        elif natural_f == 3:  # m -> i(2) または a(4)
+                            finger = 2 if s > prev_single_string else 4
+                        elif natural_f == 4:  # a -> m(3)
+                            finger = 3
+                        else:
+                            finger = natural_f
+                    else:
+                        finger = natural_f
+                else:
+                    # 十分に時間が空いたか、ベース弦などの場合は自然位置
+                    finger = natural_f
+
+            note['r_finger'] = finger
+            prev_single_finger = finger
+            prev_single_string = s
+            prev_single_time = t
+
+        else:
+            # 和音（同時発音）の処理。重複しない指を割り当てる。
+            # 弦番号で降順ソート（低音弦 6弦 -> 高音弦 1弦 の順）
+            sorted_group = sorted(group, key=lambda x: x.get('string', 1), reverse=True)
+            n_notes = len(sorted_group)
+            
+            # デフォルトはすべて pima_natural から取得
+            fingers = [pima_natural.get(n.get('string', 1), 1) for n in sorted_group]
+
+            if n_notes == 2:
+                s_low, s_high = sorted_group[0].get('string', 1), sorted_group[1].get('string', 1)
+                # 低音弦がベース弦なら p(1)、高音弦は自然な指
+                if s_low >= 4:
+                    fingers[0] = 1
+                    f_high = pima_natural.get(s_high, 2)
+                    fingers[1] = f_high if f_high != 1 else 2  # 高音がベース弦等の場合は i(2) に逃げる
+                else:
+                    # 両方高音弦（例: 3弦と2弦）
+                    f_high = pima_natural.get(s_high, 3)
+                    if f_high == 1:
+                        f_high = 2
+                    fingers[1] = f_high
+                    fingers[0] = max(2, f_high - 1)  # 低い音にはより内側の指
+
+            elif n_notes == 3:
+                s0, s1, s2 = sorted_group[0].get('string', 1), sorted_group[1].get('string', 1), sorted_group[2].get('string', 1)
+                f2 = pima_natural.get(s2, 4)
+                if f2 == 1:
+                    f2 = 3
+                f1 = max(2, f2 - 1)
+                if s0 >= 4:
+                    f0 = 1  # p
+                else:
+                    f0 = max(2, f1 - 1)
+                fingers = [f0, f1, f2]
+
+            elif n_notes >= 4:
+                # 4音以上の場合は、高音側の3音に a(4), m(3), i(2) を割り当て、それ以外（低音側すべて）に p(1)
+                for idx in range(n_notes):
+                    rev_idx = n_notes - 1 - idx
+                    if rev_idx == 0:
+                        fingers[n_notes - 1] = 4  # a
+                    elif rev_idx == 1:
+                        fingers[n_notes - 2] = 3  # m
+                    elif rev_idx == 2:
+                        fingers[n_notes - 3] = 2  # i
+                    else:
+                        fingers[n_notes - 1 - rev_idx] = 1  # p
+
+            # 重複の最終チェックと補正（万が一重複があった場合のフォールバック）
+            used = set()
+            for idx in range(n_notes):
+                f = fingers[idx]
+                if f in used and f != 1:  # 親指(p)の重複は許容するが、imaは重複禁止
+                    for alt in (2, 3, 4):
+                        if alt not in used:
+                            fingers[idx] = alt
+                            break
+                used.add(fingers[idx])
+
+            # ノートに適用
+            for idx, note in enumerate(sorted_group):
+                note['r_finger'] = fingers[idx]
+
+            # 履歴は最も高音弦のノートで更新
+            highest_note = sorted_group[-1]
+            prev_single_finger = highest_note.get('r_finger')
+            prev_single_string = highest_note.get('string')
+            prev_single_time = highest_note.get('start', 0.0)
+
+    return notes

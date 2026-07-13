@@ -108,10 +108,10 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
             num_frames_rnn_input_dim=1280, rnn_type="GRU", 
             rnn_hidden_size=768, rnn_layers=2, rnn_dropout=0.3, rnn_bidirectional=True
         )
-        state_dict = torch.load(model_path, map_location=device, weights_only=False)
+        state_dict = torch.load(model_path, map_location=device, weights_only=True)
         if list(state_dict.keys())[0].startswith("module."):
             state_dict = {k[7:]: v for k, v in state_dict.items()}
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict, strict=False)
         model.to(device)
         model.eval()
         _CACHED_MODELS[model_dir] = model
@@ -127,18 +127,29 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
         vote_threshold = max(2, round(n_actual * 0.43))
         print(f"[MoE] vote_threshold auto-adjusted: {old_vt} → {vote_threshold} (only {n_actual}/{n_expected} models available)")
     
-    # --- 一括推論 ---
+    # --- 逐次推論（GPU VRAM爆発とデッドロックを防ぐため即座にCPUへ転送） ---
     all_onset_probs = []
     all_fret_preds = []
     
     t_infer = _time.time()
     with torch.inference_mode():
         for i, (name, model) in enumerate(models_loaded):
-            onset_logits, fret_logits = model(features)
-            onset_probs = torch.sigmoid(onset_logits[0]).cpu().numpy()
-            fret_probs = torch.softmax(fret_logits[0], dim=-1).cpu().numpy()
-            all_onset_probs.append(onset_probs)
-            all_fret_preds.append(np.argmax(fret_probs, axis=-1))
+            model_output = model(features)
+            onset_logits = model_output[0][0]
+            fret_logits = model_output[1][0]
+            
+            # GPU上で計算後、即座にCPUへ転送してテンソルを解放
+            onset_prob = torch.sigmoid(onset_logits).cpu().numpy()
+            fret_pred = torch.argmax(fret_logits, dim=-1).cpu().numpy()
+            
+            all_onset_probs.append(onset_prob)
+            all_fret_preds.append(fret_pred)
+            
+            # メモリの強制クリーンアップ
+            del model_output, onset_logits, fret_logits
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
     timings['inference'] = _time.time() - t_infer
     print(f"[MoE] Inference: {len(models_loaded)} models in {timings['inference']:.1f}s ({timings['inference']/max(len(models_loaded),1):.2f}s/model)")
         
@@ -171,6 +182,16 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
     print(f"[MoE] DONE: {len(notes)} notes in {total:.1f}s "
           f"(CQT={timings['cqt']:.1f}s, Load={timings['model_load']:.1f}s, "
           f"Infer={timings['inference']:.1f}s, Vote={timings['voting']:.1f}s)")
+          
+    # メモリ枯渇防止：キャッシュ内のモデル数が多すぎる場合はクリアしてRAMを解放
+    if len(_CACHED_MODELS) > 10:
+        print(f"[MoE] Clearing cached models ({len(_CACHED_MODELS)}) to free memory.")
+        _CACHED_MODELS.clear()
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
     return notes
 
 
@@ -189,7 +210,7 @@ def _apply_physical_constraints(notes: list) -> list:
     filtered = []
     MIN_INTERVAL = 0.030   # 同一弦の最小間隔 30ms
     MIN_DURATION = 0.025   # 最小ノート長 25ms
-    MAX_FRET = 15
+    MAX_FRET = 14  # v2.2: 15→14 統一
     
     for note in notes:
         # Rule 3: フレット範囲チェック
