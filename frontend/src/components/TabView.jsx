@@ -170,6 +170,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     noteIndex: backendIdx,
                     fret: note.fret,
                     string: backendString,
+                    editFinger: matchedNote?.left_hand_finger || 0,
+                    editAnchor: matchedNote?._is_anchor || false,
                     startTime: matchedNote?.start,
                     x: popupX,
                     y: popupY,
@@ -729,6 +731,97 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         return newRoot + quality;
     };
 
+    const buildAnchorOverlay = (api) => {
+        if (!wrapperRef.current) return;
+        const parent = wrapperRef.current.parentElement;
+        if (!parent) return;
+
+        const old = parent.querySelector('.anchor-overlay');
+        if (old) old.remove();
+
+        const notes  = notesDataRef.current;
+        const beatMap = beatMapRef.current;
+        if (!notes.length || !beatMap.length) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'anchor-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '15';
+
+        const lookup = api?.renderer?.boundsLookup;
+        if (!lookup) return;
+        const margin = 2;
+
+        const groups = lookup.staffSystems || lookup.staveGroups || [];
+        for (const sys of groups) {
+            const bars = sys.bars || sys.masterBars || [];
+            for (const bar of bars) {
+                const barBounds = bar.bars || [];
+                for (const bb of barBounds) {
+                    const beats = bb.beats || [];
+                    for (const beatBounds of beats) {
+                        const notesBounds = beatBounds.notes || [];
+                        for (const nb of notesBounds) {
+                            if (!nb.note) continue;
+                            const scoreNote = nb.note;
+                            
+                            const beat = scoreNote.beat;
+                            const ticksPerBeat = 960;
+                            const bpm = (typeof api.score?.tempo === 'object' && api.score?.tempo !== null)
+                                ? (api.score.tempo.value || 120)
+                                : (api.score?.tempo || 120);
+                            const approxTimeSec = (beat.absolutePlaybackStart / ticksPerBeat) * (60 / bpm);
+                            const backendString = 7 - scoreNote.string;
+
+                            let matchedBackendNote = null;
+                            let bestDist = Infinity;
+                            for (let i = 0; i < notes.length; i++) {
+                                const bn = notes[i];
+                                const startVal = bn.start_time ?? bn.start ?? 0;
+                                if (Number(bn.string) === backendString && Number(bn.fret) === Number(scoreNote.fret)) {
+                                    const d = Math.abs(startVal - approxTimeSec);
+                                    if (d < bestDist) { bestDist = d; matchedBackendNote = bn; }
+                                }
+                            }
+                            
+                            if (matchedBackendNote && matchedBackendNote._is_anchor) {
+                                const bounds = nb.noteHeadBounds || beatBounds.visualBounds;
+                                if (bounds) {
+                                    const { x, y, w, h } = bounds;
+                                    const el = document.createElement('div');
+                                    el.innerText = '🔒';
+                                    el.style.position = 'absolute';
+                                    el.style.left = `${x}px`;
+                                    el.style.top = `${y - 12}px`;
+                                    el.style.fontSize = '12px';
+                                    el.style.color = 'gold';
+                                    el.style.textShadow = '0 0 2px black';
+                                    overlay.appendChild(el);
+                                    
+                                    const bg = document.createElement('div');
+                                    bg.style.position = 'absolute';
+                                    bg.style.left = `${x - margin}px`;
+                                    bg.style.top = `${y - margin}px`;
+                                    bg.style.width = `${w + margin*2}px`;
+                                    bg.style.height = `${h + margin*2}px`;
+                                    bg.style.background = 'rgba(255, 215, 0, 0.2)';
+                                    bg.style.border = '1px solid rgba(255, 215, 0, 0.5)';
+                                    bg.style.borderRadius = '4px';
+                                    bg.style.zIndex = '-1';
+                                    overlay.appendChild(bg);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        parent.appendChild(overlay);
+    };
+
     const buildChordOverlay = (api) => {
         if (!wrapperRef.current) return;
         const parent = wrapperRef.current.parentElement;
@@ -1055,6 +1148,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             try {
                                 buildChordOverlay(api);
                             } catch (e) { console.warn("[TabView] Chord overlay:", e); }
+                            try {
+                                buildAnchorOverlay(api);
+                            } catch (e) { console.warn("[TabView] Anchor overlay:", e); }
                         } else if (attempt < 4) {
                             setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
                         }
@@ -1300,6 +1396,27 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                 >{s}</button>
                             ))}
                         </div>
+                                                {/* 指選択とアンカー */}
+                        <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4, marginBottom: 4 }}>
+                            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                                <span style={{ fontSize: 10, color: "#64748b", width: 20 }}>指</span>
+                                {[1,2,3,4].map(f => (
+                                    <button key={f}
+                                        onClick={() => setEditNote(prev => ({ ...prev, editFinger: prev.editFinger === f ? 0 : f }))}
+                                        style={{
+                                            width: 22, height: 22, borderRadius: 4, border: "none",
+                                            background: editNote.editFinger === f ? "#10b981" : "#334155",
+                                            color: "white", fontWeight: 700, fontSize: 11,
+                                            cursor: "pointer", transition: "all 0.15s",
+                                        }}
+                                    >{f}</button>
+                                ))}
+                            </div>
+                            <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 11, color: editNote.editAnchor ? "gold" : "#94a3b8" }}>
+                                <input type="checkbox" checked={editNote.editAnchor || false} onChange={(e) => setEditNote(prev => ({...prev, editAnchor: e.target.checked}))} style={{ accentColor: "gold" }} />
+                                🔒 Lock
+                            </label>
+                        </div>
                         {/* フレット入力 + 保存 */}
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                             <span style={{ fontSize: 10, color: "#64748b", width: 20 }}>F</span>
@@ -1325,8 +1442,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                             // Standard tuning MIDI base per string: 1=E4(64), 2=B3(59), 3=G3(55), 4=D3(50), 5=A2(45), 6=E2(40)
                                             const stringMidi = [0, 64, 59, 55, 50, 45, 40];
                                             const bodyData = isNew
-                                                ? { fret: newFret, string: newString, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
-                                                : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
+                                            ? { fret: newFret, string: newString, finger: editNote.editFinger, anchor: editNote.editAnchor, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
+                                            : { fret: newFret, string: newString, finger: editNote.editFinger, anchor: editNote.editAnchor, start_time: editNote.startTime, old_fret: editNote.fret };
 
                                             const res = await fetch(url, {
                                                 method: method,
@@ -1370,8 +1487,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                         // Standard tuning MIDI base per string: 1=E4(64), 2=B3(59), 3=G3(55), 4=D3(50), 5=A2(45), 6=E2(40)
                                         const stringMidi = [0, 64, 59, 55, 50, 45, 40];
                                         const bodyData = isNew
-                                            ? { fret: newFret, string: newString, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
-                                            : { fret: newFret, string: newString, start_time: editNote.startTime, old_fret: editNote.fret };
+                                            ? { fret: newFret, string: newString, finger: editNote.editFinger, anchor: editNote.editAnchor, start: editNote.startTime, end: editNote.startTime + 0.25, pitch: (stringMidi[newString] || 64) + newFret }
+                                            : { fret: newFret, string: newString, finger: editNote.editFinger, anchor: editNote.editAnchor, start_time: editNote.startTime, old_fret: editNote.fret };
 
                                         const res = await fetch(url, {
                                             method: method,
@@ -1435,6 +1552,31 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 position: "fixed", bottom: 80, right: 24, zIndex: 50,
                 display: "flex", gap: 8, alignItems: "center",
             }}>
+                                {/* Reset Anchors */}
+                <div
+                    style={{
+                        padding: "8px 16px", borderRadius: 20, cursor: "pointer",
+                        background: "#ef4444", color: "white", fontSize: 12, fontWeight: 700,
+                        boxShadow: "0 4px 16px rgba(0,0,0,0.3)", transition: "all 0.2s", userSelect: "none",
+                    }}
+                    onClick={async () => {
+                        if (!confirm("すべてのアンカー（固定された運指）を解除し、AIの推論をリセットしますか？")) return;
+                        try {
+                            setLoading(true);
+                            const res = await fetch(`${apiBase}/result/${sessionId}/anchors/reset`, { method: "POST" });
+                            if (res.ok) {
+                                await new Promise(r => setTimeout(r, 500));
+                                onNoteEdited?.();
+                            }
+                        } catch (e) {
+                            console.error(e);
+                        } finally {
+                            setLoading(false);
+                        }
+                    }}
+                >
+                    🔓 RESET ANCHORS
+                </div>
                 {/* ズームコントロール */}
                 <div style={{
                     display: "flex", gap: 2, alignItems: "center",
