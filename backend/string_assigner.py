@@ -941,7 +941,7 @@ def get_key_scale_positions(key: str) -> List[int]:
     return valid_anchors
 
 
-def _position_cost(s: int, f: int, scale_positions: Optional[List[int]] = None) -> float:
+def _position_cost(s: int, f: int, scale_positions: Optional[List[int]] = None, context_fret: Optional[float] = None) -> float:
     """
     位置コスト: フレットの位置自体の弾きやすさ。
     高フレットほどコストが高い。sweet spot (0-7f) は良いスコア。
@@ -976,7 +976,11 @@ def _position_cost(s: int, f: int, scale_positions: Optional[List[int]] = None) 
 
     # 音楽理論: スケールポジション適合ボーナス（開放弦は常にボーナス対象）
     if f == 0:
-        cost -= 5.0  # 開放弦は常にポジション適合ボーナスと同等の優遇を受ける（ソロギター向けに控えめ）
+        # 文脈依存: 周辺がハイポジションなら開放弦ボーナスを減衰
+        if context_fret is not None and context_fret >= 5:
+            cost -= 3.0    # ハイポジション文脈: ボーナス大幅縮小
+        else:
+            cost -= 15.0   # ローポジション文脈: 従来通り（Romance A節を死守）
     elif scale_positions and f > 0:
         pos_center = max(0, f - 1)
         # 最名近いスケールポジションアンカーとの距離
@@ -1479,33 +1483,33 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 
         # ハイフレットバイアス修正 (文脈依存の開放弦ボーナス減衰)
         # 直近の周辺ノートから予測される中央フレットを計算
-        context_window = groups[max(0, gi-5):min(n_groups, gi+6)]
+        # Task 1: ローカル・ポジション文脈の推定
+        K = 4
+        start_idx = max(0, gi - K)
+        end_idx = min(n_groups, gi + K + 1)
         context_frets = []
-        for cg in context_window:
-            if len(cg) == 1:
-                c_probs = cg[0].get('_ft_probs') or cg[0].get('cnn_string_probs', {})
-                if c_probs:
-                    try:
-                        b_str = max(c_probs, key=lambda k: float(c_probs[k]))
-                        b_str_idx = int(b_str) if str(b_str).isdigit() else 0
-                        if b_str_idx > 0:
-                            cf = cg[0].get('pitch', 0) - tuning[b_str_idx - 1]
-                            if cf > 0:
-                                context_frets.append(cf)
-                    except: pass
+        for neighbor_gi in range(start_idx, end_idx):
+            for neighbor_note in groups[neighbor_gi]:
+                pitch = neighbor_note.get('pitch', 60)
+                possible_frets = []
+                for si, op in enumerate(tuning):
+                    f_cand = pitch - op
+                    if 0 <= f_cand <= max_fret:
+                        possible_frets.append(f_cand)
+                if possible_frets:
+                    context_frets.append(min(possible_frets))
+        
         import numpy as np
-        median_fret = np.median(context_frets) if context_frets else 0.0
+        context_fret = np.median(context_frets) if context_frets else 0.0
+        if len(groups[gi]) == 1:
+            groups[gi][0]['_context_fret'] = context_fret
 
         for s, f in candidates:
             best_cost = float('inf')
             best_prev = None
 
             # Emission cost (このポジション自体のコスト)
-            pos_cost = _position_cost(s, f, scale_positions)
-            
-            # ハイフレット滞在中の開放弦への「逃げ」をペナルティで防ぐ
-            if f == 0 and median_fret >= 5.0:
-                pos_cost += 12.0  # 開放弦ボーナス(-5.0等)を大幅に相殺
+            pos_cost = _position_cost(s, f, scale_positions, context_fret=context_fret)
 
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
