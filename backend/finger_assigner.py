@@ -1741,9 +1741,13 @@ def _mark_bend_support_context(groups: List[List[dict]]):
                 bn['_chord_occupied_fingers'] = occupied
 
 
-def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
-                    techniques: Optional[List[str]] = None,
-                    detected_key: Optional[str] = None) -> List[dict]:
+def assign_fingers(notes: List[dict],
+                          phrase_gap: float = 0.5,
+                          techniques: List[str] = None,
+                          detected_key: str = None,
+                          use_pattern_consistency: bool = False,
+                          use_pitch_proximity: bool = False,
+                          use_pivot_fingers: bool = False) -> List[dict]:
     """Main API: Assign left_hand_finger (0-4) to each note.
     CNN-first with biomechanical post-processing.
 
@@ -1863,13 +1867,22 @@ def assign_fingers(notes: List[dict], phrase_gap: float = 0.5,
     chord_refix = 0
 
     # Step 3.5: Law 3 — Pitch proximity preserves position
-    prox_fixes = _apply_pitch_proximity_rule(notes)
+    if use_pitch_proximity:
+        prox_fixes = _apply_pitch_proximity_rule(notes)
+    else:
+        prox_fixes = 0
 
     # Step 4: Pattern consistency
-    pattern_fixes = _enforce_pattern_consistency(notes)
+    if use_pattern_consistency:
+        pattern_fixes = _enforce_pattern_consistency(notes)
+    else:
+        pattern_fixes = 0
 
     # Step 4.5: Pivot fingers for chord transitions
-    pivot_fixes = _apply_pivot_fingers(notes)
+    if use_pivot_fingers:
+        pivot_fixes = _apply_pivot_fingers(notes)
+    else:
+        pivot_fixes = 0
 
     # Step 5: Technique-aware finger constraints
     tech_fixes = _apply_technique_constraints(notes)
