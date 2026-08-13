@@ -203,6 +203,13 @@ def quantize_notes_music21(
             if trip_err < str_err * 0.8:  # 3連が明らかに良い
                 bar_divisors[bar_idx] = (3,)
     
+    # ★追加: 小節別3連検出結果をグローバルdivisorsに反映
+    if bar_divisors:
+        triplet_bar_ratio = len(bar_divisors) / max(1, len(bar_notes))
+        # 3割以上の小節が3連寄りなら、3連グリッドを必ず許可
+        if triplet_bar_ratio > 0.30 and 3 not in divisors:
+            divisors = tuple(list(divisors) + [3])
+
     # --- Step 4: music21量子化 ---
     part.quantize(
         quarterLengthDivisors=divisors,
@@ -269,6 +276,10 @@ def quantize_notes_music21(
     # --- Step 5: 後処理 ---
     entries.sort(key=lambda x: x["beat_pos_absolute"])
     
+    # ★追加: 量子化で同じ位置に潰れた非同時ノートを救済
+    grid_divs = 4 if (3 in divisors or rhythm_subdivision in ("triplet", "mixed")) else 3
+    entries = _fix_onset_collisions(entries, beats_per_bar, grid_divs)
+
     # 同一弦の重複防止
     _cap_durations_by_string(entries, beats_per_bar)
     
@@ -331,6 +342,73 @@ def quantize_notes_music21(
         e["beat_pos"] = max(0, e["beat_pos"])
         e["beat_pos_in_bar"] = max(0, e["beat_pos_in_bar"])
     
+    return entries
+
+
+def _fix_onset_collisions(
+    entries: List[dict],
+    beats_per_bar: int,
+    grid_divs: int,
+    min_gap_sec: float = 0.025
+) -> List[dict]:
+    """
+    量子化後に同じ beat_pos_absolute に潰されたノートを救済する。
+    start_time が min_gap_sec 以上離れているなら同時発音ではないため、
+    後続ノートを次のグリッドへ移動する。
+    """
+    if not entries:
+        return entries
+
+    bar_total = beats_per_bar * DIVISIONS
+    entries.sort(key=lambda x: (x["beat_pos_absolute"], float(x["start_time"])))
+
+    positions = {}
+    for e in entries:
+        positions.setdefault(e["beat_pos_absolute"], []).append(e)
+
+    changed = False
+
+    for pos, group in list(positions.items()):
+        if len(group) < 2:
+            continue
+
+        group.sort(key=lambda x: float(x["start_time"]))
+        anchor = group[0]
+
+        for e in group[1:]:
+            gap = float(e["start_time"]) - float(anchor["start_time"])
+
+            # 同時発音ではなく、明らかに後続のノートなら移動
+            if gap > min_gap_sec:
+                new_pos = e["beat_pos_absolute"] + grid_divs
+
+                # 移動先にも同時発音でないノートがいるなら次へ
+                while True:
+                    conflict = False
+                    for x in entries:
+                        if x is e:
+                            continue
+                        if x["beat_pos_absolute"] == new_pos:
+                            if abs(float(x["start_time"]) - float(e["start_time"])) <= min_gap_sec:
+                                conflict = True
+                                break
+                    if not conflict:
+                        break
+                    new_pos += grid_divs
+
+                e["beat_pos_absolute"] = new_pos
+                e["bar"] = new_pos // bar_total
+                e["beat_pos_in_bar"] = new_pos % bar_total
+                e["beat_pos"] = e["beat_pos_in_bar"]
+                e["_onset_collision_fixed"] = True
+
+                positions.setdefault(new_pos, []).append(e)
+                anchor = e
+                changed = True
+
+    if changed:
+        entries.sort(key=lambda x: (x["beat_pos_absolute"], float(x["start_time"])))
+
     return entries
 
 

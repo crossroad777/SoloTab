@@ -511,14 +511,29 @@ def _is_valid_finger(fret, finger, position=None):
 
 def _detect_barre(chord_notes):
     """Detect barre chord: multiple strings on the same fret.
-    Returns dict of {fret: [notes]} for frets with 2+ notes."""
+    Returns dict of {fret: [notes]} for frets with 2+ notes.
+    修正: 2音のみのバレーは弦間距離が近い場合のみ認める。
+    """
     from collections import defaultdict
     fret_groups = defaultdict(list)
     for note in chord_notes:
         fret = note.get('fret', 0)
         if fret > 0:
             fret_groups[fret].append(note)
-    return {f: notes for f, notes in fret_groups.items() if len(notes) >= 2}
+
+    result = {}
+    for f, notes in fret_groups.items():
+        if len(notes) >= 3:
+            # 3音以上なら無条件でバレー
+            result[f] = notes
+        elif len(notes) == 2:
+            # 2音のみのバレーは弦間距離が2以内の場合のみ
+            strings = sorted(int(n.get('string', 0)) for n in notes)
+            span = max(strings) - min(strings)
+            if span <= 2:
+                result[f] = notes
+            # span > 2 の場合はバレーとしない（個別の指を割り当てる）
+    return result
 
 
 def _resolve_chord_conflicts(chord_notes):
@@ -1023,8 +1038,8 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
         else:
             # Speed-Adaptive Guide Finger Slide Bonus
             ioi = float(note.get('start', note.get('start_time', 0.0))) - float(prev_note.get('start', prev_note.get('start_time', 0.0)))
-            if ioi >= ioi_threshold and note.get('string') == prev_note.get('string'):
-                cost += W['w_guide_finger']
+            if ioi >= max(0.35, ioi_threshold) and note.get('string') == prev_note.get('string'):
+                cost += W['w_guide_finger'] * 0.5
             else:
                 cost += W['w_same_finger_diff']
 
@@ -1048,11 +1063,7 @@ def _finger_transition_cost_dp(finger: int, prev_finger: int,
 
     # --- Guide finger bonus (same string, same finger, slide to new pos) ---
     # Ref: Segovia technique — guide finger stays on string during shifts
-    if (finger == prev_finger and pos != prev_pos
-            and note.get('string') == prev_note.get('string')):
-        ioi = float(note.get('start', note.get('start_time', 0.0))) - float(prev_note.get('start', prev_note.get('start_time', 0.0)))
-        if ioi >= ioi_threshold:
-            cost += W['w_guide_finger']
+    # (Removed to prevent double bonus as it duplicates the check above)
 
     # --- Pivot finger retention bonus ---
     # 同一の指・同一のフレット・同一 of 弦にとどまる（音の保持・ピボット）場合はボーナス

@@ -1124,11 +1124,20 @@ def _transition_cost(s: int, f: int,
             # テンポ（ioi）が速いほど、同じ弦で異なる音を連続して弾くのは難しい
             current_ioi = ioi if ioi is not None else 0.3
             if current_ioi < 0.3:
-                # 速いパッセージではペナルティを増幅 (IOI=0.1sなら3倍)
-                cost += WEIGHTS["w_same_string_repeat"] * (0.3 / max(0.05, current_ioi))
+                factor = 0.3 / max(0.05, current_ioi)
+
+                # 開放弦が絡む同一弦移動はペナルティを大幅緩和
+                if f == 0 or prev_f == 0:
+                    factor *= 0.15
+
+                cost += WEIGHTS["w_same_string_repeat"] * factor
             else:
-                # 遅いパッセージではペナルティを低減 (30%)
-                cost += WEIGHTS["w_same_string_repeat"] * 0.3
+                factor = 0.3
+
+                if f == 0 or prev_f == 0:
+                    factor *= 0.15
+
+                cost += WEIGHTS["w_same_string_repeat"] * factor
 
     # --- ピッチ近接性ルール (法則3: 3半音境界) ---
     # <3半音 → 同弦維持が優勢, ≥3半音 → 隣接弦遷移が優勢
