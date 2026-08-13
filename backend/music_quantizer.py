@@ -132,16 +132,20 @@ def quantize_notes_music21(
         
         # --- Hybrid duration決定 ---
         if is_in_arpeggio and same_str_ioi is not None:
-            # アルペジオ内: 同弦IOI（次にこの弦が弾かれるまで）
             dur_sec = same_str_ioi
         elif all_str_ioi is not None:
-            # 単音パッセージ: 全弦IOI
             dur_sec = all_str_ioi
         elif same_str_ioi is not None:
             dur_sec = same_str_ioi
         else:
             dur_sec = sec_per_beat
-        
+
+        # ★ 追加: 同時発音（和音）のベース音は長めに持続させる ★
+        # ピッチが低く（MIDI 55以下）、かつ他の音と同時発音の場合、拍単位まで延長
+        if int(n.get("pitch", 60)) <= 55 and is_in_arpeggio:
+            # 最低でも1拍（sec_per_beat）は持続させる
+            dur_sec = max(dur_sec, sec_per_beat)
+            
         dur_sec = min(dur_sec, MAX_DUR_BEATS * sec_per_beat)
         dur_sec = max(dur_sec, MIN_DUR_BEATS * sec_per_beat)
         
@@ -275,33 +279,44 @@ def quantize_notes_music21(
     for e in entries:
         pos = e["beat_pos_in_bar"]
         dur = e["duration_divs"]
-        note_end = pos + dur
         
-        # 小節を跨ぐ場合: 現小節分 + 次小節分に分割
-        if note_end > bar_total:
-            part1_dur = bar_total - pos
-            part2_dur = dur - part1_dur
-            # Ensure both halves have valid duration (>= 1 div)
-            part1_dur = max(1, part1_dur)
-            part2_dur = max(1, part2_dur)
-            if part1_dur > 0 and part2_dur > 0:
-                e1 = dict(e)
-                e1["duration_divs"] = part1_dur
-                e1["_tie_start"] = True
-                new_entries.append(e1)
+        # 小節内に収まるならそのまま
+        if pos + dur <= bar_total:
+            new_entries.append(e)
+            continue
+            
+        # 小節をまたぐ: タイで分割（複数小節対応）
+        cur_bar = e["bar"]
+        cur_pos = pos
+        remaining = dur
+        first = True
+        
+        while remaining > 0:
+            space = bar_total - cur_pos
+            seg = min(remaining, space)
+            seg = max(1, seg)
+            
+            part = dict(e)
+            part["bar"] = cur_bar
+            part["beat_pos_in_bar"] = cur_pos
+            part["beat_pos"] = cur_pos
+            part["beat_pos_absolute"] = cur_bar * bar_total + cur_pos
+            part["duration_divs"] = seg
+            
+            if first and remaining > seg:
+                part["_tie_start"] = True
+            elif remaining > seg:
+                part["_tie_start"] = True
+                part["_tie_stop"] = True
+            elif not first:
+                part["_tie_stop"] = True
                 
-                e2 = dict(e)
-                e2["bar"] = e["bar"] + 1
-                e2["beat_pos_in_bar"] = 0
-                e2["beat_pos"] = 0
-                e2["beat_pos_absolute"] = (e["bar"] + 1) * bar_total
-                e2["duration_divs"] = part2_dur
-                e2["_tie_stop"] = True
-                new_entries.append(e2)
-                continue
-        
-        new_entries.append(e)
-    
+            new_entries.append(part)
+            remaining -= seg
+            cur_bar += 1
+            cur_pos = 0
+            first = False
+            
     entries = new_entries
     entries.sort(key=lambda x: x["beat_pos_absolute"])
     
@@ -320,11 +335,12 @@ def quantize_notes_music21(
 
 
 def _cap_durations_by_string(entries: List[dict], beats_per_bar: int):
-    """同一弦上の次のノートとの重複を防止"""
+    """同一弦上の次のノートとの重複を防止（小節またぎはタイ分割に委ねる）"""
     bar_total = beats_per_bar * DIVISIONS
     for i, e in enumerate(entries):
         my_string = e.get("string", 0)
-        gap_same_string = bar_total * 2  # デフォルト: 制限なし
+        gap_same_string = bar_total * 4  # デフォルト: 実質無制限
+        
         for j in range(i + 1, len(entries)):
             other = entries[j]
             gap = other["beat_pos_absolute"] - e["beat_pos_absolute"]
@@ -333,12 +349,9 @@ def _cap_durations_by_string(entries: List[dict], beats_per_bar: int):
             if other.get("string", -1) == my_string:
                 gap_same_string = gap
                 break
-            if my_string == 0:
-                gap_same_string = min(gap_same_string, gap)
-                break
+        
+        # ❌ 削除: max_in_bar での小節打ち切り（タイ分割を殺していた原因）
         e["duration_divs"] = min(e["duration_divs"], gap_same_string)
-        max_in_bar = bar_total - e["beat_pos_in_bar"]
-        e["duration_divs"] = min(e["duration_divs"], max(1, max_in_bar))
         e["duration_divs"] = max(1, e["duration_divs"])
 
 

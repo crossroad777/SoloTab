@@ -823,9 +823,6 @@ WEIGHTS = {
     "w_barre_bonus":         -5.0,
 
     # 和音ボーナス — Multi-track Optuna
-    "w_chord_f10_penalty":   91.75,   # 多曲: 和音f10+大幅ペナルティ
-    "w_chord_f5_penalty":     1.39,   # 多曲: 和音f5-9ペナルティ
-    "w_chord_f04_bonus":     34.11,   # 多曲: 和音ローフレットボーナス倍増
 
     # フィンガースタイル弦域分離
     "w_bass_low_string":   -19.1,
@@ -978,7 +975,7 @@ def _position_cost(s: int, f: int, scale_positions: Optional[List[int]] = None) 
 
     # 音楽理論: スケールポジション適合ボーナス（開放弦は常にボーナス対象）
     if f == 0:
-        cost -= 15.0  # 開放弦は常にポジション適合ボーナスと同等の優遇を受ける
+        cost -= 5.0  # 開放弦は常にポジション適合ボーナスと同等の優遇を受ける（ソロギター向けに控えめ）
     elif scale_positions and f > 0:
         pos_center = max(0, f - 1)
         # 最名近いスケールポジションアンカーとの距離
@@ -1395,8 +1392,16 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                                            chord_name=chord_name, scale_positions=scale_positions)
             chord_results[gi] = assigned
             # 和音の結果をViterbi用の「固定候補」として設定
+            # ★ 修正: 和音の代表点（ベース音とメロディ音の平均）を計算し、遷移コスト評価の精度を上げる ★
             fingering = tuple((n["string"], n["fret"]) for n in assigned)
-            group_candidates[gi] = [fingering[0]] if fingering else [(1, 0)]
+            if fingering:
+                strings = [sf[0] for sf in fingering]
+                frets   = [sf[1] for sf in fingering]
+                rep_s = int(round(sum(strings) / len(strings)))
+                rep_f = int(round(sum(frets) / len(frets)))
+                group_candidates[gi] = [(rep_s, rep_f)]
+            else:
+                group_candidates[gi] = [(1, 0)]
 
     # --- Viterbi DP (単音のみ) ---
     # trellis[gi] = {(s, f): (cumulative_cost, backpointer)}
