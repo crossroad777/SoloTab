@@ -1337,8 +1337,10 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
         old_val = f"fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
         if request.fret is not None:
             note["fret"] = request.fret
+            note["fixed_fret"] = request.fret
         if request.string is not None:
             note["string"] = request.string
+            note["fixed_string"] = request.string
         # pitch再計算: tuning[6-string] + fret (+ capo)
         tuning_name = s.get("tuning", "standard")
         tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
@@ -1380,8 +1382,10 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
                     orig_note = orig_notes[match_idx]
                     if request.fret is not None:
                         orig_note["fret"] = request.fret
+                        orig_note["fixed_fret"] = request.fret
                     if request.string is not None:
                         orig_note["string"] = request.string
+                        orig_note["fixed_string"] = request.string
                     # Recalculate pitch for original note
                     tuning_name = s.get("tuning", "standard")
                     tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
@@ -1412,23 +1416,32 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
             # 削除の場合は全体再生成が必要
             _regenerate_musicxml(session_id, notes)
         else:
-            # 編集の場合: GP5を直接パッチ（全体再生成を回避して楽譜レイアウトを保持）
-            old_fret_val = note_to_sync.get("fret", 0)
-            old_string_val = note_to_sync.get("string", 1)
-            new_fret_val = notes[actual_index].get("fret", 0)
-            new_string_val = notes[actual_index].get("string", 1)
-            new_pitch_val = notes[actual_index].get("pitch", 0)
-            patched = _patch_gp5_note(
-                session_id, note_to_sync,
-                old_fret=int(old_fret_val), old_string=int(old_string_val),
-                new_fret=int(new_fret_val), new_string=int(new_string_val),
-                new_pitch=int(new_pitch_val),
-            )
-            if not patched:
-                print(f"[edit_note] GP5 patch failed, falling back to full regeneration")
-                _regenerate_musicxml(session_id, notes)
+            # Viterbi再計算 (Human-in-the-Loop)
+            try:
+                from string_assigner import assign_strings_dp
+                from finger_assigner import assign_fingers
+                tuning_name = s.get("tuning", "standard")
+                tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
+                guitar_type = s.get("guitar_type", "auto")
+                
+                print(f"[edit_note] Running assign_strings_dp for Human-in-the-Loop Viterbi...")
+                notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"))
+                notes = assign_fingers(notes, detected_key=s.get("key"))
+                
+                with open(assigned_path, "w", encoding="utf-8") as f:
+                    json.dump(notes, f, ensure_ascii=False, indent=2)
+                
+                original_path = session_dir / "notes_assigned_original.json"
+                if original_path.exists():
+                    with open(original_path, "w", encoding="utf-8") as f:
+                        json.dump(notes, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"[edit_note] Viterbi再計算エラー: {e}")
+                
+            # 全体再生成 (複数ノートが変わる可能性があるため)
+            _regenerate_musicxml(session_id, notes)
     except Exception as e:
-        print(f"[edit_note] Regeneration/patch failed: {e}")
+        print(f"[edit_note] Regeneration failed: {e}")
         import traceback; traceback.print_exc()
 
     # Verify file not overwritten by _regenerate_musicxml

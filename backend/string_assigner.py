@@ -1351,10 +1351,13 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
     for gi, group in enumerate(groups):
         if len(group) == 1:
             note = group[0]
-            positions = get_possible_positions(note["pitch"], tuning, max_fret)
-            if not positions:
-                # 音域外: フォールバック割り当て
-                positions = [_fallback_position(note["pitch"], tuning, max_fret)]
+            if 'fixed_string' in note and 'fixed_fret' in note:
+                positions = [(note['fixed_string'], note['fixed_fret'])]
+            else:
+                positions = get_possible_positions(note["pitch"], tuning, max_fret)
+                if not positions:
+                    # 音域外: フォールバック割り当て
+                    positions = [_fallback_position(note["pitch"], tuning, max_fret)]
             
             # CNN弦分類器による候補プルーニング
             cnn_probs = note.get('cnn_string_probs')
@@ -1984,10 +1987,13 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     # 各ノートのポジション候補を取得
     note_positions = []
     for note in notes:
-        positions = get_possible_positions(note["pitch"], tuning, max_fret)
-        if not positions:
-            fallback_fret = min(max(0, note["pitch"] - tuning[-1]), max_fret)
-            positions = [(1, fallback_fret)]
+        if 'fixed_string' in note and 'fixed_fret' in note:
+            positions = [(note['fixed_string'], note['fixed_fret'])]
+        else:
+            positions = get_possible_positions(note["pitch"], tuning, max_fret)
+            if not positions:
+                fallback_fret = min(max(0, note["pitch"] - tuning[-1]), max_fret)
+                positions = [(1, fallback_fret)]
         note_positions.append(positions)
 
     # 組み合わせが多すぎる場合は各ノートの候補を制限
