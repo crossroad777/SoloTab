@@ -11,10 +11,11 @@ Strategy:
   3. PDMX table fallback when CNN unavailable
   4. derived_fingering_rules.json for fret-offset → finger mapping
 """
-from typing import List, Tuple, Optional
 import json
-import os
 import math
+import os
+import sys
+from typing import List, Tuple, Optional, Dict
 import numpy as np
 from fingering_template_db import apply_phrase_templates
 
@@ -1232,6 +1233,11 @@ def _viterbi_finger_phrase(fretted_notes: List[dict],
         (fret >= 9) to optimize fingering where frets are narrow.
         """
         fret = int(note.get('fret', 0))
+        forced_finger = note.get('_forced_finger')
+        if forced_finger:
+            pos = fret - (forced_finger - 1)
+            return [(forced_finger, max(1, pos))]
+
         states = []
         seen = set()
         for finger in range(1, 5):
@@ -1747,7 +1753,8 @@ def assign_fingers(notes: List[dict],
                           detected_key: str = None,
                           use_pattern_consistency: bool = False,
                           use_pitch_proximity: bool = False,
-                          use_pivot_fingers: bool = False) -> List[dict]:
+                          use_pivot_fingers: bool = False,
+                          forced_fingers: Optional[Dict[Tuple[int, float], int]] = None) -> List[dict]:
     """Main API: Assign left_hand_finger (0-4) to each note.
     CNN-first with biomechanical post-processing.
 
@@ -1795,6 +1802,13 @@ def assign_fingers(notes: List[dict],
 
         if fret == 0:
             note['left_hand_finger'] = 0
+            note['_finger_conf'] = 1.0
+            continue
+
+        note_key = (int(note.get("pitch", 0)), round(float(note.get("start", note.get("start_time", 0.0))), 3))
+        if forced_fingers and note_key in forced_fingers:
+            note['left_hand_finger'] = forced_fingers[note_key]
+            note['_forced_finger'] = forced_fingers[note_key]
             note['_finger_conf'] = 1.0
             continue
 
@@ -1897,6 +1911,7 @@ def assign_fingers(notes: List[dict],
         note.pop('_chord_position', None)
         note.pop('_estimated_tempo', None)
         note.pop('_chord_occupied_fingers', None)
+        note.pop('_forced_finger', None)
 
     # Ensure backward/renderer compatibility: copy left_hand_finger to finger
     for note in notes:

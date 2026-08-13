@@ -1286,6 +1286,7 @@ async def retune(session_id: str, request: RetuneRequest):
 class NoteEditRequest(BaseModel):
     fret: Optional[int] = None
     string: Optional[int] = None
+    finger: Optional[int] = None
     delete: Optional[bool] = False
     start_time: Optional[float] = None   # 時刻ベース検索用
     old_fret: Optional[int] = None       # 元のフレット（照合用）
@@ -1299,6 +1300,8 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     
     s = sessions[session_id]
+    if "anchors" not in s:
+        s["anchors"] = {}
     session_dir = Path(s["session_dir"])
     assigned_path = session_dir / "notes_assigned.json"
     if not assigned_path.exists():
@@ -1341,6 +1344,8 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
         if request.string is not None:
             note["string"] = request.string
             note["fixed_string"] = request.string
+        if request.finger is not None:
+            note["left_hand_finger"] = request.finger
         # pitch再計算: tuning[6-string] + fret (+ capo)
         tuning_name = s.get("tuning", "standard")
         tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
@@ -1350,6 +1355,18 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
         if 1 <= new_string <= 6:
             open_pitch = tuning_arr[6 - new_string] + capo_val
             note["pitch"] = open_pitch + new_fret
+            
+        note_key_str = f"{int(note.get('pitch', 0))}_{round(float(note.get('start', note.get('start_time', 0.0))), 3)}"
+        anchor_data = {
+            "string": note["string"],
+            "fret": note["fret"]
+        }
+        if request.finger is not None:
+            anchor_data["finger"] = request.finger
+        elif "left_hand_finger" in note:
+            anchor_data["finger"] = note["left_hand_finger"]
+        s["anchors"][note_key_str] = anchor_data
+
         action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
 
     with open(assigned_path, "w", encoding="utf-8") as f:
@@ -1424,9 +1441,24 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
                 tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
                 guitar_type = s.get("guitar_type", "auto")
                 
-                print(f"[edit_note] Running assign_strings_dp for Human-in-the-Loop Viterbi...")
-                notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"))
-                notes = assign_fingers(notes, detected_key=s.get("key"))
+                forced_positions = {}
+                forced_fingers = {}
+                for k, v in s.get("anchors", {}).items():
+                    parts = k.split("_")
+                    if len(parts) == 2:
+                        try:
+                            pitch = int(parts[0])
+                            start = float(parts[1])
+                            if "string" in v and "fret" in v:
+                                forced_positions[(pitch, start)] = (v["string"], v["fret"])
+                            if "finger" in v:
+                                forced_fingers[(pitch, start)] = v["finger"]
+                        except ValueError:
+                            pass
+                
+                print(f"[edit_note] Running assign_strings_dp for Human-in-the-Loop Viterbi... (Anchors: {len(forced_positions)})")
+                notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"), forced_positions=forced_positions)
+                notes = assign_fingers(notes, detected_key=s.get("key"), forced_fingers=forced_fingers)
                 
                 with open(assigned_path, "w", encoding="utf-8") as f:
                     json.dump(notes, f, ensure_ascii=False, indent=2)

@@ -18,7 +18,8 @@ MIDIノート番号を (弦, フレット) に変換する。
 - 同一ピッチの複数ポジション → Viterbi DPで全体最適を選択
 """
 
-from typing import List, Tuple, Optional, Dict
+import sys
+from typing import List, Tuple, Dict, Optional
 from itertools import product as iter_product
 from collections import Counter
 import math
@@ -775,7 +776,7 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 WEIGHTS = {
     # 位置コスト — Multi-track Optuna最適化済み
     "w_fret_height":          0.64,   # 多曲: フレット高さ一律ペナルティ軽減
-    "w_mid_fret_extra":       3.0,    # V3f: 10→3 (f5-9へのペナルティを更に軽減)
+    "w_mid_fret_extra":       1.5,    # V3f: 10→3→1.5 (f5-9へのペナルティを更に軽減)
     "w_high_fret_extra":     33.23,   # 多曲: f10+を個別に強くペナルティ
     "w_low_string_high_fret": 4.9,    # 低弦ハイフレット
     "w_sweet_spot_bonus":     0.0,    # V3f: ゼロ化 (f0-4過集中防止)
@@ -1323,7 +1324,8 @@ def _ergonomic_cost_chord(combo: Tuple[Tuple[int, int], ...]) -> float:
 def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                           max_fret: int, initial_position: float,
                           guitar_type: str = 'auto',
-                          scale_positions: Optional[List[int]] = None) -> List[dict]:
+                          scale_positions: Optional[List[int]] = None,
+                          forced_positions: Optional[Dict[Tuple[int, float], Tuple[int, int]]] = None) -> List[dict]:
     """
     Viterbi DPでフレーズ内の単音列の最適パスを探索する。
     和音グループはそのまま通過させ、単音のみDPで最適化する。
@@ -1357,7 +1359,10 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
     for gi, group in enumerate(groups):
         if len(group) == 1:
             note = group[0]
-            if 'fixed_string' in note and 'fixed_fret' in note:
+            note_key = (int(note["pitch"]), round(float(note.get("start", note.get("start_time", 0.0))), 3))
+            if forced_positions and note_key in forced_positions:
+                positions = [forced_positions[note_key]]
+            elif 'fixed_string' in note and 'fixed_fret' in note:
                 positions = [(note['fixed_string'], note['fixed_fret'])]
             else:
                 positions = get_possible_positions(note["pitch"], tuning, max_fret)
@@ -1398,7 +1403,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             # 音楽理論: コード名を取得して典型フォーム一致コストに使用
             chord_name = group[0].get("_chord_name", "")
             assigned = _assign_chord_notes(chord_notes, tuning, max_fret, prev_f,
-                                           chord_name=chord_name, scale_positions=scale_positions)
+                                           chord_name=chord_name, scale_positions=scale_positions,
+                                           forced_positions=forced_positions)
             chord_results[gi] = assigned
             # 和音の結果をViterbi用の「固定候補」として設定
             # ★ 修正: 和音の代表点（ベース音とメロディ音の平均）を計算し、遷移コスト評価の精度を上げる ★
@@ -1471,12 +1477,36 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                 trellis[gi][(s, f)] = (pos_cost + tmb_cost, None)
             continue
 
+        # ハイフレットバイアス修正 (文脈依存の開放弦ボーナス減衰)
+        # 直近の周辺ノートから予測される中央フレットを計算
+        context_window = groups[max(0, gi-5):min(n_groups, gi+6)]
+        context_frets = []
+        for cg in context_window:
+            if len(cg) == 1:
+                c_probs = cg[0].get('_ft_probs') or cg[0].get('cnn_string_probs', {})
+                if c_probs:
+                    try:
+                        b_str = max(c_probs, key=lambda k: float(c_probs[k]))
+                        b_str_idx = int(b_str) if str(b_str).isdigit() else 0
+                        if b_str_idx > 0:
+                            cf = cg[0].get('pitch', 0) - tuning[b_str_idx - 1]
+                            if cf > 0:
+                                context_frets.append(cf)
+                    except: pass
+        import numpy as np
+        median_fret = np.median(context_frets) if context_frets else 0.0
+
         for s, f in candidates:
             best_cost = float('inf')
             best_prev = None
 
             # Emission cost (このポジション自体のコスト)
             pos_cost = _position_cost(s, f, scale_positions)
+            
+            # ハイフレット滞在中の開放弦への「逃げ」をペナルティで防ぐ
+            if f == 0 and median_fret >= 5.0:
+                pos_cost += 12.0  # 開放弦ボーナス(-5.0等)を大幅に相殺
+
             tmb_cost = _timbre_cost(s, f, tuning)
             emission = pos_cost + tmb_cost
 
@@ -1976,7 +2006,8 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
                         max_fret: int,
                         prev_fingering: Optional[List[Tuple[int, int]]],
                         chord_name: str = "",
-                        scale_positions: Optional[List[int]] = None) -> List[dict]:
+                        scale_positions: Optional[List[int]] = None,
+                        forced_positions: Optional[Dict[Tuple[int, float], Tuple[int, int]]] = None) -> List[dict]:
     """
     和音のフィンガリング割り当て。
     全組み合わせを列挙し、_score_chord でスコアリング。
@@ -2001,7 +2032,10 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     # 各ノートのポジション候補を取得
     note_positions = []
     for note in notes:
-        if 'fixed_string' in note and 'fixed_fret' in note:
+        note_key = (int(note["pitch"]), round(float(note.get("start", note.get("start_time", 0.0))), 3))
+        if forced_positions and note_key in forced_positions:
+            positions = [forced_positions[note_key]]
+        elif 'fixed_string' in note and 'fixed_fret' in note:
             positions = [(note['fixed_string'], note['fixed_fret'])]
         else:
             positions = get_possible_positions(note["pitch"], tuning, max_fret)
@@ -2085,7 +2119,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                       chords: List[dict] = None,
                       audio_path: str = None,
                       guitar_type: str = 'auto',
-                      key: str = None) -> List[dict]:
+                      key: str = None,
+                      forced_positions: Optional[Dict[Tuple[int, float], Tuple[int, int]]] = None) -> List[dict]:
     """
     Assign (string, fret) to each note using Viterbi DP + Minimax postprocessing.
 
@@ -2233,7 +2268,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         # 純Transformer-first → 14.1%エラー（遷移コストなしで跳躍多発）
         # Viterbi + TF emission bonus → 3.4%エラー（滑らかさ＋学習データ活用）
         phrase_result = _viterbi_single_notes(
-            phrase, tuning, max_fret, initial_position, guitar_type, scale_positions=scale_positions
+            phrase, tuning, max_fret, initial_position, guitar_type,
+            scale_positions=scale_positions, forced_positions=forced_positions
         )
         result.extend(phrase_result)
 
