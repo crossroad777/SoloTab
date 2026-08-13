@@ -58,6 +58,9 @@ PYTHON_PATH = str(VENV_DIR / "Scripts" / "python.exe")
 from dotenv import load_dotenv
 load_dotenv(PROJECT_ROOT.parent / "nextchord" / ".env")
 FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
+# yt-dlp に渡すための ffmpeg ディレクトリを解決
+_ffmpeg_dir = os.path.dirname(shutil.which(FFMPEG_PATH) or FFMPEG_PATH)
+FFMPEG_BIN_DIR = _ffmpeg_dir if _ffmpeg_dir else None 
 YT_DLP_PATH = os.getenv("YT_DLP_PATH", "yt-dlp")
 if not shutil.which(YT_DLP_PATH):
     venv_yt = VENV_DIR / "Scripts" / "yt-dlp.exe"
@@ -207,6 +210,7 @@ class ResultResponse(BaseModel):
     session_id: str
     status: SessionStatus
     bpm: Optional[float] = None
+    time_signature: Optional[str] = None
     filename: Optional[str] = None
     total_notes: Optional[int] = None
     tuning: Optional[str] = None
@@ -229,7 +233,7 @@ async def upload_audio(file: UploadFile = File(...),
                        enable_technique_fingers: bool = Form(False),
                        background_tasks: BackgroundTasks = None):
     """音声ファイルをアップロードして解析開始"""
-    session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S-") + str(uuid.uuid4().hex)[:6]
     session_dir = UPLOAD_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -405,15 +409,11 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
 
 def _run_pipeline_bg(session_id: str):
     """Background task: run the analysis pipeline."""
-    # 明示的にbackend/pipeline.pyをロード
-    # chord_detector.pyがsys.pathにfastapi-backendを追加するため、
-    # importlib.reloadだと別のpipeline.pyを読み込む可能性がある
-    import importlib.util
-    _pipeline_path = str(Path(__file__).parent / "pipeline.py")
-    _spec = importlib.util.spec_from_file_location("pipeline", _pipeline_path)
-    _pipeline_mod = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_pipeline_mod)
-    run_pipeline = _pipeline_mod.run_pipeline
+    import sys
+    _p = str(Path(__file__).parent)
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+    from pipeline import run_pipeline
 
     session = sessions[session_id]
     session_dir = Path(session["session_dir"])
@@ -569,6 +569,7 @@ async def get_result(session_id: str):
         session_id=session_id,
         status=s["status"],
         bpm=s.get("bpm"),
+        time_signature=s.get("time_signature", "4/4"),
         filename=s.get("filename"),
         total_notes=s.get("total_notes"),
         tuning=s.get("tuning"),
@@ -926,7 +927,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
     rhythm_info = None
     beats_path = session_dir / "beats.json"
     if beats_path.exists():
-        with open(beats_path, "r") as f:
+        with open(beats_path, "r", encoding="utf-8") as f:
             bd = json.load(f)
         beats = bd.get("beats", [])
         bpm = bd.get("bpm", bpm)
@@ -1058,7 +1059,16 @@ async def cut_noise(session_id: str, request: CutRequest):
     s["noise_gate"] = request.noise_gate
 
     from gp_renderer import _filter_noise
-    filtered_count = len(_filter_noise(notes, request.noise_gate))
+    filtered_notes = _filter_noise(notes, request.noise_gate)
+
+    with open(assigned_path, "w", encoding="utf-8") as f:
+        json.dump(filtered_notes, f, ensure_ascii=False, indent=2)
+    
+    if original_path.exists():
+        with open(original_path, "w", encoding="utf-8") as f:
+            json.dump(filtered_notes, f, ensure_ascii=False, indent=2)
+
+    filtered_count = len(filtered_notes)
     s["total_notes"] = filtered_count
     save_session(session_id)
     return {"status": "ok", "noise_gate": request.noise_gate, "total_notes": filtered_count}
@@ -1244,10 +1254,8 @@ async def retune(session_id: str, request: RetuneRequest):
     except Exception as e:
         print(f"[retune] 指番号割り当てスキップ: {e}")
 
-    # Save reassigned notes (both assigned and original must be updated to keep them in sync with the new tuning)
+    # Save reassigned notes (only assigned_path, keep original_path as-is)
     with open(assigned_path, "w", encoding="utf-8") as f:
-        json.dump(notes, f, ensure_ascii=False, indent=2)
-    with open(original_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
     # Re-generate MusicXML
@@ -1547,6 +1555,11 @@ async def get_file(session_id: str, filename: str):
         # フォールバック: ディスクから直接探す (リロード後など)
         session_dir = UPLOAD_DIR / session_id
     file_path = session_dir / filename
+    try:
+        if not file_path.resolve().is_relative_to(session_dir.resolve()):
+            raise HTTPException(status_code=403, detail="Access denied")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)

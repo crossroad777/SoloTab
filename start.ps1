@@ -3,9 +3,12 @@
 
 $ErrorActionPreference = "Continue"
 $PYTHON = "D:\Music\nextchord\venv312\Scripts\python.exe"
-$BACKEND_DIR = "D:\Music\nextchord-solotab\backend"
-$FRONTEND_DIR = "D:\Music\nextchord-solotab\frontend"
-$BACKEND_PORT = 8001
+if (-not (Test-Path $PYTHON)) {
+    $PYTHON = "python"
+}
+$BACKEND_DIR = "$PSScriptRoot\backend"
+$FRONTEND_DIR = "$PSScriptRoot\frontend"
+$BACKEND_PORT = 8002
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

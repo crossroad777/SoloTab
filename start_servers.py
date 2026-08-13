@@ -108,7 +108,8 @@ def main():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=backend_env,
-        bufsize=0
+        bufsize=0,
+        creationflags=creationflags
     )
     
     print("[2/2] Starting Frontend... (Port 5174)")
@@ -118,7 +119,8 @@ def main():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=frontend_env,
-        bufsize=0
+        bufsize=0,
+        creationflags=creationflags
     )
     
     # ログ出力用スレッド開始
