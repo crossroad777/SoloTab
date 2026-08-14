@@ -5,6 +5,10 @@ grid_search_pure_moe.py — Pure MoE ハイパーパラメータグリッドサ�
 キャッシュされた確率マップ上で高速に評価する。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import glob

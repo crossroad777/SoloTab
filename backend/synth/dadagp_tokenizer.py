@@ -14,6 +14,10 @@ DadaGPトークン形式:
 弦予測用にピッチ情報のみ使い、弦を予測ターゲットとする。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import re
 import numpy as np

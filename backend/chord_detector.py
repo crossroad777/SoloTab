@@ -5,6 +5,10 @@ BTC (Bi-directional Transformer for Chords) をプライマリ検出器として
 BTC が利用不可の場合は librosa chroma テンプレートマッチングにフォールバック。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import librosa
 from typing import List, Dict, Tuple

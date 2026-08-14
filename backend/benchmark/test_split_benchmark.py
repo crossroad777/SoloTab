@@ -4,6 +4,10 @@ test_split_benchmark.py — Test分割のみでのPure MoE FT 厳密評価
 Train分割で学習したFTモデルをTest分割のみで評価し、
 データリークのない真の汎化性能を測定する。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json, time
 import numpy as np
 from scipy import stats

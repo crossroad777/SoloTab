@@ -17,6 +17,10 @@ Viterbi DP で使用する多属性コスト関数。
   - SMC Fingerstyle論文
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from typing import List, Tuple, Optional
 from collections import Counter
 import json

@@ -1,6 +1,10 @@
 """
 single_model_test_split.py — 単一モデル(Ultimate Single Conformer)のTest分割のみ評価
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json, numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))

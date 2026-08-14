@@ -13,6 +13,10 @@ Usage:
 Refs: Sayegh 1989, Miura 2003, Hori & Sagayama 2016, Radicioni & Lombardo 2005
 """
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+import sys
 import os
 import json
 import time

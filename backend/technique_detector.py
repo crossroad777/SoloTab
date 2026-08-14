@@ -24,6 +24,10 @@ Abesser et al. (ISMIR 2014/2015) に基づくF0軌跡解析と
   [3] Stefani & Turchet (2022) "aGPTset", ICASSP 2022.
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from __future__ import annotations
 import numpy as np
 from typing import List, Dict, Optional, Tuple

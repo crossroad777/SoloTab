@@ -9,6 +9,10 @@ tuning_detector.py — チューニング自動検出
   最も可能性の高いチューニングを推定する。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 from typing import List, Dict, Optional
 

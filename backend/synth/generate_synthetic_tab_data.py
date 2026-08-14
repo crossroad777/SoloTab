@@ -14,6 +14,10 @@ DadaGPデータセットがない場合の代替として、ギター指板の�
 弦割り当てデータを大量に生成できる。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import random

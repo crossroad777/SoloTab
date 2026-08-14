@@ -3,6 +3,10 @@ LSTM単体精度 vs パイプライン精度 on GuitarSet
 =============================================
 LSTMの弦予測(argmax)だけで何%取れるかを測定する。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, json, os, time
 import numpy as np
 

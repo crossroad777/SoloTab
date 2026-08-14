@@ -6,6 +6,10 @@ Site: https://www.gprotab.net
 Purpose: Research/Academic use only (Private Study).
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import time

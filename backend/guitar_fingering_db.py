@@ -7,6 +7,10 @@ guitar_fingering_db.py — コードフォーム・スケールパターンDB v3
   3. 手動追加: Segovia式スケールパターン
   4. 逆算ルール: 3,283ボイシングからのデータ駆動確率テーブル
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import json, os
 
 _DIR = os.path.dirname(__file__)

@@ -12,6 +12,10 @@ Karplus-Strong合成エンジンを使い、Em→Amのような開放弦→押�
   - JAMSファイル (string/fret/pitchアノテーション)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import json

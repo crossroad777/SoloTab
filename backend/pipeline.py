@@ -1,4 +1,8 @@
 # pyre-ignore-all-errors
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from __future__ import annotations
 """
 pipeline.py — SoloTab 解析パイプライン

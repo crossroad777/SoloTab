@@ -3,6 +3,10 @@ GuitarSet Benchmark v2 — 論文§8 全手法統合評価
 ================================================
 ファイルごとに処理してViterbi DPの爆発を防ぐ。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, json, os, time
 import numpy as np
 

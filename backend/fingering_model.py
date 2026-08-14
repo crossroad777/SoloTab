@@ -15,6 +15,10 @@ Bidirectional LSTMで前後の音の文脈を考慮し、
   - 6クラス分類 (弦1-6)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

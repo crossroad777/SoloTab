@@ -18,6 +18,10 @@ Basic Pitchの2段階方式（ピッチ検出→弦割り当て）を置き換�
     - [FIX-8] 内部/外部インデックス変換をコメントで明示
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import json

@@ -7,6 +7,10 @@ librosaのchroma特徴量を使ってキーを検出し、
 Essentiaが使えない環境(Python 3.12)のため、librosaで代替実装。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import librosa
 

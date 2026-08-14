@@ -6,6 +6,10 @@ tab_renderer.py — TAB用MusicXML生成
 (明示的2スタッフ構造はAlphaTab 1.3.0でゴースト段を発生させるため不使用)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from typing import List, Optional

@@ -2,6 +2,10 @@
 grid_search_3ds.py — 3DSモデル用 onset/vote threshold グリッドサーチ
 推論は1回だけ行い、閾値の組み合わせをキャッシュ上で高速評価する。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json, time
 import numpy as np
 from scipy import stats

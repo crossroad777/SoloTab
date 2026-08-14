@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, json, argparse
 import numpy as np
 from collections import defaultdict

@@ -11,6 +11,10 @@ YouTube音源をGuitarSet-likeな音質に近づける前処理。
 旧 ensemble_transcriber.py L29-91 から抽出。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import librosa
 import soundfile as sf

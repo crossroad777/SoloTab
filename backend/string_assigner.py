@@ -19,6 +19,10 @@ MIDIノート番号を (弦, フレット) に変換する。
 """
 
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+import sys
 from typing import List, Tuple, Dict, Optional
 from itertools import product as iter_product
 from collections import Counter

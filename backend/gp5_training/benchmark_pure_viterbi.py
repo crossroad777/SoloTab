@@ -4,6 +4,10 @@ Pure Viterbi DP (MLモデルなし) vs 現行パイプライン on GuitarSet
 CNN/LSTM/Transformer/GP5分類器を全て無効化し、
 純粋なコスト関数(位置/遷移/音色/人間工学)のみで何%出るか測定。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, time
 import numpy as np
 

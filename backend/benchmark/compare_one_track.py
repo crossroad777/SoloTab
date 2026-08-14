@@ -2,6 +2,10 @@
 1曲で GT vs SoloTab出力 を詳細比較するスクリプト。
 音の間隔(IOI)と duration を直接対比する。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "music-transcription", "python"))

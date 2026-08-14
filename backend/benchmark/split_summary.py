@@ -1,3 +1,7 @@
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, json, numpy as np
 
 mt = r"D:\Music\nextchord-solotab\music-transcription\python"

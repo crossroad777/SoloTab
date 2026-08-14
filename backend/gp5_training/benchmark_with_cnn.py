@@ -6,6 +6,10 @@ CNN弦分類器付きベンチマーク on GuitarSet
 
 論文の結果: CNN-first = 96.60% (solo 90トラック)
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, json, time
 import numpy as np
 

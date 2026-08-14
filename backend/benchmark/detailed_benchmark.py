@@ -3,6 +3,10 @@ detailed_benchmark.py — Pure MoE FT 全曲詳細ベンチマーク
 ========================================================
 最適パラメータ固定で、ジャンル別・スタイル別・プレイヤー別の詳細分析を行う。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json, time
 import numpy as np
 from scipy import stats

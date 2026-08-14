@@ -11,6 +11,10 @@ Strategy:
   3. PDMX table fallback when CNN unavailable
   4. derived_fingering_rules.json for fret-offset → finger mapping
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import json
 import math
 import os
@@ -825,6 +829,8 @@ def _is_free_shift_point(phrase_notes: List[dict],
     # Check for open strings between the two fretted notes
     for k in range(prev_abs + 1, curr_abs):
         if phrase_notes[k].get('fret', 0) == 0:
+            if time_gap < 0.5:
+                continue
             return True
 
     # Check for rest (gap in note coverage) > 0.2s
@@ -1592,83 +1598,104 @@ def _apply_pitch_proximity_rule(notes: List[dict]) -> int:
     return corrected
 
 
-def _enforce_pattern_consistency(notes: List[dict],
-                                 min_pattern_len: int = 4) -> int:
-    """Detect repeated pitch patterns and ensure consistent fingering.
-
-    Uses MAJORITY VOTE across all occurrences of a repeated pitch pattern:
-    1. Create sliding windows of pitch sequences (length 4-8)
-    2. Hash each window by (pitch_tuple, string_tuple)
-    3. Collect all finger assignments for each pattern
-    4. Compute majority (most common) finger for each position
-    5. Apply majority fingering to ALL occurrences
-
-    This prevents a bad first-occurrence from propagating its errors
-    to all subsequent repetitions.
-
-    Returns number of notes corrected.
+def _enforce_pattern_consistency_lite(notes: list, min_pattern_len: int = 2) -> int:
+    """Detect repeated pitch/string/fret patterns and ensure consistent fingering (Lite).
+    
+    Uses LOWEST CONTEXT COST (正典) across all occurrences with Context Guard:
+    1. Group occurrences by (pitch, string, fret) tuple of length >= min_pattern_len
+    2. Compute context cost for each occurrence: transition from prev_note + transition to next_note
+    3. Choose occurrence with lowest context cost as Canonical (正典)
+    4. For other occurrences, apply Canonical fingering ONLY IF:
+       a) The target note is not anchored (_is_anchor == False)
+       b) The prev position difference is <= 3 frets (Context Guard)
     """
-    from collections import Counter
-
     sorted_notes = sorted(notes, key=lambda n: n.get('start', 0))
-    # Only consider fretted notes for pattern matching
-    fretted = [n for n in sorted_notes
-               if isinstance(n.get('fret', 0), (int, float))
-               and int(n.get('fret', 0)) > 0]
-    if len(fretted) < min_pattern_len:
+    fretted = [n for n in sorted_notes if isinstance(n.get('fret', 0), (int, float)) and int(n.get('fret', 0)) > 0]
+    
+    if len(fretted) < min_pattern_len * 2:
         return 0
+        
+    def get_pos(n):
+        if not n: return 1
+        f = n.get('left_hand_finger', 1)
+        if f <= 0: f = 1
+        return int(n.get('fret', 0)) - (f - 1)
+        
+    def calc_transition_cost(n1, n2):
+        if not n1 or not n2: return 0.0
+        f1, p1 = n1.get('left_hand_finger', 1), get_pos(n1)
+        f2, p2 = n2.get('left_hand_finger', 1), get_pos(n2)
+        if f1 <= 0: f1 = 1
+        if f2 <= 0: f2 = 1
+        is_fs = n2.get('start', 0) - n1.get('start', 0) > 0.3
+        return _finger_transition_cost_dp(f2, f1, p2, p1, n2, n1, is_fs)
 
-    corrected = 0
-
-    for win_len in range(min_pattern_len, min(9, len(fretted) + 1)):
-        # Phase 1: Collect all occurrences of each pattern
-        # Key: (pitch_tuple, string_tuple) -> list of (start_index, finger_tuple)
-        pattern_occurrences: dict = {}
-        for i in range(len(fretted) - win_len + 1):
-            window = fretted[i:i + win_len]
-            pitch_key = tuple(int(n.get('pitch', 0)) for n in window)
-            string_key = tuple(int(n.get('string', 0)) for n in window)
-            finger_key = tuple(int(n.get('left_hand_finger', 0)) for n in window)
-            pattern_key = (pitch_key, string_key)
-
-            if pattern_key not in pattern_occurrences:
-                pattern_occurrences[pattern_key] = []
-            pattern_occurrences[pattern_key].append((i, finger_key))
-
-        # Phase 2: For patterns with multiple occurrences, compute majority vote
-        for pattern_key, occurrences in pattern_occurrences.items():
-            if len(occurrences) < 2:
+    from collections import defaultdict
+    max_len = min(8, len(fretted) // 2)
+    changes = 0
+    processed_indices = set()
+    
+    for L in range(max_len, min_pattern_len - 1, -1):
+        window_map = defaultdict(list)
+        for i in range(len(fretted) - L + 1):
+            window = fretted[i:i+L]
+            key = tuple((n.get('pitch', 0), n.get('string', 0), n.get('fret', 0)) for n in window)
+            window_map[key].append(i)
+            
+        for key, indices in window_map.items():
+            if len(indices) < 2:
                 continue
-
-            # Compute majority finger for each position in the window
-            majority_fingers = []
-            for pos in range(win_len):
-                finger_counts = Counter(
-                    occ_fingers[pos]
-                    for _, occ_fingers in occurrences
-                    if occ_fingers[pos] > 0  # Skip unassigned
-                )
-                if finger_counts:
-                    majority_fingers.append(finger_counts.most_common(1)[0][0])
-                else:
-                    majority_fingers.append(0)
-
-            majority_tuple = tuple(majority_fingers)
-
-            # Phase 3: Apply majority fingering to all occurrences
-            for start_idx, occ_fingers in occurrences:
-                if occ_fingers == majority_tuple:
-                    continue  # Already matches majority
-                window = fretted[start_idx:start_idx + win_len]
-                for j in range(win_len):
-                    old_finger = int(window[j].get('left_hand_finger', 0))
-                    new_finger = majority_fingers[j]
-                    if old_finger != new_finger and new_finger > 0:
-                        window[j]['left_hand_finger'] = new_finger
-                        corrected += 1
-
-    return corrected
-
+                
+            disjoint = []
+            last_end = -1
+            for idx in indices:
+                if idx >= last_end:
+                    # check if already processed
+                    if not any(idx + j in processed_indices for j in range(L)):
+                        disjoint.append(idx)
+                        last_end = idx + L
+                    
+            if len(disjoint) < 2:
+                continue
+                
+            costs = []
+            for idx in disjoint:
+                prev_n = fretted[idx - 1] if idx > 0 else None
+                next_n = fretted[idx + L] if idx + L < len(fretted) else None
+                cost_in = calc_transition_cost(prev_n, fretted[idx])
+                cost_out = calc_transition_cost(fretted[idx + L - 1], next_n)
+                costs.append((cost_in + cost_out, idx))
+                
+            costs.sort(key=lambda x: x[0])
+            canonical_idx = costs[0][1]
+            canonical_notes = fretted[canonical_idx:canonical_idx+L]
+            canonical_fingers = [n.get('left_hand_finger', 1) for n in canonical_notes]
+            
+            canonical_prev_n = fretted[canonical_idx - 1] if canonical_idx > 0 else None
+            canonical_prev_pos = get_pos(canonical_prev_n) if canonical_prev_n else get_pos(canonical_notes[0])
+            
+            for idx in disjoint:
+                for j in range(L):
+                    processed_indices.add(idx + j)
+                    
+                if idx == canonical_idx:
+                    continue
+                    
+                target_notes = fretted[idx:idx+L]
+                target_prev_n = fretted[idx - 1] if idx > 0 else None
+                target_prev_pos = get_pos(target_prev_n) if target_prev_n else get_pos(target_notes[0])
+                
+                if abs(target_prev_pos - canonical_prev_pos) > 3:
+                    continue
+                    
+                for j in range(L):
+                    tn = target_notes[j]
+                    cf = canonical_fingers[j]
+                    if tn.get('left_hand_finger') != cf and not tn.get('_is_anchor', False):
+                        tn['left_hand_finger'] = cf
+                        changes += 1
+                        
+    return changes
 
 def _apply_pivot_fingers(notes: List[dict]) -> int:
     """For chord-to-chord transitions, keep common (string, fret) on the
@@ -1751,7 +1778,7 @@ def assign_fingers(notes: List[dict],
                           phrase_gap: float = 0.5,
                           techniques: List[str] = None,
                           detected_key: str = None,
-                          use_pattern_consistency: bool = False,
+                          use_pattern_consistency_lite: bool = True,
                           use_pitch_proximity: bool = False,
                           use_pivot_fingers: bool = False,
                           forced_fingers: Optional[Dict[Tuple[int, float], int]] = None) -> List[dict]:
@@ -1887,8 +1914,8 @@ def assign_fingers(notes: List[dict],
         prox_fixes = 0
 
     # Step 4: Pattern consistency
-    if use_pattern_consistency:
-        pattern_fixes = _enforce_pattern_consistency(notes)
+    if use_pattern_consistency_lite:
+        pattern_fixes = _enforce_pattern_consistency_lite(notes)
     else:
         pattern_fixes = 0
 

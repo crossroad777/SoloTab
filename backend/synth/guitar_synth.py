@@ -11,6 +11,10 @@ FluidSynth + FluidR3_GM SoundFont (GM 25: Acoustic Guitar Steel) で
   4. オーディオ拡張（リバーブ等はFluidSynth内蔵）
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import os
 from typing import Tuple

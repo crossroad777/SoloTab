@@ -6,6 +6,10 @@ _frames_to_notes → _assign_to_bars (心理音響学+グリッドスナップ) 
 
 これが実際にGP5に出力されてユーザーが聴く音の間隔。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json, re
 import numpy as np
 from scipy import stats

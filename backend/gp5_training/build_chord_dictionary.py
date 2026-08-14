@@ -4,6 +4,10 @@ Step 2: Build Chord Form Dictionary
 Analyze chords_dataset.jsonl → build frequency-based chord voicing dictionary
 Output: chord_dictionary.json
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import json, sys
 from pathlib import Path
 from collections import Counter, defaultdict

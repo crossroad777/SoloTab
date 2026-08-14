@@ -8,6 +8,10 @@ aGPTsetはアコースティックギターのテクニックデータセット�
   5 = Palm Mute → muted
   pitched notes without technique → normal
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, csv, glob, time
 from pathlib import Path
 from collections import Counter

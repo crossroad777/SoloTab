@@ -9,6 +9,10 @@ beat_detector.py — ビート検出 + 拍子推定 (madmom + librosa)
 3. BPM倍取り/半取り補正の改善
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import atexit
 import warnings

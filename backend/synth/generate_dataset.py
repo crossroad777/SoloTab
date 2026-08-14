@@ -15,6 +15,10 @@ Usage:
   python backend/synth/generate_dataset.py --num 5000
   python backend/synth/generate_dataset.py --num 100 --dry-run
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, json, time, argparse
 import numpy as np
 import torch

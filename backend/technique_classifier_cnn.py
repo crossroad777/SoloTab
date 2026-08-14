@@ -8,6 +8,10 @@ Usage in pipeline:
     from technique_classifier_cnn import annotate_techniques_cnn
     notes = annotate_techniques_cnn(notes, audio_path, confidence_threshold=0.90)
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from __future__ import annotations
 import os
 import numpy as np

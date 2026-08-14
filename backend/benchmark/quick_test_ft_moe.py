@@ -1,6 +1,10 @@
 """
 GuitarSet FT済みモデル vs 元モデル Pure MoE 比較テスト（自己完結版）
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, json, copy
 import numpy as np
 import scipy.signal

@@ -8,6 +8,10 @@ FluidSynth不要: pretty_midi.synthesize() で正弦波合成。
 学習には音色の正確さより「正しいピッチ・タイミング」が重要。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import json

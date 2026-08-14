@@ -8,6 +8,10 @@ overnight_training.py - 夜間一括学習スクリプト
 全て別ファイルに保存。既存モデルは一切変更しない。
 ================================================================
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import subprocess, sys, os, time, datetime
 
 BACKEND = r"d:\Music\nextchord-solotab\backend"

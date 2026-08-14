@@ -5,6 +5,10 @@ GuitarSet全曲でPure MoEのF1スコアを計測する。
 評価基準: mir_eval transcription (Onset 50ms, Pitch 50 cents, offset無視)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import sys
 import glob

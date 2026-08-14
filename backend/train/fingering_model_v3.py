@@ -15,6 +15,10 @@ GProTab 800万ノートで学習した記号ベース運指予測Transformer。
 正確にアーキテクチャを復元したもの。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import math
 import torch
 import torch.nn as nn

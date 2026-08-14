@@ -10,6 +10,10 @@ NextChord SoloTab — FastAPI Backend
 # flake8: noqa
 
 # v2.2: 既知の無害な警告を抑制
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import warnings
 warnings.filterwarnings("ignore", message=".*n_fft.*too large.*")  # librosa short segment
 warnings.filterwarnings("ignore", message=".*urllib3.*chardet.*charset_normalizer.*")  # requests

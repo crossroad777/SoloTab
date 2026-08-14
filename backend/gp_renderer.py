@@ -9,6 +9,10 @@ MusicXMLパース由来の表示問題を根本的に解消する。
   - TuxGuitar (無料、人間による修正)
   - Guitar Pro / MuseScore 等
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from __future__ import annotations
 from typing import List, Optional
 import guitarpro as gp

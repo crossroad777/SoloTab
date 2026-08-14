@@ -5,6 +5,10 @@ solotab_utils.py — SoloTab 共通ユーティリティ
 import時にffmpeg PATHとNumPy互換パッチが自動適用される。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import numpy as np
 from pathlib import Path

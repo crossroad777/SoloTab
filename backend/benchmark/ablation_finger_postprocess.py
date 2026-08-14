@@ -5,6 +5,10 @@ ablation_finger_postprocess.py
 Step 2 分解診断: finger_assigner の後処理が CNN 予測を「直している」
 のか「壊している」のかを、GP5 正解データに対して数値で確定させる。
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, json, copy, argparse
 from collections import defaultdict
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -13,6 +13,10 @@ train_technique_cnn.py - IDMT-SMT-GUITAR_V2 テクニック分類器 (V2: 精度
 6クラス: normal, muted, bend, slide, harmonic, vibrato
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from __future__ import annotations
 import os, sys, json, glob, time, argparse
 import xml.etree.ElementTree as ET

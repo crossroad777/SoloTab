@@ -10,6 +10,10 @@ Architecture (from state_dict):
 Input: sequence of 6-feature tokens (pitch_norm, string, fret, duration, interval, position_context)
 Output: 5-class string prediction
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import math
 import torch
 import torch.nn as nn

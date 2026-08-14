@@ -6,6 +6,10 @@ reportlab を使用して、MusicXML (tab.musicxml) を解析し、
 AlphaTabやブラウザのレンダリングに一切依存しない。
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from reportlab.lib.pagesizes import A4

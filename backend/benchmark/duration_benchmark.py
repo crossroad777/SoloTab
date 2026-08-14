@@ -9,6 +9,10 @@ GuitarSetのGround Truthと比較して、
 - Duration Ratio: 予測/正解の比率分布 (1.0が完璧)
 - Rhythm Score: onsetがマッチしたノートのduration一致率
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os, sys, glob, json
 import numpy as np
 from scipy import stats

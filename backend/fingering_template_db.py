@@ -1,3 +1,7 @@
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import json
 from typing import List, Tuple, Dict, Any

@@ -6,6 +6,10 @@ Viterbi DPのコスト関数重みのみをGuitarSet全360ファイルで最適�
 
 処理時間: Pure Viterbi = ~8秒/360ファイル → 高速に多数trial実行可能
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os, json, time
 import numpy as np
 

@@ -12,6 +12,10 @@ mono-mic音源のCQT特徴量から「どの弦で弾かれたか」を推定す
 アーキテクチャ: 軽量CNN (CQT patch → 6-class softmax)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import os
 import json
 import glob

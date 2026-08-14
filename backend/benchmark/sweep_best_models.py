@@ -1,4 +1,8 @@
 """onset_threshold微調整: 0.7-0.9を0.05刻みでスイープ（ドメイン別ベスト選択モデル）"""
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "music-transcription", "python"))

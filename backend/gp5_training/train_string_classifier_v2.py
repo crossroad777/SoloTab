@@ -9,6 +9,10 @@ Improvements over v1:
 - EPOCHS: 30 → 50
 Output: gp5_string_classifier.pth (overwrites v1)
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import json, sys, time, random
 from pathlib import Path
 

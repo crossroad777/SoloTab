@@ -11,6 +11,10 @@ chord_theory.py — 音楽理論エンジン (コード解析・典型フォー�
   - コードフォーム内ポジション優先 (_chord_form_position_cost)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from typing import List, Tuple, Optional
 import json
 import os

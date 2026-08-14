@@ -13,6 +13,10 @@ ML出力の生ノートデータを音楽的に正しい楽譜表記に変換す
   7. 声部分離 — ベースラインとメロディの分離
   8. リズムパターン検出 — 3連符 vs ストレート
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from typing import List, Optional, Tuple
 import math
 

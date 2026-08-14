@@ -12,6 +12,10 @@ Key concepts:
 - onset_ql: 拍頭からの quarterLength オフセット
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 from typing import List, Tuple, Optional
 from music21 import stream, note, chord, meter, tempo, duration

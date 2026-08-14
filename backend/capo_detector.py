@@ -13,6 +13,10 @@ capo_detector.py — カポ推定
       Key=Eb → カポ1(実質Key=D) or カポ3(実質Key=C)
 """
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from typing import Dict, Optional, List
 
 # 開放弦で弾きやすいキーの「自然さスコア」

@@ -10,6 +10,10 @@ Improvements over v1:
 - EPOCHS: 20 → 40
 Output: gp5_context_lstm.pth (overwrites v1)
 """
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import json, sys, time, random
 from pathlib import Path
 
