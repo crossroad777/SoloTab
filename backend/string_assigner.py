@@ -1350,8 +1350,9 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
     group_candidates = []  # [group_idx] -> [(string, fret), ...] or None (和音)
     chord_results = {}     # group_idx -> [assigned_notes]
 
-    # V3 Transformer: 全単音の弦確率を事前計算
-    model = _load_fingering_transformer()
+    # V3 Transformer: 全単音の弦確率を事前計算 (スタンダードチューニングのみ)
+    is_standard = (tuning == STANDARD_TUNING)
+    model = _load_fingering_transformer() if is_standard else None
     if model:
         flat_notes = [g[0] for g in groups]
         for ni, note in enumerate(flat_notes):
@@ -1704,7 +1705,8 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
 
 def _minimax_postprocess(notes: List[dict], tuning: List[int],
                          max_fret: int,
-                         scale_positions: Optional[List[int]] = None) -> List[dict]:
+                         scale_positions: Optional[List[int]] = None,
+                         forced_positions: Optional[Dict[Tuple[int, float], Tuple[int, int]]] = None) -> List[dict]:
     """
     Minimax Viterbi DP (Hori & Sagayama, ISMIR 2016) による後処理。
     
@@ -1725,9 +1727,13 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
     candidates_list = []
     for note in notes:
         pitch = note.get("pitch", 0)
-        positions = get_possible_positions(pitch, tuning, max_fret)
-        if not positions:
-            positions = [(note.get("string", 1), note.get("fret", 0))]
+        note_key = (int(pitch), round(float(note.get("start", note.get("start_time", 0.0))), 3))
+        if forced_positions and note_key in forced_positions:
+            positions = [forced_positions[note_key]]
+        else:
+            positions = get_possible_positions(pitch, tuning, max_fret)
+            if not positions:
+                positions = [(note.get("string", 1), note.get("fret", 0))]
         candidates_list.append(positions)
     
     n = len(notes)
@@ -2281,8 +2287,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     from guitar_cost_functions import pima_r5_postprocess
     result = pima_r5_postprocess(result, tuning, max_fret)
 
-    # Minimax後処理: 最大遷移コストの箇所を局所再最適化
-    result = _minimax_postprocess(result, tuning, max_fret, scale_positions=scale_positions)
+    # Minimax後処理: 最大遷移コストの極端な跳躍を再最適化
+    result = _minimax_postprocess(result, tuning, max_fret, scale_positions=scale_positions, forced_positions=forced_positions)
 
     # === V3 Transformer 2パス目: 無効化 ===
     # V3b: f0-4過集中(89%)の原因がこの段階のハイ→ロー変換と判明

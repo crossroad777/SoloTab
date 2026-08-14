@@ -1,0 +1,53 @@
+{
+  "stages": {
+    "cnn_only": {
+      "accuracy": 63.34984241332733,
+      "tol1": 87.78140477262494,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_chord": {
+      "accuracy": 58.95429986492571,
+      "tol1": 83.9655560558307,
+      "net": -781,
+      "fixed": 589,
+      "broke": 1370
+    },
+    "after_viterbi": {
+      "accuracy": 63.70441242683476,
+      "tol1": 89.69495722647456,
+      "net": 844,
+      "fixed": 2195,
+      "broke": 1351
+    },
+    "after_templates": {
+      "accuracy": 96.87640702386312,
+      "tol1": 98.94191805493021,
+      "net": 5894,
+      "fixed": 6020,
+      "broke": 126
+    },
+    "after_prox": {
+      "accuracy": 92.9761368752814,
+      "tol1": 97.90634849167041,
+      "net": -693,
+      "fixed": 56,
+      "broke": 749
+    },
+    "after_pattern": {
+      "accuracy": 76.09185051778478,
+      "tol1": 88.14160288158487,
+      "net": -3000,
+      "fixed": 245,
+      "broke": 3245
+    },
+    "after_pivot": {
+      "accuracy": 75.64723097703737,
+      "tol1": 87.94461954074741,
+      "net": -79,
+      "fixed": 51,
+      "broke": 130
+    }
+  }
+}

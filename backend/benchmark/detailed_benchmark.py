@@ -86,7 +86,9 @@ def run_inference(wav_path, device):
         model.load_state_dict(sd)
         model.to(device).eval()
         with torch.no_grad():
-            onset_logits, fret_logits = model(features)
+            model_output = model(features)
+            onset_logits = model_output[0]
+            fret_logits = model_output[1]
             onset_probs = torch.sigmoid(onset_logits[0]).cpu().numpy()
             fret_probs = torch.softmax(fret_logits[0], dim=-1).cpu().numpy()
         all_onset_probs.append(onset_probs)

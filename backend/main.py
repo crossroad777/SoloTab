@@ -217,6 +217,7 @@ class ResultResponse(BaseModel):
     key: Optional[str] = None
     capo: Optional[int] = None
     suggested_tuning: Optional[str] = None
+    anchors: Optional[dict] = None
     noise_gate: Optional[float] = None
 
 
@@ -577,6 +578,7 @@ async def get_result(session_id: str):
         capo=s.get("capo"),
         suggested_tuning=s.get("suggested_tuning"),
         noise_gate=s.get("noise_gate"),
+        anchors=s.get("anchors", {})
     )
 
 
@@ -1283,11 +1285,21 @@ async def retune(session_id: str, request: RetuneRequest):
     return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": filtered_count}
 
 
+def _inject_anchors_flag(notes, anchors):
+    for n in notes:
+        k = f"{int(n.get('pitch', 0))}_{round(float(n.get('start', n.get('start_time', 0.0))), 3)}"
+        if k in anchors:
+            n["_is_anchor"] = True
+        else:
+            n.pop("_is_anchor", None)
+    return notes
+
 class NoteEditRequest(BaseModel):
     fret: Optional[int] = None
     string: Optional[int] = None
     finger: Optional[int] = None
     delete: Optional[bool] = False
+    anchor: Optional[bool] = None        # アンカーとして固定するかどうか（falseなら解除）
     start_time: Optional[float] = None   # 時刻ベース検索用
     old_fret: Optional[int] = None       # 元のフレット（照合用）
 
@@ -1357,17 +1369,24 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
             note["pitch"] = open_pitch + new_fret
             
         note_key_str = f"{int(note.get('pitch', 0))}_{round(float(note.get('start', note.get('start_time', 0.0))), 3)}"
-        anchor_data = {
-            "string": note["string"],
-            "fret": note["fret"]
-        }
-        if request.finger is not None:
-            anchor_data["finger"] = request.finger
-        elif "left_hand_finger" in note:
-            anchor_data["finger"] = note["left_hand_finger"]
-        s["anchors"][note_key_str] = anchor_data
+        
+        if request.anchor is False:
+            if note_key_str in s["anchors"]:
+                del s["anchors"][note_key_str]
+        else:
+            anchor_data = {
+                "string": note["string"],
+                "fret": note["fret"]
+            }
+            if request.finger is not None:
+                anchor_data["finger"] = request.finger
+            elif "left_hand_finger" in note:
+                anchor_data["finger"] = note["left_hand_finger"]
+            s["anchors"][note_key_str] = anchor_data
 
         action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
+
+    notes = _inject_anchors_flag(notes, s["anchors"])
 
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
@@ -1459,6 +1478,7 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
                 print(f"[edit_note] Running assign_strings_dp for Human-in-the-Loop Viterbi... (Anchors: {len(forced_positions)})")
                 notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"), forced_positions=forced_positions)
                 notes = assign_fingers(notes, detected_key=s.get("key"), forced_fingers=forced_fingers)
+                notes = _inject_anchors_flag(notes, s["anchors"])
                 
                 with open(assigned_path, "w", encoding="utf-8") as f:
                     json.dump(notes, f, ensure_ascii=False, indent=2)
@@ -1561,6 +1581,53 @@ async def add_note(session_id: str, request: NoteAddRequest):
 
     return {"status": "ok", "action": "added", "note_index": insert_idx, "total_notes": len(notes)}
 
+
+
+@app.post("/result/{session_id}/anchors/reset")
+async def reset_anchors(session_id: str):
+    """すべてのアンカーをクリアし、AIのデフォルト推論（Viterbi）に戻す"""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    s = sessions[session_id]
+    s["anchors"] = {}
+    save_session(session_id)
+    
+    session_dir = Path(s["session_dir"])
+    assigned_path = session_dir / "notes_assigned.json"
+    if not assigned_path.exists():
+        raise HTTPException(status_code=404, detail="Notes not found")
+        
+    with open(assigned_path, "r", encoding="utf-8") as f:
+        notes = json.load(f)
+        
+    try:
+        from string_assigner import assign_strings_dp
+        from finger_assigner import assign_fingers
+        tuning_name = s.get("tuning", "standard")
+        tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
+        guitar_type = s.get("guitar_type", "auto")
+        
+        print(f"[reset_anchors] Running default assign_strings_dp...")
+        notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"))
+        notes = assign_fingers(notes, detected_key=s.get("key"))
+        notes = _inject_anchors_flag(notes, s["anchors"])
+        
+        with open(assigned_path, "w", encoding="utf-8") as f:
+            json.dump(notes, f, ensure_ascii=False, indent=2)
+            
+        original_path = session_dir / "notes_assigned_original.json"
+        if original_path.exists():
+            with open(original_path, "w", encoding="utf-8") as f:
+                json.dump(notes, f, ensure_ascii=False, indent=2)
+                
+        _regenerate_musicxml(session_id, notes)
+    except Exception as e:
+        print(f"[reset_anchors] Error: {e}")
+        import traceback; traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Re-optimization failed")
+
+    return {"status": "ok", "action": "reset_anchors"}
 
 
 @app.get("/result/{session_id}/techniques")

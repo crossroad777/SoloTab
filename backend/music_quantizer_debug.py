@@ -144,24 +144,15 @@ def quantize_notes_music21(
         # ピッチが低く（MIDI 55以下）、かつ他の音と同時発音の場合、拍単位まで延長
         # 同時発音（和音）かどうかを正確に判定
         is_chord = False
-        next_ioi = sec_per_beat * 4.0
         for k in range(len(sorted_notes)):
-            t = float(sorted_notes[k]["start"])
-            if t > onset_sec + CHORD_WINDOW:
-                next_ioi = t - onset_sec
-                break
-            if k != note_idx and abs(t - onset_sec) < CHORD_WINDOW:
+            if k == note_idx: continue
+            if abs(float(sorted_notes[k]["start"]) - onset_sec) < CHORD_WINDOW:
                 is_chord = True
+                break
 
         if int(n.get("pitch", 60)) <= 55 and is_chord:
-            if is_in_arpeggio:
-                dur_sec = max(dur_sec, sec_per_beat * 2.0)
-            elif next_ioi < sec_per_beat * 0.5:
-                # ファンク/カッティング対策: 次の音までのIOIが極端に短い場合、ベース音も短く切る
-                dur_sec = min(dur_sec, next_ioi * 0.9)
-            else:
-                # ベース音は最低でも2拍（sec_per_beat * 2.0）持続させる（アルペジオでのペラペラ感を防止）
-                dur_sec = max(dur_sec, sec_per_beat * 2.0)
+            # ベース音は最低でも2拍（sec_per_beat * 2.0）持続させる（アルペジオでのペラペラ感を防止）
+            dur_sec = max(dur_sec, sec_per_beat * 2.0)
             
         dur_sec = min(dur_sec, MAX_DUR_BEATS * sec_per_beat)
         dur_sec = max(dur_sec, MIN_DUR_BEATS * sec_per_beat)
@@ -181,6 +172,7 @@ def quantize_notes_music21(
         onset_ql = max(0.0, onset_ql)
         
         dur_ql = max(dur_sec / sec_per_beat, MIN_DUR_BEATS)
+        if n['pitch'] == 40: print(f'BEFORE M21: sec={dur_sec} ql={dur_ql} is_chord={is_chord}')
         
         m21_note = note.Note(int(n["pitch"]))
         m21_note.duration.quarterLength = dur_ql

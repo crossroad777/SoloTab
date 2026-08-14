@@ -1,0 +1,53 @@
+{
+  "stages": {
+    "cnn_only": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_chord": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_viterbi": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_templates": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_prox": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_pattern": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    },
+    "after_pivot": {
+      "accuracy": 100.0,
+      "tol1": 100.0,
+      "net": 0,
+      "fixed": 0,
+      "broke": 0
+    }
+  }
+}

@@ -89,6 +89,7 @@ def main():
     string_exact = fret_exact = fret_tol1 = simultaneous = 0
     error_dist_string = defaultdict(int)
     error_dist_fret = defaultdict(int)
+    error_examples = []
     
     for gi, pi in matches:
         g, p = gt_notes[gi], pred_notes[pi]
@@ -104,6 +105,12 @@ def main():
             
         if abs(g['fret'] - p['fret']) <= 1: fret_tol1 += 1
         if s_match and f_match: simultaneous += 1
+        else:
+            error_examples.append({
+                'pitch': g['pitch'],
+                'gt_s': g['string'], 'gt_f': g['fret'],
+                'pred_s': p['string'], 'pred_f': p['fret']
+            })
             
     print("\n" + "=" * 68)
     print("CEILING ACCURACY (Matched Notes Only)")
@@ -121,6 +128,13 @@ def main():
     for s in range(1, 7): print(f"  String {s}: {error_dist_string[s]} errors")
     print("\nMissed String/Fret by GT Fret Bracket:")
     for f in sorted(error_dist_fret.keys()): print(f"  Fret {f}-{f+4}: {error_dist_fret[f]} errors")
+    
+    print("\n" + "=" * 68)
+    print("CONCRETE ERROR EXAMPLES (up to 10)")
+    print("-" * 68)
+    print(f"{'Pitch':<7} | {'GT String/Fret':<15} | {'Pred String/Fret':<15}")
+    for ex in error_examples[:10]:
+        print(f"{ex['pitch']:<7} | {ex['gt_s']}弦 / {ex['gt_f']:<2}fret       | {ex['pred_s']}弦 / {ex['pred_f']:<2}fret")
     print("=" * 68)
 
 if __name__ == '__main__':
