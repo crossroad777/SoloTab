@@ -1472,7 +1472,14 @@ def _viterbi_finger_dp(notes: List[dict],
         if not current_phrase:
             current_phrase.append(note)
             continue
-        gap = note.get('start', 0) - current_phrase[-1].get('start', 0)
+        prev_note = current_phrase[-1]
+        prev_start = float(prev_note.get('start', 0))
+        prev_dur = float(prev_note.get('duration', prev_note.get('end', prev_start) - prev_start))
+        if prev_dur <= 0:
+            gap = float(note.get('start', 0)) - prev_start
+        else:
+            gap = float(note.get('start', 0)) - (prev_start + prev_dur)
+            
         if gap > phrase_gap:
             phrases.append(current_phrase)
             current_phrase = [note]
@@ -1628,6 +1635,9 @@ def _enforce_pattern_consistency_lite(notes: list, min_pattern_len: int = 2) -> 
         if f1 <= 0: f1 = 1
         if f2 <= 0: f2 = 1
         is_fs = n2.get('start', 0) - n1.get('start', 0) > 0.3
+        global _ACTIVE_WEIGHTS
+        from finger_assigner import _FINGER_DP_WEIGHTS
+        _ACTIVE_WEIGHTS = _FINGER_DP_WEIGHTS
         return _finger_transition_cost_dp(f2, f1, p2, p1, n2, n1, is_fs)
 
     from collections import defaultdict
@@ -1836,6 +1846,7 @@ def assign_fingers(notes: List[dict],
         if forced_fingers and note_key in forced_fingers:
             note['left_hand_finger'] = forced_fingers[note_key]
             note['_forced_finger'] = forced_fingers[note_key]
+            note['_is_anchor'] = True
             note['_finger_conf'] = 1.0
             continue
 
