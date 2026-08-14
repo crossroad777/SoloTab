@@ -47,7 +47,8 @@ _CACHED_MODELS = {}
 def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
                         onset_threshold: float = 0.75,
                         vote_prob_threshold: float = 0.5,
-                        fast_mode: bool = True) -> list:
+                        fast_mode: bool = True,
+                        return_metadata: bool = False):
     """
     MoEトランスクライバ（合議制推論）。
 
@@ -196,6 +197,19 @@ def transcribe_pure_moe(wav_path: str, vote_threshold: int = None,
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
+    if return_metadata:
+        pick_indices = [i for i, (name, _) in enumerate(models_loaded) if "pick" in name]
+        finger_indices = [i for i, (name, _) in enumerate(models_loaded) if "finger" in name or "thumb" in name]
+        
+        total_pick_votes = int(np.sum(binary_votes[pick_indices])) if len(pick_indices) > 0 else 0
+        total_finger_votes = int(np.sum(binary_votes[finger_indices])) if len(finger_indices) > 0 else 0
+        total_votes = total_pick_votes + total_finger_votes
+        
+        pick_ratio = total_pick_votes / max(total_votes, 1)
+        finger_ratio = total_finger_votes / max(total_votes, 1)
+        
+        return notes, {"pick_ratio": pick_ratio, "finger_ratio": finger_ratio}
+
     return notes
 
 

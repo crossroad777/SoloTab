@@ -273,17 +273,40 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             from pure_moe_transcriber import transcribe_pure_moe
             report("notes", "MoEアンサンブル推論中...")
             t0 = time.time()
-            mn = transcribe_pure_moe(
+            mn, moe_meta = transcribe_pure_moe(
                 str(transcription_wav_path),
                 vote_threshold=moe_vt if moe_vote_threshold == -1 else moe_vote_threshold,
                 onset_threshold=bp_onset_threshold,
                 vote_prob_threshold=moe_vote_prob_threshold,
                 fast_mode=fast_moe,  # Respect the fast_moe setting to save memory/time
+                return_metadata=True
             )
             _moe_notes.extend(mn)
             report("notes", f"MoE: {len(_moe_notes)} notes ({time.time()-t0:.1f}s)")
         except Exception as e:
-            report("notes", f"MoE失敗: {e}")
+            report("notes", f"MoE Error: {e}")
+            import traceback; traceback.print_exc()
+            mn = []
+            moe_meta = {}
+
+        # --- Style Detection & Adaptive Parameters ---
+        adaptive_onset = bp_onset_threshold
+        adaptive_min_len = bp_minimum_note_length
+        style = "NEUTRAL"
+        
+        pick_ratio = moe_meta.get("pick_ratio", 0.0) if moe_meta else 0.0
+        finger_ratio = moe_meta.get("finger_ratio", 0.0) if moe_meta else 0.0
+        
+        if pick_ratio > 0.6:
+            style = "STROKE"
+            adaptive_onset = 0.85
+            adaptive_min_len = 120.0
+        elif finger_ratio > 0.6:
+            style = "FINGER"
+            adaptive_onset = 0.70
+            adaptive_min_len = 80.0
+            
+        report("notes", f"[Style Detection] Pick Ratio: {pick_ratio:.2f}, Finger Ratio: {finger_ratio:.2f} -> Adaptive Mode: {style} (onset={adaptive_onset}, min_len={adaptive_min_len}ms)")
 
         # CRNN (fallback — MoE失敗時のみ)
         if not _moe_notes:
@@ -315,8 +338,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             t0 = time.time()
             _, midi_data, _ = bp_predict(str(transcription_wav_path),
                                           model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
-                                          onset_threshold=bp_onset_threshold,
-                                          minimum_note_length=bp_minimum_note_length)
+                                          onset_threshold=adaptive_onset,
+                                          minimum_note_length=adaptive_min_len)
             for inst in midi_data.instruments:
                 for note in inst.notes:
                     _bp_notes.append({
