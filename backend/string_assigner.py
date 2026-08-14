@@ -2229,9 +2229,15 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             print(f"[string_assigner] ポジション推定: median_pitch={median_pitch}, "
                   f"est_position={estimated_position:.1f}")
     
-    # CNN重み: ユーザー要望に基づきAI依存度をさらに軽減 (steel=5.0, nylon=4.0)
-    # DP(動的計画法)による人間工学的コストおよび運指の滑らかさを最優先とする
-    cnn_weight = 4.0 if is_nylon else 5.0
+    # DP(最小化手法)による人工工学コストと音響的確信度のバランス調整
+    import os as _os
+    env_weight = _os.environ.get("CNN_WEIGHT")
+    if env_weight is not None:
+        cnn_weight = float(env_weight)
+    else:
+        # A/Bテスト(E2E)の結果、String Accuracyが最も高くRegressionのない 30.0 を採用 (論文w_cnn=34.99に近似)
+        cnn_weight = 4.0 if is_nylon else 30.0
+        
     if is_nylon:
         print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight}")
     else:

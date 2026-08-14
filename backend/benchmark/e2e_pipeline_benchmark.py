@@ -183,8 +183,12 @@ def main():
             
             t1 = time.time()
             
-            # 出力結果の読み込み
-            out_json = os.path.join(temp_dir, "notes_assigned.json")
+            # 出力結果の読み込み (楽譜レンダラのタイ分割によるペナルティを排除するためoriginalを使用)
+            out_json = os.path.join(temp_dir, "notes_assigned_original.json")
+            if not os.path.exists(out_json):
+                print("  [WARNING] notes_assigned_original.json not found, falling back to notes_assigned.json")
+                out_json = os.path.join(temp_dir, "notes_assigned.json")
+                
             if not os.path.exists(out_json):
                 print("  [FAIL] notes_assigned.json was not generated.")
                 continue
