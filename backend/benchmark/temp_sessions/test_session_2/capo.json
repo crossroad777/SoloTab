@@ -1,0 +1,22 @@
+{
+  "capo": 1,
+  "effective_key": "G",
+  "confidence": 0.92,
+  "alternatives": [
+    {
+      "capo": 1,
+      "key": "G",
+      "score": 0.92
+    },
+    {
+      "capo": 4,
+      "key": "E",
+      "score": 0.68
+    },
+    {
+      "capo": 6,
+      "key": "D",
+      "score": 0.47
+    }
+  ]
+}

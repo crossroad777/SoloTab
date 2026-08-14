@@ -451,9 +451,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     moe_only_added += 1
 
         # BP独自ノート (MoEに一致しなかったBPノート)
-        # 閾値を厳しく: MoEが確認していないノートは高velocityのもののみ採用
-        # 0.3は低すぎ → 1拍6ノート超 → 3連符量子化が崩壊
-        BP_ONLY_THRESHOLD = 0.50  # 適正化: 0.45→0.50 (MVSフィルタが後段で機能するため適正レベル)
+        bp_count = len(bp_notes_list)
+        moe_matched_count = len(used_bp)
+        
+        if bp_count > 0:
+            moe_coverage = moe_matched_count / bp_count
+        else:
+            moe_coverage = 1.0
+            
+        if moe_coverage < 0.50:
+            # MoE 信頼性低: BP の判定を優先し、フィルタを大幅に緩和
+            BP_ONLY_THRESHOLD = 0.05
+        else:
+            # MoE 信頼性高: 従来通り（ただし 0.50 → 0.20 に引き下げ済み）
+            BP_ONLY_THRESHOLD = 0.20
+            
+        report("notes", f"[Ensemble] MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), threshold: {BP_ONLY_THRESHOLD}")
         bp_only_added = 0
         for i, bp_n in enumerate(bp_notes_list):
             if i not in used_bp:

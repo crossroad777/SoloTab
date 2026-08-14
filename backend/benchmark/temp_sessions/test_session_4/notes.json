@@ -1,0 +1,162 @@
+{
+  "notes": [
+    {
+      "start": 0.0,
+      "end": 0.6734,
+      "pitch": 43,
+      "string": 6,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.6734,
+      "end": 1.9969,
+      "pitch": 44,
+      "string": 6,
+      "fret": 4,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.9752380952380952,
+      "end": 1.253877551020408,
+      "pitch": 68,
+      "velocity": 0.6307086614173228,
+      "_bp_only": true
+    },
+    {
+      "start": 1.0100680272108844,
+      "end": 1.3003174603174603,
+      "pitch": 44,
+      "velocity": 0.6307086614173228,
+      "_bp_only": true
+    },
+    {
+      "start": 1.3351473922902495,
+      "end": 1.9388662131519274,
+      "pitch": 45,
+      "velocity": 0.6307086614173228,
+      "_bp_only": true
+    },
+    {
+      "start": 1.6718367346938776,
+      "end": 1.8924263038548752,
+      "pitch": 69,
+      "velocity": 0.6023622047244095,
+      "_bp_only": true
+    },
+    {
+      "start": 1.9969,
+      "end": 2.6703,
+      "pitch": 46,
+      "string": 6,
+      "fret": 6,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.3452,
+      "end": 2.9954,
+      "pitch": 70,
+      "string": 1,
+      "fret": 6,
+      "velocity": 0.8401399999999999,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.6703,
+      "end": 3.3437,
+      "pitch": 47,
+      "string": 6,
+      "fret": 7,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.6831886621315193,
+      "end": 2.903778231292517,
+      "pitch": 83,
+      "velocity": 0.347244094488189,
+      "_bp_only": true
+    },
+    {
+      "start": 2.9954,
+      "end": 4.3421,
+      "pitch": 71,
+      "string": 1,
+      "fret": 7,
+      "velocity": 0.839205,
+      "source": "pure_moe"
+    },
+    {
+      "start": 3.3437,
+      "end": 3.9938,
+      "pitch": 43,
+      "string": 6,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 3.6932566893424035,
+      "end": 3.9486761904761902,
+      "pitch": 43,
+      "velocity": 0.6448818897637795,
+      "_bp_only": true
+    },
+    {
+      "start": 3.9938,
+      "end": 4.6672,
+      "pitch": 43,
+      "string": 6,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.3421,
+      "end": 4.9923,
+      "pitch": 68,
+      "string": 1,
+      "fret": 4,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.402749206349206,
+      "end": 4.553678911564625,
+      "pitch": 56,
+      "velocity": 0.35433070866141736,
+      "_bp_only": true
+    },
+    {
+      "start": 4.6672,
+      "end": 5.7818,
+      "pitch": 45,
+      "string": 6,
+      "fret": 5,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.9923,
+      "end": 5.7818,
+      "pitch": 69,
+      "string": 1,
+      "fret": 5,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    }
+  ],
+  "total_count": 18,
+  "tuning": "standard",
+  "method": "fusion_bp_moe",
+  "model_stats": {
+    "bp_notes": 16,
+    "moe_notes": 11,
+    "fused_notes": 18,
+    "moe_only_added": 2,
+    "bp_only_added": 7
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "start": 0.37,
+    "end": 2.62,
+    "chord": "E",
+    "confidence": 0.5371941137625622,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Eb7"
+  },
+  {
+    "start": 2.62,
+    "end": 3.37,
+    "chord": "Ab",
+    "confidence": 0.684522191385675,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Cm"
+  },
+  {
+    "start": 3.37,
+    "end": 4.12,
+    "chord": "E",
+    "confidence": 0.8053553552677245,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "C#"
+  }
+]

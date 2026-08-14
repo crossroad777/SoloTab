@@ -1,0 +1,211 @@
+{
+  "notes": [
+    {
+      "start": 0.0,
+      "end": 1.4861,
+      "pitch": 48,
+      "string": 5,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.0,
+      "end": 1.4861,
+      "pitch": 52,
+      "string": 4,
+      "fret": 2,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.0,
+      "end": 1.4861,
+      "pitch": 55,
+      "string": 3,
+      "fret": 0,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.0,
+      "end": 1.4861,
+      "pitch": 60,
+      "string": 2,
+      "fret": 1,
+      "velocity": 0.83674,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.0,
+      "end": 1.4861,
+      "pitch": 64,
+      "string": 1,
+      "fret": 0,
+      "velocity": 0.810985,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.023219954648526078,
+      "end": 0.2438095238095238,
+      "pitch": 76,
+      "velocity": 0.36850393700787404,
+      "_bp_only": true
+    },
+    {
+      "start": 2.3917,
+      "end": 3.8777,
+      "pitch": 43,
+      "string": 6,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.4045492063492064,
+      "end": 3.1011478458049884,
+      "pitch": 67,
+      "velocity": 0.32598425196850395,
+      "_bp_only": true
+    },
+    {
+      "start": 2.4149,
+      "end": 3.901,
+      "pitch": 47,
+      "string": 5,
+      "fret": 2,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.4149,
+      "end": 3.901,
+      "pitch": 50,
+      "string": 4,
+      "fret": 0,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.4149,
+      "end": 3.901,
+      "pitch": 55,
+      "string": 3,
+      "fret": 0,
+      "velocity": 0.843115,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.4149,
+      "end": 3.901,
+      "pitch": 59,
+      "string": 2,
+      "fret": 0,
+      "velocity": 0.8375049999999999,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.6831886621315193,
+      "end": 3.1475877551020406,
+      "pitch": 59,
+      "velocity": 0.347244094488189,
+      "_bp_only": true
+    },
+    {
+      "start": 4.8065,
+      "end": 6.2926,
+      "pitch": 45,
+      "string": 5,
+      "fret": 0,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.8065,
+      "end": 6.2926,
+      "pitch": 52,
+      "string": 4,
+      "fret": 2,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.8065,
+      "end": 6.2926,
+      "pitch": 57,
+      "string": 3,
+      "fret": 2,
+      "velocity": 0.847195,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.1982,
+      "end": 8.6843,
+      "pitch": 41,
+      "string": 6,
+      "fret": 1,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.1982,
+      "end": 8.6843,
+      "pitch": 48,
+      "string": 5,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.1982,
+      "end": 8.6843,
+      "pitch": 53,
+      "string": 4,
+      "fret": 3,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.1982,
+      "end": 8.6843,
+      "pitch": 57,
+      "string": 3,
+      "fret": 2,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.2214,
+      "end": 8.7075,
+      "pitch": 65,
+      "string": 1,
+      "fret": 1,
+      "velocity": 0.830875,
+      "source": "pure_moe"
+    },
+    {
+      "start": 8.201779591836734,
+      "end": 9.362777324263039,
+      "pitch": 57,
+      "velocity": 0.47480314960629916,
+      "_bp_only": true
+    },
+    {
+      "start": 9.095747845804988,
+      "end": 9.304727437641723,
+      "pitch": 53,
+      "velocity": 0.2905511811023622,
+      "_bp_only": true
+    }
+  ],
+  "total_count": 23,
+  "tuning": "standard",
+  "method": "fusion_bp_moe",
+  "model_stats": {
+    "bp_notes": 17,
+    "moe_notes": 18,
+    "fused_notes": 23,
+    "moe_only_added": 6,
+    "bp_only_added": 5
+  }
+}

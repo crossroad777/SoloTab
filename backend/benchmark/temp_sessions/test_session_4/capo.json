@@ -1,0 +1,22 @@
+{
+  "capo": 3,
+  "effective_key": "Em",
+  "confidence": 0.76,
+  "alternatives": [
+    {
+      "capo": 3,
+      "key": "Em",
+      "score": 0.76
+    },
+    {
+      "capo": 5,
+      "key": "Dm",
+      "score": 0.45
+    },
+    {
+      "capo": 0,
+      "key": "Gm",
+      "score": 0.1
+    }
+  ]
+}

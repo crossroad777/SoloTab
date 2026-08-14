@@ -1,0 +1,123 @@
+{
+  "notes": [
+    {
+      "start": 0.0,
+      "end": 0.6037,
+      "pitch": 48,
+      "string": 6,
+      "fret": 8,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 0.6037,
+      "end": 1.2074,
+      "pitch": 50,
+      "string": 5,
+      "fret": 5,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 1.2074,
+      "end": 1.8112,
+      "pitch": 52,
+      "string": 5,
+      "fret": 7,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 1.8112,
+      "end": 2.4149,
+      "pitch": 53,
+      "string": 5,
+      "fret": 8,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.4149,
+      "end": 3.901,
+      "pitch": 55,
+      "string": 5,
+      "fret": 10,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 2.996658049886621,
+      "end": 3.3333473922902495,
+      "pitch": 57,
+      "velocity": 0.3897637795275591,
+      "_bp_only": true
+    },
+    {
+      "start": 3.5991,
+      "end": 4.2028,
+      "pitch": 59,
+      "string": 4,
+      "fret": 9,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.193769614512472,
+      "end": 4.333089342403628,
+      "pitch": 72,
+      "velocity": 0.37559055118110235,
+      "_bp_only": true
+    },
+    {
+      "start": 4.2028,
+      "end": 4.8065,
+      "pitch": 60,
+      "string": 4,
+      "fret": 10,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 4.8065,
+      "end": 6.2926,
+      "pitch": 62,
+      "string": 4,
+      "fret": 12,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 5.4012072562358275,
+      "end": 5.552136961451247,
+      "pitch": 63,
+      "velocity": 0.5244094488188976,
+      "_bp_only": true
+    },
+    {
+      "start": 6.5945,
+      "end": 8.0805,
+      "pitch": 67,
+      "string": 3,
+      "fret": 12,
+      "velocity": 1.0,
+      "source": "pure_moe"
+    },
+    {
+      "start": 7.805756462585034,
+      "end": 7.95797006802721,
+      "pitch": 71,
+      "velocity": 0.574015748031496,
+      "_bp_only": true
+    }
+  ],
+  "total_count": 13,
+  "tuning": "standard",
+  "method": "fusion_bp_moe",
+  "model_stats": {
+    "bp_notes": 13,
+    "moe_notes": 9,
+    "fused_notes": 13,
+    "moe_only_added": 0,
+    "bp_only_added": 4
+  }
+}

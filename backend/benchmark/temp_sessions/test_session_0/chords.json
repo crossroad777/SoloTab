@@ -1,0 +1,104 @@
+[
+  {
+    "start": 0.0,
+    "end": 0.6,
+    "chord": "C",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "C"
+  },
+  {
+    "start": 0.6,
+    "end": 1.2,
+    "chord": "Dm",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Dm"
+  },
+  {
+    "start": 1.2,
+    "end": 1.8,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 1.8,
+    "end": 2.4,
+    "chord": "F",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "F"
+  },
+  {
+    "start": 2.4,
+    "end": 3.0,
+    "chord": "G7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G7"
+  },
+  {
+    "start": 3.0,
+    "end": 3.6,
+    "chord": "Cmaj7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Am"
+  },
+  {
+    "start": 3.6,
+    "end": 4.2,
+    "chord": "G",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G"
+  },
+  {
+    "start": 4.2,
+    "end": 4.8,
+    "chord": "C",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "C"
+  },
+  {
+    "start": 4.8,
+    "end": 5.4,
+    "chord": "Dm",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Dm"
+  },
+  {
+    "start": 5.4,
+    "end": 7.2,
+    "chord": "G7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "C"
+  },
+  {
+    "start": 7.2,
+    "end": 7.8,
+    "chord": "C",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "A7"
+  },
+  {
+    "start": 7.8,
+    "end": 8.4,
+    "chord": "G7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G7"
+  },
+  {
+    "start": 8.4,
+    "end": 8.98,
+    "chord": "C",
+    "confidence": 0.6630225336153691
+  }
+]

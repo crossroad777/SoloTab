@@ -1,0 +1,34 @@
+[
+  {
+    "start": 0.04397905759162324,
+    "end": 2.4,
+    "chord": "C",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "C"
+  },
+  {
+    "start": 2.4,
+    "end": 4.8,
+    "chord": "G",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G"
+  },
+  {
+    "start": 4.8,
+    "end": 7.2,
+    "chord": "Fmaj7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Am"
+  },
+  {
+    "start": 7.2,
+    "end": 9.43,
+    "chord": "F",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "F"
+  }
+]

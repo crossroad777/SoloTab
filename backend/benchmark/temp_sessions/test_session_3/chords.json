@@ -1,0 +1,26 @@
+[
+  {
+    "start": 0.75,
+    "end": 6.75,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 6.75,
+    "end": 7.5,
+    "chord": "Em7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E7"
+  },
+  {
+    "start": 7.5,
+    "end": 9.0,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  }
+]
