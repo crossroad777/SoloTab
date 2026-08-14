@@ -154,6 +154,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  progress_cb: Optional[Callable] = None,
                  skip_demucs: bool = False,
                  fast_moe: bool = True,
+                 bp_onset_threshold: float = 0.8,
+                 bp_minimum_note_length: float = 100.0,
+                 moe_vote_threshold: int = -1,
+                 moe_vote_prob_threshold: float = 0.5,
+                 bp_only_threshold: float = 0.05,
                  guitar_type: str = "auto",
                  enable_technique_gp5: bool = False,
                  enable_technique_overlay: bool = False,
@@ -270,9 +275,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             t0 = time.time()
             mn = transcribe_pure_moe(
                 str(transcription_wav_path),
-                vote_threshold=moe_vt,
-                onset_threshold=0.5,
-                vote_prob_threshold=0.5,
+                vote_threshold=moe_vt if moe_vote_threshold == -1 else moe_vote_threshold,
+                onset_threshold=bp_onset_threshold,
+                vote_prob_threshold=moe_vote_prob_threshold,
                 fast_mode=fast_moe,  # Respect the fast_moe setting to save memory/time
             )
             _moe_notes.extend(mn)
@@ -309,7 +314,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                 report("notes", "BasicPitch推論中...")
             t0 = time.time()
             _, midi_data, _ = bp_predict(str(transcription_wav_path),
-                                          model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH)
+                                          model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
+                                          onset_threshold=bp_onset_threshold,
+                                          minimum_note_length=bp_minimum_note_length)
             for inst in midi_data.instruments:
                 for note in inst.notes:
                     _bp_notes.append({
