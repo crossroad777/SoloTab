@@ -7,7 +7,7 @@ import { exportToPDF } from "../utils/pdfExport";
  * - カスタムBeatMapでtick→座標マッピング
  * - カスタム青カーソルバー + オートスクロール
  */
-const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, onApiReady, onNoteEdited }) => {
+const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 0, capo = 0, metronomeEnabled = false, syncOffset = 0, tempoMultiplier = 1.0, onApiReady, onNoteEdited }) => {
     const containerRef = useRef(null);
     const wrapperRef = useRef(null);
     const cursorRef = useRef(null);
@@ -162,6 +162,37 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         timeRef.current = currentTime;
         playingRef.current = isPlaying;
     }, [currentTime, isPlaying]);
+
+    const syncOffsetRef = useRef(syncOffset);
+    const tempoMultiplierRef = useRef(tempoMultiplier);
+    const metronomeEnabledRef = useRef(metronomeEnabled);
+
+    useEffect(() => {
+        syncOffsetRef.current = syncOffset;
+        tempoMultiplierRef.current = tempoMultiplier;
+        metronomeEnabledRef.current = metronomeEnabled;
+    }, [syncOffset, tempoMultiplier, metronomeEnabled]);
+
+    // --- Web Audio API Metronome ---
+    const audioCtxRef = useRef(null);
+    const nextBeatIdxRef = useRef(0);
+
+    useEffect(() => {
+        if (isPlaying && metronomeEnabled && !audioCtxRef.current) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                audioCtxRef.current = new AudioContext();
+            }
+        }
+        if (!isPlaying) {
+            // When paused, we will recalculate nextBeatIdx upon resume
+            nextBeatIdxRef.current = -1;
+            if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+                // Keep context but suspend to save resources if needed, or just let it be.
+                // However, clearing the lookahead is handled by nextBeatIdxRef.
+            }
+        }
+    }, [isPlaying, metronomeEnabled]);
 
     // ============================================================
     // BeatMap: 小節単位 — beats.jsonの実時刻 + AlphaTab bar座標
@@ -1364,8 +1395,52 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         const sync = () => {
             const cursor = cursorRef.current;
             const container = containerRef.current;
-            const ms = Math.max(0, timeRef.current * 1000);
+            
+            // Apply tempo multiplier and offset
+            const tOffset = syncOffsetRef.current / 1000.0;
+            const tMult = tempoMultiplierRef.current;
+            const virtualTimeSec = (timeRef.current * tMult) + tOffset;
+            const ms = Math.max(0, virtualTimeSec * 1000);
+            
             const nowPlaying = playingRef.current;
+
+            // --- Metronome ---
+            if (nowPlaying && metronomeEnabledRef.current && audioCtxRef.current) {
+                const beats = beatsDataRef.current;
+                if (beats && beats.length > 0) {
+                    const ctx = audioCtxRef.current;
+                    // If index is invalid or time went backwards/jumped, search for next beat
+                    if (nextBeatIdxRef.current < 0 || nextBeatIdxRef.current >= beats.length || beats[Math.max(0, nextBeatIdxRef.current - 1)] > virtualTimeSec + 0.2) {
+                        let idx = 0;
+                        while (idx < beats.length && beats[idx] < virtualTimeSec) idx++;
+                        nextBeatIdxRef.current = idx;
+                    }
+
+                    // Look ahead 0.1s
+                    while (nextBeatIdxRef.current < beats.length) {
+                        const beatTime = beats[nextBeatIdxRef.current];
+                        const timeUntilBeat = beatTime - virtualTimeSec;
+
+                        if (timeUntilBeat > 0.1) break;
+
+                        if (timeUntilBeat >= 0) {
+                            const osc = ctx.createOscillator();
+                            const gain = ctx.createGain();
+                            osc.frequency.value = (nextBeatIdxRef.current % 4 === 0) ? 1000 : 800;
+                            osc.connect(gain);
+                            gain.connect(ctx.destination);
+                            
+                            const playTime = ctx.currentTime + (timeUntilBeat / tMult);
+                            osc.start(playTime);
+                            osc.stop(playTime + 0.05);
+                            gain.gain.setValueAtTime(0, playTime);
+                            gain.gain.linearRampToValueAtTime(1, playTime + 0.005);
+                            gain.gain.exponentialRampToValueAtTime(0.01, playTime + 0.05);
+                        }
+                        nextBeatIdxRef.current++;
+                    }
+                }
+            }
 
             // 再生開始時にスクロールリセット
             if (nowPlaying && !wasPlaying && container && ms < 1000) {

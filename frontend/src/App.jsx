@@ -54,6 +54,10 @@ export default function SoloTabApp() {
     try { return localStorage.getItem('solotab-theme') || 'dark'; } catch { return 'dark'; }
   });
 
+  const [metronomeEnabled, setMetronomeEnabled] = useState(false);
+  const [syncOffset, setSyncOffset] = useState(0);
+  const [tempoMultiplier, setTempoMultiplier] = useState(1.0);
+
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
@@ -1234,6 +1238,52 @@ export default function SoloTabApp() {
 
               <div className="ribbon-divider" />
 
+              {/* ⭐ Metronome */}
+              <div className="ribbon-item">
+                <button
+                  onClick={() => setMetronomeEnabled(e => !e)}
+                  className={`ribbon-btn ${metronomeEnabled ? 'active' : ''}`}
+                  title="メトロノームON/OFF"
+                >
+                  <Timer size={18} />
+                  <span style={{ fontSize: 9, marginTop: 4, fontWeight: 'bold' }}>クリック</span>
+                </button>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ⭐ Sync Offset */}
+              <div className="ribbon-item" title="音源と譜面（クリック）のタイミング微調整 (ミリ秒)">
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                  <input
+                    type="range" min="-500" max="500" step="10"
+                    value={syncOffset}
+                    onChange={(e) => setSyncOffset(Number(e.target.value))}
+                    style={{ width: 64, accentColor: 'var(--st-brand)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 11, minWidth: 28, textAlign: 'right' }}>{syncOffset > 0 ? '+' : ''}{syncOffset}</span>
+                </div>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>同期補正(ms)</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
+              {/* ⭐ Tempo Multiplier */}
+              <div className="ribbon-item" title="長時間の再生で生じるズレ（ドリフト）を補正する倍率">
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
+                  <input
+                    type="range" min="0.9500" max="1.0500" step="0.0001"
+                    value={tempoMultiplier}
+                    onChange={(e) => setTempoMultiplier(Number(e.target.value))}
+                    style={{ width: 64, accentColor: 'var(--st-brand)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 11, minWidth: 32, textAlign: 'right' }}>{tempoMultiplier.toFixed(4)}x</span>
+                </div>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>テンポ補正</span>
+              </div>
+
+              <div className="ribbon-divider" />
+
               {/* ⑥ Noise Gate */}
               <div className="ribbon-item" title="AIのノイズ除去レベル。右にするほど低velocity音が消えてシンプルになります">
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
@@ -1386,6 +1436,9 @@ export default function SoloTabApp() {
                 isPlaying={isPlaying || scrollOnly}
                 transpose={transpose}
                 capo={capo}
+                metronomeEnabled={metronomeEnabled}
+                syncOffset={syncOffset}
+                tempoMultiplier={tempoMultiplier}
                 onNoteEdited={() => setRetuneKey(k => k + 1)}
               />
             </div>
