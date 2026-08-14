@@ -675,7 +675,15 @@ async def get_notes(session_id: str):
     with open(assigned_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     notes = data if isinstance(data, list) else data.get("notes", [])
-    return {"notes": notes}
+    
+    can_undo = "anchor_history" in s and s.get("anchor_history_index", -1) > 0
+    can_redo = "anchor_history" in s and s.get("anchor_history_index", -1) < len(s["anchor_history"]) - 1
+    
+    return {
+        "notes": notes,
+        "can_undo": can_undo,
+        "can_redo": can_redo
+    }
 
 @app.get("/result/{session_id}/gp4")
 async def get_gp4(session_id: str):
@@ -1287,7 +1295,35 @@ async def retune(session_id: str, request: RetuneRequest):
     save_session(session_id)
 
     return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": filtered_count}
+MAX_HISTORY = 50
 
+def _init_anchor_history_if_needed(s: dict):
+    if "anchor_history" not in s:
+        s["anchor_history"] = [copy.deepcopy(s.get("anchors", {}))]
+        s["anchor_history_index"] = 0
+
+def _push_anchor_history(s: dict):
+    """現在の anchors の状態を履歴に保存する"""
+    _init_anchor_history_if_needed(s)
+        
+    history = s["anchor_history"]
+    index = s["anchor_history_index"]
+    
+    # もし過去に戻っている状態で新たな操作が起きたら、未来の履歴を捨てる
+    if index < len(history) - 1:
+        history = history[:index + 1]
+        s["anchor_history"] = history
+        
+    # 現在の状態をpush
+    history.append(copy.deepcopy(s.get("anchors", {})))
+    
+    # 上限管理
+    if len(history) > MAX_HISTORY:
+        history.pop(0)
+        index -= 1
+        s["anchor_history"] = history
+        
+    s["anchor_history_index"] = len(history) - 1
 
 def _inject_anchors_flag(notes, anchors):
     for n in notes:
@@ -1318,6 +1354,7 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
     s = sessions[session_id]
     if "anchors" not in s:
         s["anchors"] = {}
+    _init_anchor_history_if_needed(s)
     session_dir = Path(s["session_dir"])
     assigned_path = session_dir / "notes_assigned.json"
     if not assigned_path.exists():
@@ -1387,6 +1424,8 @@ async def edit_note(session_id: str, note_index: int, request: NoteEditRequest):
             elif "left_hand_finger" in note:
                 anchor_data["finger"] = note["left_hand_finger"]
             s["anchors"][note_key_str] = anchor_data
+            
+        _push_anchor_history(s)
 
         action = f"edited [{old_val}] → fret={note.get('fret')} string={note.get('string')} pitch={note.get('pitch')}"
 
@@ -1594,7 +1633,9 @@ async def reset_anchors(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
     
     s = sessions[session_id]
+    _init_anchor_history_if_needed(s)
     s["anchors"] = {}
+    _push_anchor_history(s)
     save_session(session_id)
     
     session_dir = Path(s["session_dir"])
@@ -1632,6 +1673,83 @@ async def reset_anchors(session_id: str):
         raise HTTPException(status_code=500, detail="Re-optimization failed")
 
     return {"status": "ok", "action": "reset_anchors"}
+
+
+@app.post("/result/{session_id}/undo")
+async def undo_anchors(session_id: str):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    s = sessions[session_id]
+    if "anchor_history" not in s or s.get("anchor_history_index", -1) <= 0:
+        return {"status": "ok", "action": "undo", "message": "Nothing to undo"}
+        
+    s["anchor_history_index"] -= 1
+    s["anchors"] = copy.deepcopy(s["anchor_history"][s["anchor_history_index"]])
+    save_session(session_id)
+    
+    _recompute_anchors_logic(s)
+    return {"status": "ok", "action": "undo"}
+
+
+@app.post("/result/{session_id}/redo")
+async def redo_anchors(session_id: str):
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    s = sessions[session_id]
+    if "anchor_history" not in s or s.get("anchor_history_index", -1) >= len(s["anchor_history"]) - 1:
+        return {"status": "ok", "action": "redo", "message": "Nothing to redo"}
+        
+    s["anchor_history_index"] += 1
+    s["anchors"] = copy.deepcopy(s["anchor_history"][s["anchor_history_index"]])
+    save_session(session_id)
+    
+    _recompute_anchors_logic(s)
+    return {"status": "ok", "action": "redo"}
+
+
+def _recompute_anchors_logic(s: dict):
+    session_dir = Path(s["session_dir"])
+    assigned_path = session_dir / "notes_assigned.json"
+    original_path = session_dir / "notes_assigned_original.json"
+    if not original_path.exists():
+        return
+        
+    with open(original_path, "r", encoding="utf-8") as f:
+        notes = json.load(f)
+        
+    tuning_name = s.get("suggested_tuning", "standard")
+    tuning_arr = TUNINGS.get(tuning_name, TUNINGS["standard"])
+    guitar_type = s.get("guitar_type", "auto")
+    
+    forced_positions = {}
+    forced_fingers = {}
+    for k, v in s.get("anchors", {}).items():
+        parts = k.split("_")
+        if len(parts) == 2:
+            try:
+                pitch = int(parts[0])
+                start = float(parts[1])
+                if "string" in v and "fret" in v:
+                    forced_positions[(pitch, start)] = (v["string"], v["fret"])
+                if "finger" in v:
+                    forced_fingers[(pitch, start)] = v["finger"]
+            except:
+                pass
+                
+    notes = assign_strings_dp(notes, tuning=tuning_arr, max_fret=24, guitar_type=guitar_type, key=s.get("key"), forced_positions=forced_positions)
+    notes = assign_fingers(notes, detected_key=s.get("key"), forced_fingers=forced_fingers)
+    notes = _inject_anchors_flag(notes, s["anchors"])
+    
+    with open(assigned_path, "w", encoding="utf-8") as f:
+        json.dump(notes, f, ensure_ascii=False, indent=2)
+        
+    session_id = session_dir.name
+    try:
+        _regenerate_musicxml(session_id, notes)
+    except:
+        pass
 
 
 @app.get("/result/{session_id}/techniques")

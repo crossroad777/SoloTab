@@ -34,7 +34,58 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const [editInput, setEditInput] = useState("");
     const [editSaving, setEditSaving] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
     const editInputRef = useRef(null);
+
+    const handleUndo = async () => {
+        if (!canUndo) return;
+        setLoading(true);
+        try {
+            const res = await fetch(`${apiBase}/result/${sessionId}/undo`, { method: "POST" });
+            if (res.ok) {
+                await new Promise(r => setTimeout(r, 500));
+                onNoteEdited?.();
+                setReloadKey(k => k + 1);
+            }
+        } catch (e) { console.error(e); }
+        setLoading(false);
+    };
+
+    const handleRedo = async () => {
+        if (!canRedo) return;
+        setLoading(true);
+        try {
+            const res = await fetch(`${apiBase}/result/${sessionId}/redo`, { method: "POST" });
+            if (res.ok) {
+                await new Promise(r => setTimeout(r, 500));
+                onNoteEdited?.();
+                setReloadKey(k => k + 1);
+            }
+        } catch (e) { console.error(e); }
+        setLoading(false);
+    };
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // INPUT/TEXTAREA要素での発火を防ぐ
+            const tag = e.target?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const ctrlOrMeta = isMac ? e.metaKey : e.ctrlKey;
+            
+            if (ctrlOrMeta && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                handleUndo();
+            } else if (ctrlOrMeta && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [canUndo, canRedo]);
 
 
     useEffect(() => {
@@ -1020,6 +1071,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (notesRes.ok) {
                         const notesData = await notesRes.json();
                         notesDataRef.current = notesData.notes || [];
+                        setCanUndo(notesData.can_undo || false);
+                        setCanRedo(notesData.can_redo || false);
                         console.log(`[TabView] Loaded ${notesDataRef.current.length} notes for cursor sync`);
                     }
                     if (beatsRes.ok) {
@@ -1555,7 +1608,33 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 position: "fixed", bottom: 80, right: 24, zIndex: 50,
                 display: "flex", gap: 8, alignItems: "center",
             }}>
-                                {/* Reset Anchors */}
+                                {/* Undo / Redo */}
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <div
+                        style={{
+                            padding: "8px 12px", borderRadius: 20, cursor: canUndo && !loading ? "pointer" : "default",
+                            background: canUndo ? "#3b82f6" : "#475569", color: canUndo ? "white" : "#94a3b8",
+                            fontSize: 12, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                            transition: "all 0.2s", userSelect: "none", opacity: loading ? 0.5 : 1
+                        }}
+                        onClick={handleUndo}
+                    >
+                        ↩ Undo
+                    </div>
+                    <div
+                        style={{
+                            padding: "8px 12px", borderRadius: 20, cursor: canRedo && !loading ? "pointer" : "default",
+                            background: canRedo ? "#3b82f6" : "#475569", color: canRedo ? "white" : "#94a3b8",
+                            fontSize: 12, fontWeight: 700, boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                            transition: "all 0.2s", userSelect: "none", opacity: loading ? 0.5 : 1
+                        }}
+                        onClick={handleRedo}
+                    >
+                        ↪ Redo
+                    </div>
+                </div>
+
+                {/* Reset Anchors */}
                 <div
                     style={{
                         padding: "8px 16px", borderRadius: 20, cursor: "pointer",
