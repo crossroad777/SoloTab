@@ -1,3 +1,7 @@
+from __future__ import annotations
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 """
 technique_detector.py — ギター奏法テクニック検出エンジン (V3)
 ================================================================
@@ -24,11 +28,6 @@ Abesser et al. (ISMIR 2014/2015) に基づくF0軌跡解析と
   [3] Stefani & Turchet (2022) "aGPTset", ICASSP 2022.
 """
 
-import sys
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-
-from __future__ import annotations
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 
@@ -413,15 +412,13 @@ def _classify_from_f0(
             return "quarter_bend"
 
     # ── H / P: 急峻なジャンプ（線形でない、R²低い）──
-    if ioi <= hp_max and abs_diff >= 1 and abs_diff <= 6:
-        # H/P はF0が段階的に変化する（スライドと区別）
-        # スライドはR²高い（線形）、H/Pは急峻（低R²またはジャンプ）
-        if r2 < 0.65 or abs_jump >= 0.8 * abs_diff:
-            # F0のジャンプ方向で判定
-            if jump_semi > 0.3:
-                return "h"
-            elif jump_semi < -0.3:
-                return "p"
+    # [DISABLED for Phase B-1a]
+    # if ioi <= hp_max and abs_diff >= 1 and abs_diff <= 6:
+    #     if r2 < 0.65 or abs_jump >= 0.8 * abs_diff:
+    #         if jump_semi > 0.3:
+    #             return "h"
+    #         elif jump_semi < -0.3:
+    #             return "p"
 
     # ── スライド: 線形F0遷移（R²高い）──
     if ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff:
@@ -506,8 +503,9 @@ def _rule_based(
 ) -> Optional[str]:
     """F0解析なしのルールベース分類。"""
     # H / P
-    if 0 < ioi <= hp_max and 0 < abs_pitch <= 6:
-        return "h" if pitch_diff > 0 else "p"
+    # [DISABLED for Phase B-1a]
+    # if 0 < ioi <= hp_max and 0 < abs_pitch <= 6:
+    #     return "h" if pitch_diff > 0 else "p"
 
     # スライド
     if 0 < ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff <= SLIDE_MAX_FRET:

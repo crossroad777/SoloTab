@@ -1,3 +1,7 @@
+from __future__ import annotations
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 """
 technique_classifier_cnn.py - CNN-based technique classifier (inference only)
 ==============================================================================
@@ -8,11 +12,6 @@ Usage in pipeline:
     from technique_classifier_cnn import annotate_techniques_cnn
     notes = annotate_techniques_cnn(notes, audio_path, confidence_threshold=0.90)
 """
-import sys
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-
-from __future__ import annotations
 import os
 import numpy as np
 import torch
@@ -247,11 +246,6 @@ def annotate_techniques_cnn(
             note["technique_source"] = "cnn"
             stats["annotated"] += 1
             stats["by_class"][label] = stats["by_class"].get(label, 0) + 1
-        else:
-            # Keep existing technique if set by rule-based detector
-            if not note.get("technique") or note["technique"] == "normal":
-                note["technique"] = "normal"
-                note["technique_confidence"] = round(confidence, 3)
 
     print(f"[TechCNN] Done: {stats['annotated']}/{stats['total']} annotated "
           f"(threshold={confidence_threshold}) "

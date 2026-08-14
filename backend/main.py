@@ -233,7 +233,7 @@ async def upload_audio(file: UploadFile = File(...),
                        skip_demucs: bool = Form(False),
                        fast_moe: bool = Form(True),
                        guitar_type: str = Form("auto"),
-                       enable_technique_gp5: bool = Form(False),
+                       enable_technique_gp5: bool = Form(True),
                        enable_technique_overlay: bool = Form(False),
                        enable_technique_fingers: bool = Form(False),
                        background_tasks: BackgroundTasks = None):
@@ -476,7 +476,7 @@ def _run_pipeline_bg(session_id: str):
             skip_demucs=session.get("skip_demucs", False),
             fast_moe=session.get("fast_moe", True),
             guitar_type=session.get("guitar_type", "auto"),
-            enable_technique_gp5=session.get("enable_technique_gp5", False),
+            enable_technique_gp5=session.get("enable_technique_gp5", True),
             enable_technique_overlay=session.get("enable_technique_overlay", False),
             enable_technique_fingers=session.get("enable_technique_fingers", False),
         )
