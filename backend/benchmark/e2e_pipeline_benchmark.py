@@ -5,6 +5,7 @@ import json
 import time
 import shutil
 import tempfile
+import re
 from pathlib import Path
 import numpy as np
 
@@ -79,8 +80,8 @@ def to_mireval(notes):
     pitches_hz = np.array([440.0 * (2.0 ** ((n['pitch'] - 69.0) / 12.0)) for n in notes], dtype=float)
     return intervals, pitches_hz
 
-def evaluate_string_fret(ref_notes, est_notes, ref_intervals, ref_pitches, est_intervals, est_pitches):
-    """mir_evalのマッチングを利用して、String+FretのF1を算出する"""
+def evaluate_string_accuracy(ref_notes, est_notes, ref_intervals, ref_pitches, est_intervals, est_pitches):
+    """mir_evalのマッチングを利用して、String Accuracy (弦一致率) を算出する"""
     if not ref_notes or not est_notes:
         return 0.0, 0.0, 0.0
         
@@ -90,17 +91,17 @@ def evaluate_string_fret(ref_notes, est_notes, ref_intervals, ref_pitches, est_i
         onset_tolerance=0.05, pitch_tolerance=50.0, offset_ratio=None
     )
     
-    correct_string_fret = 0
+    correct_string = 0
     for ref_idx, est_idx in matching:
         ref_n = ref_notes[ref_idx]
         est_n = est_notes[est_idx]
         
-        # Stringが一致しているか判定（ピッチが合っていてStringが合っていればFretも自ずと一致する）
+        # 弦が一致しているか判定（標準チューニングにおいてピッチと弦が一致していればフレットも一意に決まる）
         if ref_n.get('string') == est_n.get('string'):
-            correct_string_fret += 1
+            correct_string += 1
             
-    precision = correct_string_fret / len(est_notes) if est_notes else 0.0
-    recall = correct_string_fret / len(ref_notes) if ref_notes else 0.0
+    precision = correct_string / len(est_notes) if est_notes else 0.0
+    recall = correct_string / len(ref_notes) if ref_notes else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     
     return precision, recall, f1
@@ -144,12 +145,38 @@ def main():
         try:
             t0 = time.time()
             
+            # --- ログとメトリクスの抽出用コールバック ---
+            metrics = {
+                "moe_coverage": "N/A",
+                "threshold": "N/A",
+                "bp_notes": 0,
+                "moe_notes": 0,
+                "final_notes": 0
+            }
+            
+            def track_progress(step, msg):
+                # 例: [notes] BasicPitch: 194 notes (0.3s)
+                if step == "notes" and msg.startswith("BasicPitch:"):
+                    m = re.search(r'BasicPitch:\s*(\d+)\s*notes', msg)
+                    if m: metrics["bp_notes"] = int(m.group(1))
+                # 例: [notes] MoE: 174 notes (9.6s)
+                elif step == "notes" and msg.startswith("MoE:"):
+                    m = re.search(r'MoE:\s*(\d+)\s*notes', msg)
+                    if m: metrics["moe_notes"] = int(m.group(1))
+                # 例: [notes] [Ensemble] MoE coverage: 69.59% (135/194), threshold: 0.2
+                elif step == "notes" and "[Ensemble] MoE coverage:" in msg:
+                    m = re.search(r'coverage:\s*([0-9.]+)%.*threshold:\s*([0-9.]+)', msg)
+                    if m:
+                        metrics["moe_coverage"] = f"{m.group(1)}%"
+                        metrics["threshold"] = m.group(2)
+            
             # pipeline.py を直接呼び出す
             run_pipeline(
                 session_id=session_id,
                 session_dir=Path(temp_dir),
                 wav_path=Path(wav_path),
                 tuning_name="standard",
+                progress_cb=track_progress,
                 skip_demucs=True, # GuitarSetはギター単一トラックのため
                 fast_moe=True     # 本番同様にBasic Pitch + MoEの融合を利用
             )
@@ -173,18 +200,26 @@ def main():
                 p_pitch, r_pitch, f1_pitch = 0.0, 0.0, 0.0
                 p_tab, r_tab, f1_tab = 0.0, 0.0, 0.0
             else:
+                metrics["final_notes"] = len(pred_notes)
                 p_pitch, r_pitch, f1_pitch, _ = mir_eval.transcription.precision_recall_f1_overlap(
                     ref_intervals, ref_pitches, est_intervals, est_pitches,
                     onset_tolerance=0.05, pitch_tolerance=50.0, offset_ratio=None
                 )
-                p_tab, r_tab, f1_tab = evaluate_string_fret(
+                p_tab, r_tab, f1_tab = evaluate_string_accuracy(
                     gt_notes, pred_notes, ref_intervals, ref_pitches, est_intervals, est_pitches
                 )
                 
-            results_pitch[base] = f1_pitch
+            results_pitch[base] = {"f1": f1_pitch, "p": p_pitch, "r": r_pitch, "metrics": metrics}
             results_tab[base] = f1_tab
+            
+            elapsed_track = t1 - t0
             print(f"  [Pitch] F1={f1_pitch:.4f} P={p_pitch:.4f} R={r_pitch:.4f}")
-            print(f"  [Tab]   F1={f1_tab:.4f} P={p_tab:.4f} R={r_tab:.4f} | Time: {t1-t0:.1f}s")
+            print(f"  [Tab]   String Accuracy (F1)={f1_tab:.4f} | Time: {elapsed_track:.1f}s")
+            print(f"  [Threshold] Coverage: {metrics['moe_coverage']}, Threshold: {metrics['threshold']}")
+            print(f"  [Notes] BP: {metrics['bp_notes']} / MoE: {metrics['moe_notes']} -> Final: {metrics['final_notes']}")
+            
+            if elapsed_track > 300:
+                print(f"  [WARNING] Track processing took over 5 minutes ({elapsed_track:.1f}s).")
             
         except Exception as e:
             print(f"  [ERROR] Processing {base} failed: {e}")
@@ -199,21 +234,40 @@ def main():
     
     elapsed = time.time() - start_time
     
-    all_pitch_f1 = list(results_pitch.values())
+    all_pitch_f1 = [v["f1"] for v in results_pitch.values()]
+    all_pitch_p = [v["p"] for v in results_pitch.values()]
+    all_pitch_r = [v["r"] for v in results_pitch.values()]
+    
     mean_pitch_f1 = np.mean(all_pitch_f1) if all_pitch_f1 else 0.0
+    mean_pitch_p = np.mean(all_pitch_p) if all_pitch_p else 0.0
+    mean_pitch_r = np.mean(all_pitch_r) if all_pitch_r else 0.0
     
     all_tab_f1 = list(results_tab.values())
     mean_tab_f1 = np.mean(all_tab_f1) if all_tab_f1 else 0.0
     
-    print(f"Total Elapsed Time: {elapsed:.1f}s")
-    print(f"Overall Pitch F1 (E2E Pipeline) : {mean_pitch_f1:.4f}")
-    print(f"Overall Tab F1   (E2E Pipeline) : {mean_tab_f1:.4f}")
+    avg_time = elapsed / len(results_pitch) if results_pitch else 0.0
     
-    print("\n[Track Breakdown - Pitch F1]")
-    # Baseline scores typically recorded from mini_benchmark (Pure MoE): around 0.84-0.90 depending on threshold
-    for track in TARGET_TRACKS:
-        if track in results_pitch:
-            print(f"  {track:25s} : {results_pitch[track]:.4f}")
+    print(f"Total Elapsed Time: {elapsed:.1f}s (Average: {avg_time:.1f}s/track)")
+    print(f"Overall Pitch F1 (E2E Pipeline) : {mean_pitch_f1:.4f} (P: {mean_pitch_p:.4f}, R: {mean_pitch_r:.4f})")
+    print(f"Overall String Accuracy         : {mean_tab_f1:.4f}")
+    
+    # 動的閾値の効果確認
+    low_coverage_tracks = 0
+    print("\n[Track Breakdown]")
+    for track, data in results_pitch.items():
+        metrics = data["metrics"]
+        cov_str = metrics["moe_coverage"]
+        thres = metrics["threshold"]
+        
+        # cov_str は "69.59%" などの形式
+        cov_val = float(cov_str.replace('%', '')) if cov_str != "N/A" else 100.0
+        if cov_val < 50.0:
+            low_coverage_tracks += 1
+            
+        print(f"  {track:25s} | Pitch F1: {data['f1']:.4f} | R: {data['r']:.4f} | Cov: {cov_str:>7s} (Thres: {thres})")
+        
+    print(f"\n[Dynamic Threshold Check]")
+    print(f"  Tracks with moe_coverage < 50% (threshold 0.05 applied): {low_coverage_tracks} / {len(results_pitch)}")
 
 if __name__ == '__main__':
     main()
