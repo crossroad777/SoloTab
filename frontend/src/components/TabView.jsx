@@ -565,6 +565,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             'slide_down': '#1e8449',
             'gliss_up':   '#148f77',
             'gliss_down': '#148f77',
+            'slide':      '#1e8449',
 
             // チョーキング全種: オレンジ系
             'b':          '#d35400',
@@ -575,9 +576,11 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             'b_quarter':  '#f39c12',
             'pre_bend':   '#d68910',
             'release_bend': '#b7950b',
+            'bend':       '#d35400',
 
             // ビブラート: 紫
             '~':          '#6c3483',
+            'vibrato':    '#6c3483',
 
             // ピッキング系: グレー/黒
             'pm':         '#555555',
