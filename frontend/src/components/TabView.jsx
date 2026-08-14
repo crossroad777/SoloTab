@@ -67,7 +67,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     useEffect(() => {
-        const handleKeyDown = (e) => {
+        const handleKeyDown = async (e) => {
             // INPUT/TEXTAREA要素での発火を防ぐ
             const tag = e.target?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -81,11 +81,61 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             } else if (ctrlOrMeta && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
                 e.preventDefault();
                 handleRedo();
+            } else if (editNote) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditNote(null);
+                } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault();
+                    if (editNote.noteIndex !== -1) {
+                        if (!confirm("このノートを削除しますか？")) return;
+                        setEditSaving(true);
+                        try {
+                            const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ delete: true, start_time: editNote.startTime, string: editNote.string, old_fret: editNote.fret }),
+                            });
+                            if (res.ok) {
+                                setEditNote(null);
+                                await new Promise(r => setTimeout(r, 300));
+                                onNoteEdited?.();
+                            }
+                        } catch (err) { console.error("Save failed:", err); }
+                        setEditSaving(false);
+                    }
+                } else if (e.key === 'l' || e.key === 'L') {
+                    e.preventDefault();
+                    if (editNote.noteIndex !== -1) {
+                        setEditSaving(true);
+                        try {
+                            const newAnchor = !editNote.editAnchor;
+                            const res = await fetch(`${apiBase}/result/${sessionId}/notes/${editNote.noteIndex}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    anchor: newAnchor,
+                                    start_time: editNote.startTime,
+                                    string: editNote.string,
+                                    old_fret: editNote.fret,
+                                    fret: editNote.fret,
+                                    finger: editNote.editFinger
+                                }),
+                            });
+                            if (res.ok) {
+                                setEditNote(null);
+                                await new Promise(r => setTimeout(r, 300));
+                                onNoteEdited?.();
+                            }
+                        } catch (err) { console.error("Save failed:", err); }
+                        setEditSaving(false);
+                    }
+                }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [canUndo, canRedo]);
+    }, [canUndo, canRedo, editNote, apiBase, sessionId, onNoteEdited]);
 
 
     useEffect(() => {
