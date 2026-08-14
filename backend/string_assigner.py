@@ -2233,20 +2233,45 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     import os as _os
     env_weight = _os.environ.get("CNN_WEIGHT")
     if env_weight is not None:
-        cnn_weight = float(env_weight)
+        cnn_weight_base = float(env_weight)
     else:
-        # A/Bテスト(E2E)の結果、String Accuracyが最も高くRegressionのない 30.0 を採用 (論文w_cnn=34.99に近似)
-        cnn_weight = 4.0 if is_nylon else 30.0
+        # 基準値 (動的ロジックで上書きされるため参考値)
+        cnn_weight_base = 4.0 if is_nylon else 30.0
         
     if is_nylon:
-        print(f"[string_assigner] ナイロン弦モード: CNN重み={cnn_weight}")
+        print(f"[string_assigner] ナイロン弦モード: CNN重みベース={cnn_weight_base}")
     else:
-        print(f"[string_assigner] スチール弦モード: CNN重み={cnn_weight}")
+        print(f"[string_assigner] スチール弦モード: CNN重みベース={cnn_weight_base}")
     
-    # CNNの弦確率にギタータイプ別重みを反映
+    # === 動的CNN重み (CNN Confidence-based Dynamic Weighting) ===
+    # 論文 §8.12.2 の「CNN確率保護」の思想に基づく実装
+    w_stats = {">=0.8": 0, "0.5-0.8": 0, "<0.5": 0}
     for note in notes:
         if 'cnn_string_probs' in note:
-            note['_cnn_weight'] = cnn_weight
+            # 確率の最大値 (最も自信のある弦の確率) を取得
+            max_prob = max([float(p) for p in note['cnn_string_probs'].values()])
+            
+            # CNN確信度に応じた動的重み切り替え
+            if env_weight is not None:
+                dynamic_w = cnn_weight_base
+            elif is_nylon:
+                dynamic_w = cnn_weight_base
+            else:
+                if max_prob >= 0.8:
+                    dynamic_w = 50.0
+                    w_stats[">=0.8"] += 1
+                elif max_prob >= 0.5:
+                    dynamic_w = 30.0
+                    w_stats["0.5-0.8"] += 1
+                else:
+                    dynamic_w = 10.0
+                    w_stats["<0.5"] += 1
+                    
+            note['_cnn_weight'] = dynamic_w
+            
+    if sum(w_stats.values()) > 0:
+        print(f"[string_assigner] 動的CNN重み適用: >=0.8({w_stats['>=0.8']}notes), "
+              f"0.5-0.8({w_stats['0.5-0.8']}notes), <0.5({w_stats['<0.5']}notes)")
 
     # === 統合パイプライン: CNN-first + Bio-mechanical Smoothing ===
     # 研究結果: CNN弦予測=92-94% >> Viterbi DP=52-67%
