@@ -1379,19 +1379,24 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
                     # 音域外: フォールバック割り当て
                     positions = [_fallback_position(note["pitch"], tuning, max_fret)]
             
-            # CNN弦分類器による候補プルーニング
-            cnn_probs = note.get('cnn_string_probs')
-            if cnn_probs and len(positions) > 1:
-                max_prob = max(cnn_probs.values())
-                if max_prob > 0.5:  # CNNが自信を持っている場合のみ
-                    pruned = [(s, f) for s, f in positions
-                              if f == 0 or 
-                              (str(s) in cnn_probs and cnn_probs[str(s)] >= 0.05) or 
-                              (s in cnn_probs and cnn_probs[s] >= 0.05) or
-                              (guitar_type == 'nylon' and f <= 9)]
-                    if len(pruned) >= 1:
-                        positions = pruned
-            
+            # CNN制約によるプルーニング
+            hard_protect = note.get('_hard_protect_string')
+            if hard_protect is not None:
+                pruned = [(s, f) for s, f in positions if s == hard_protect]
+                if len(pruned) >= 1:
+                    positions = pruned
+            else:
+                cnn_probs = note.get('cnn_string_probs')
+                if cnn_probs and len(positions) > 1:
+                    max_prob = max(cnn_probs.values())
+                    if max_prob > 0.5:  # CNN確信がある場合のみ
+                        pruned = [(s, f) for s, f in positions
+                                  if f == 0 or 
+                                  (str(s) in cnn_probs and cnn_probs[str(s)] >= 0.05) or 
+                                  (s in cnn_probs and cnn_probs[s] >= 0.05) or
+                                  (guitar_type == 'nylon' and f <= 9)]
+                        if len(pruned) >= 1:
+                            positions = pruned
             group_candidates.append(positions)
         else:
             # 和音: 事前に割り当て、候補はその結果のみ
@@ -2245,23 +2250,32 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     
     # === 動的CNN重み (CNN Confidence-based Dynamic Weighting) ===
     # 論文 §8.12.2 の「CNN確率保護」の思想に基づく実装
-    w_stats = {">=0.8": 0, "0.5-0.8": 0, "<0.5": 0}
+    w_stats = {">=0.90": 0, "0.80-0.90": 0, "0.5-0.8": 0, "<0.5": 0}
     for note in notes:
         if 'cnn_string_probs' in note:
-            # 確率の最大値 (最も自信のある弦の確率) を取得
-            max_prob = max([float(p) for p in note['cnn_string_probs'].values()])
+            # 確率の最大値とその弦を取得
+            max_prob = -1.0
+            max_s = None
+            for s, p in note['cnn_string_probs'].items():
+                if float(p) > max_prob:
+                    max_prob = float(p)
+                    max_s = int(s)
             
-            # CNN確信度に応じた動的重み切り替え
+            # CNN確信度により動的重み切り替え
             if env_weight is not None:
                 dynamic_w = cnn_weight_base
             elif is_nylon:
                 dynamic_w = cnn_weight_base
             else:
-                if max_prob >= 0.8:
+                if max_prob >= 0.90:
+                    dynamic_w = 100.0
+                    note['_hard_protect_string'] = max_s
+                    w_stats[">=0.90"] += 1
+                elif max_prob >= 0.80:
+                    dynamic_w = 100.0
+                    w_stats["0.80-0.90"] += 1
+                elif max_prob >= 0.50:
                     dynamic_w = 50.0
-                    w_stats[">=0.8"] += 1
-                elif max_prob >= 0.5:
-                    dynamic_w = 30.0
                     w_stats["0.5-0.8"] += 1
                 else:
                     dynamic_w = 10.0
@@ -2270,8 +2284,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             note['_cnn_weight'] = dynamic_w
             
     if sum(w_stats.values()) > 0:
-        print(f"[string_assigner] 動的CNN重み適用: >=0.8({w_stats['>=0.8']}notes), "
-              f"0.5-0.8({w_stats['0.5-0.8']}notes), <0.5({w_stats['<0.5']}notes)")
+        print(f"[string_assigner] 動的CNN重み適用: >=0.90({w_stats['>=0.90']}notes), "
+              f"0.80-0.90({w_stats['0.80-0.90']}notes), 0.5-0.8({w_stats['0.5-0.8']}notes), <0.5({w_stats['<0.5']}notes)")
 
     # === 統合パイプライン: CNN-first + Bio-mechanical Smoothing ===
     # 研究結果: CNN弦予測=92-94% >> Viterbi DP=52-67%
