@@ -1480,7 +1480,7 @@ def _viterbi_finger_dp(notes: List[dict],
         else:
             gap = float(note.get('start', 0)) - (prev_start + prev_dur)
             
-        if gap > phrase_gap:
+        if gap > phrase_gap or len(current_phrase) >= 100:
             phrases.append(current_phrase)
             current_phrase = [note]
         else:

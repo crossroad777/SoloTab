@@ -1,0 +1,14 @@
+backend/gp5_training/
+datasets/
+music-transcription/
+gp_training_data/
+gprotab_downloads/
+legacy_archive/
+unified_datasets/
+unified_models/
+uploads/
+*.wav
+*.mp3
+*.pth
+*.pt
+*.safetensors

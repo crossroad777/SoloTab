@@ -45,9 +45,9 @@ SynthTab-main/
 backend/fretnet_models/
 gprotab_downloads/
 gp_training_data/
-# Exception: モデルファイルのディレクトリは許可
-!gp_training_data/v3/
-!gp_training_data/v3/models/
+# Exception: モデルファイルのみ許可
+!gp_training_data/v3/models/fingering_transformer_v3_best.pt
+!gp_training_data/v3/models/fingering_transformer_v3_finetuned.pt
 
 # Node
 node_modules/
@@ -98,3 +98,4 @@ _temp*
 backend/gp5_training/data/*.jsonl
 backend/gp5_training/*.db
 backend/*.pth.bak*
+.vercel
