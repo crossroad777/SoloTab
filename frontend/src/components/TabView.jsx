@@ -176,6 +176,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     // --- Web Audio API Metronome ---
     const audioCtxRef = useRef(null);
     const nextBeatIdxRef = useRef(0);
+    const scheduledOscsRef = useRef([]);
 
     useEffect(() => {
         if (isPlaying && metronomeEnabled && !audioCtxRef.current) {
@@ -187,10 +188,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         if (!isPlaying) {
             // When paused, we will recalculate nextBeatIdx upon resume
             nextBeatIdxRef.current = -1;
-            if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
-                // Keep context but suspend to save resources if needed, or just let it be.
-                // However, clearing the lookahead is handled by nextBeatIdxRef.
-            }
+            scheduledOscsRef.current.forEach(osc => { try { osc.stop(); } catch(e){} });
+            scheduledOscsRef.current = [];
         }
     }, [isPlaying, metronomeEnabled]);
 
@@ -1414,6 +1413,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         let idx = 0;
                         while (idx < beats.length && beats[idx] < virtualTimeSec) idx++;
                         nextBeatIdxRef.current = idx;
+                        scheduledOscsRef.current.forEach(osc => { try { osc.stop(); } catch(e){} });
+                        scheduledOscsRef.current = [];
                     }
 
                     // Look ahead 0.1s
@@ -1433,12 +1434,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             const playTime = ctx.currentTime + (timeUntilBeat / tMult);
                             osc.start(playTime);
                             osc.stop(playTime + 0.05);
+                            osc._endTime = playTime + 0.05;
+                            scheduledOscsRef.current.push(osc);
+
                             gain.gain.setValueAtTime(0, playTime);
                             gain.gain.linearRampToValueAtTime(1, playTime + 0.005);
                             gain.gain.exponentialRampToValueAtTime(0.01, playTime + 0.05);
                         }
                         nextBeatIdxRef.current++;
                     }
+                    // Clean up old oscillators from the array
+                    scheduledOscsRef.current = scheduledOscsRef.current.filter(o => o._endTime > ctx.currentTime);
                 }
             }
 
