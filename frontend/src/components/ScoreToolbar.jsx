@@ -41,7 +41,7 @@ const BA = { ...B, background: "#3b82f6", color: "#fff", borderColor: "#3b82f6" 
 const S = { display: "flex", alignItems: "center", gap: 3, padding: "0 6px", borderRight: "1px solid #e5e7eb" };
 const L = { fontSize: 9, color: "#6b7280", fontWeight: 700, marginRight: 2, whiteSpace: "nowrap" };
 
-const ScoreToolbar = ({ sessionId, apiBase, onScoreUpdate, score }) => {
+const ScoreToolbar = ({ sessionId, apiBase, onScoreUpdate, score, onPdfExport, isExporting }) => {
   const [selectedBar, setSelectedBar] = useState(0);
   const [selectedBeat, setSelectedBeat] = useState(-1);
   const [selectedNote, setSelectedNote] = useState(-1);
@@ -122,8 +122,16 @@ const ScoreToolbar = ({ sessionId, apiBase, onScoreUpdate, score }) => {
   }, [undo, redo, totalBars]);
 
   if (!sessionId) return null;
-  // scoreがnull（/score APIが未実装 or 404）の場合はToolbarを非表示
-  if (!score) return null;
+  // scoreがnull（/score APIが未実装 or 404）の場合はPDFエクスポートボタンだけを表示するミニマムツールバー
+  if (!score) {
+    return (
+      <div style={{ borderBottom: "2px solid #e5e7eb", background: "#fafbfc", padding: "4px 8px", display: "flex", justifyContent: "flex-end" }}>
+        <button style={BA} onClick={onPdfExport} disabled={isExporting}>
+          {isExporting ? "⏳ エクスポート中..." : "📄 PDF エクスポート"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ borderBottom: "2px solid #e5e7eb", background: "#fafbfc", userSelect: "none" }}>
@@ -161,6 +169,9 @@ const ScoreToolbar = ({ sessionId, apiBase, onScoreUpdate, score }) => {
         </div>
         {/* 展開ボタン */}
         <div style={{...S, borderRight:"none"}}>
+          <button style={BA} onClick={onPdfExport} disabled={isExporting} title="PDF エクスポート">
+            {isExporting ? "⏳" : "📄"}
+          </button>
           <button style={expanded?BA:B} onClick={()=>setExpanded(!expanded)} title="詳細設定">
             {expanded ? "▲" : "▼"}
           </button>

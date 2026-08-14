@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-// ScoreToolbar: /score API未実装のため一時無効化 (コンポーネントはファイルとして残存)
-// import ScoreToolbar from "./ScoreToolbar";
+import ScoreToolbar from "./ScoreToolbar";
+import { exportToPDF } from "../utils/pdfExport";
 
 /**
  * TabView — AlphaTab TAB 譜表示
@@ -31,12 +31,32 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
     // --- TAB編集UI state ---
     const [editNote, setEditNote] = useState(null); // {noteIndex, fret, string, x, y}
-    const [editInput, setEditInput] = useState("");
     const [editSaving, setEditSaving] = useState(false);
+    const [editInput, setEditInput] = useState("");
+    const editInputRef = useRef(null);
     const [reloadKey, setReloadKey] = useState(0);
     const [canUndo, setCanUndo] = useState(false);
     const [canRedo, setCanRedo] = useState(false);
-    const editInputRef = useRef(null);
+    
+    const [isExporting, setIsExporting] = useState(false);
+
+    const handlePdfExport = async () => {
+        if (!containerRef.current || isExporting) return;
+        setIsExporting(true);
+        try {
+            const api = apiRef.current;
+            const title = api?.score?.title || "SoloTab_Score";
+            const artist = api?.score?.artist || "";
+            const filename = artist ? `${artist} - ${title}.pdf` : `${title}.pdf`;
+            
+            await exportToPDF(containerRef.current, filename);
+        } catch (e) {
+            console.error("PDF Export error:", e);
+            alert("PDFエクスポートに失敗しました");
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     const handleUndo = async () => {
         if (!canUndo) return;
@@ -1401,7 +1421,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            {/* ScoreToolbar: /score API未実装のため一時無効化 */}
+            <ScoreToolbar 
+                sessionId={sessionId} 
+                apiBase={apiBase} 
+                onPdfExport={handlePdfExport} 
+                isExporting={isExporting} 
+            />
             <div
                 ref={containerRef}
                 className="tab-print-container"
