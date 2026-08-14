@@ -613,6 +613,37 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             if midi_key != detected_key:
                 print(f"[theory] キー競合: audio={detected_key}(conf={key_confidence:.2f}) vs midi={midi_key} → audio採用")
 
+        # --- フェーズ3: Heuristic Pitch Correction ---
+        try:
+            from heuristic_pitch_correction import heuristic_pitch_correction
+            
+            # Extract genre from filename (e.g. 05_Jazz2-187-F#_comp.wav -> jazz)
+            import re
+            from pathlib import Path
+            wav_filename = Path(transcription_wav).name
+            genre_match = re.search(r'^\d+_([A-Za-z]+)', wav_filename)
+            track_genre = genre_match.group(1).lower() if genre_match else "unknown"
+            
+            notes_before_hpc = len(notes)
+            notes_hpc, logs = heuristic_pitch_correction(
+                notes, 
+                chords=chords, 
+                key=detected_key_sig, 
+                genre=track_genre, 
+                dry_run=False, # PROD MODE
+                verbose=True
+            )
+            # PROD MODE: overwrite notes
+            notes = notes_hpc 
+            report("theory", f"[Prod] Heuristic Pitch Correction: {len(logs)} changes proposed for {track_genre}")
+            
+            # Save logs for reporting
+            for l in logs:
+                print(f"[Heuristic] Track={wav_filename}, Pass={l['pass']}, Reason={l['reason']}")
+                
+        except Exception as e:
+            report("theory", f"Heuristic Pitch Correctionエラー: {e}")
+
         # 音楽理論に基づく妥当性検証＆フィルタリング (MVS) をリズム検出の前に実行
         before_validation = len(notes)
         try:
