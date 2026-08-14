@@ -24,7 +24,7 @@ import config
 from model import architecture
 from guitar_transcriber import _frames_to_notes
 
-GUITARSET_DIR = r"D:\Music\Datasets\GuitarSet"
+GUITARSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mini_dataset")
 ANNOTATIONS_DIR = os.path.join(GUITARSET_DIR, "annotation")
 AUDIO_DIR = os.path.join(GUITARSET_DIR, "audio_mono-mic")
 
