@@ -1126,6 +1126,20 @@ def _transition_cost(s: int, f: int,
         if s == prev_s and fret_diff <= 2 and fret_diff > 0:
             cost += WEIGHTS.get("w_guide_finger", -15.0)
 
+        # 4. Alice Lin (2026) バイオメカニクス 5法則 & ペナルティマトリクス
+        try:
+            from biomechanics_engine import evaluate_alice_lin_laws
+            lin_cost = evaluate_alice_lin_laws(
+                s, f, prev_s, prev_f,
+                pitch=pitch, prev_pitch=prev_pitch,
+                finger=finger if finger > 0 else 1,
+                prev_finger=prev_finger if prev_finger > 0 else 1,
+                ioi=ioi if ioi is not None else 0.3
+            )
+            cost += lin_cost
+        except ImportError:
+            pass
+
     # 弦切り替え距離の計算
     string_dist = abs(s - prev_s)
 
@@ -1972,7 +1986,16 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
     # コストを負のスコアに変換
     score = 0.0
 
-    # 1. 人間工学コスト
+    # 1. 人間工学・バイオメカニクスコスト (Phase 10)
+    try:
+        from biomechanics_engine import chord_reachability_cost, INF
+        reach_cost = chord_reachability_cost(combo)
+        if reach_cost >= INF:
+            return -10000.0  # 物理的に押さえられない和音を除外
+        score -= reach_cost
+    except ImportError:
+        pass
+
     ergo = _ergonomic_cost_chord(combo)
     if ergo >= WEIGHTS["w_unplayable"]:
         return -10000

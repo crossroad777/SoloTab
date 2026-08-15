@@ -52,7 +52,7 @@
   {
     "start": 26.53922558922559,
     "end": 28.559427609427612,
-    "chord": "B",
+    "chord": "Bm",
     "confidence": 0.9653584091678887,
     "_source": "diatonic_refinement",
     "_original_audio_chord": "G"
@@ -124,7 +124,7 @@
   {
     "start": 59.53585858585859,
     "end": 61.55606060606061,
-    "chord": "B",
+    "chord": "Bm",
     "confidence": 0.984119626732927,
     "_source": "diatonic_refinement",
     "_original_audio_chord": "G"

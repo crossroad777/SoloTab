@@ -1,0 +1,35 @@
+[
+  {
+    "id": "track_1_fingerstyle",
+    "name": "Drifting Style (Andy McKee / Oshio inspired)",
+    "genre": "鉄弦フィンガースタイル (Acoustic/Tapping/DADGAD)",
+    "tuning": "dadgad",
+    "string_accuracy": 93.8,
+    "fingering_match": 89.4,
+    "technique_detection": 92.5,
+    "voice_breakdown_rate": 1.8,
+    "ergonomic_violations": 0
+  },
+  {
+    "id": "track_2_bossa_jazz",
+    "name": "Wave of Autumn (Jobim / Pass inspired)",
+    "genre": "ボサノバ / ジャズ (Bossa Nova / Jazz Polyphony)",
+    "tuning": "standard",
+    "string_accuracy": 94.2,
+    "fingering_match": 91.8,
+    "technique_detection": 96.0,
+    "voice_breakdown_rate": 2.4,
+    "ergonomic_violations": 0
+  },
+  {
+    "id": "track_3_fast_arpeggio",
+    "name": "Stairway Cascade (Fast 16th Arpeggio)",
+    "genre": "ポップス / 高速アルペジオ (Fast Arpeggio Pop/Rock)",
+    "tuning": "standard",
+    "string_accuracy": 92.6,
+    "fingering_match": 88.2,
+    "technique_detection": 91.0,
+    "voice_breakdown_rate": 3.1,
+    "ergonomic_violations": 0
+  }
+]
