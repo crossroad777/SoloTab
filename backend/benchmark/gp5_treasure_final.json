@@ -1,0 +1,196 @@
+{
+  "inventory": {
+    "total_files": 26092,
+    "total_gp5": 48,
+    "total_bytes_mb": 1051.35,
+    "extensions": {
+      ".gp5": 48,
+      ".gpx": 32,
+      ".gp": 26012
+    },
+    "top_folders": {
+      "blink-182": 593,
+      "ariya": 465,
+      "the-beatles": 404,
+      "acdc": 358,
+      "black-sabbath": 333,
+      "clapton-eric": 287,
+      "composers-of-msb": 287,
+      "dream-theater": 260,
+      "bon-jovi": 245,
+      "deep-purple": 235
+    }
+  },
+  "feasibility": {
+    "sampled": 200,
+    "success": 160,
+    "failed": 40,
+    "success_rate": 80.0,
+    "error_types": {
+      "GPException": 20,
+      "UnicodeDecodeError": 20
+    }
+  },
+  "analysis": {
+    "tuning_dist": {
+      "Standard": 112,
+      "Custom": 32,
+      "Drop D": 8,
+      "4-String": 4,
+      "DADGAD": 2,
+      "Open G": 1
+    },
+    "genre_dist": {
+      "Classical": 60,
+      "Fingerstyle": 40,
+      "Rock/Pop/Other": 100
+    },
+    "polyphony_rate": 14.4,
+    "tuplet_rate": 43.8,
+    "total_notes": 476018,
+    "fingered_notes": 476018,
+    "finger_rate": 100.0,
+    "tech_counts": {
+      "harmonic": 448,
+      "slide": 3808,
+      "vibrato": 2024,
+      "bend": 874,
+      "hammer_pull": 6511,
+      "ghost_note": 2982
+    },
+    "treasure_rate": 100.0,
+    "estimated_treasures": 26092
+  },
+  "top_10_romance": [
+    {
+      "name": "romance.gp5",
+      "path": "C:\\Users\\kotan\\Desktop\\romance.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 539,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 65,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "romance (1).gp5",
+      "path": "C:\\Users\\kotan\\Downloads\\romance (1).gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 539,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 65,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "romance (2).gp5",
+      "path": "C:\\Users\\kotan\\Downloads\\romance (2).gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 539,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 65,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "brouwer_estudio16.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\brouwer\\gp5\\brouwer_estudio16.gp5",
+      "genre": "Classical",
+      "tuning": "Drop D",
+      "notes": 359,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 52,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "brouwer_estudio17.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\brouwer\\gp5\\brouwer_estudio17.gp5",
+      "genre": "Classical",
+      "tuning": "Drop D",
+      "notes": 677,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 141,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "brouwer_estudio18.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\brouwer\\gp5\\brouwer_estudio18.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 514,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 120,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "villa-lobos_etude10.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\villa-lobos\\gp5\\villa-lobos_etude10.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 1261,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 460,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "villa-lobos_etude12.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\villa-lobos\\gp5\\villa-lobos_etude12.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 2338,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": true,
+      "techs": 492,
+      "score": 500.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "brouwer_estudio11.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\brouwer\\gp5\\brouwer_estudio11.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 599,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": false,
+      "techs": 57,
+      "score": 460.0,
+      "is_romance_like": true
+    },
+    {
+      "name": "brouwer_estudio13.gp5",
+      "path": "D:\\Music\\chordlink-solotab\\datasets\\gp-classical-guitar\\brouwer\\gp5\\brouwer_estudio13.gp5",
+      "genre": "Classical",
+      "tuning": "Standard",
+      "notes": 1014,
+      "finger_ratio": 100.0,
+      "polyphony": true,
+      "tuplet": false,
+      "techs": 211,
+      "score": 460.0,
+      "is_romance_like": true
+    }
+  ]
+}
