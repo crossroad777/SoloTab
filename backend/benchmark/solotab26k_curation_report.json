@@ -1,0 +1,31 @@
+{
+  "total_scanned": 26092,
+  "tier_distribution": {
+    "Gold": 20794,
+    "Bronze": 1245,
+    "Trash": 4053
+  },
+  "trash_breakdown": {
+    "parse_error": 1855,
+    "pitch_out_of_range": 1158,
+    "fret_over_24": 762,
+    "notes_under_30": 278
+  },
+  "curated_total": 22039,
+  "gold_tier": 20794,
+  "silver_tier": 0,
+  "bronze_tier": 1245,
+  "variants": {
+    "unique_song_keys": 16347,
+    "multi_variant_songs": 3114,
+    "total_variant_tracks": 8806
+  },
+  "techniques_mined": {
+    "harmonic": 48751,
+    "slide": 239782,
+    "vibrato": 108199,
+    "bend": 94661,
+    "hammer_pull": 326313,
+    "ghost_note": 153582
+  }
+}
