@@ -92,13 +92,13 @@ def notes_to_tab_musicxml(notes: List[dict], *,
 
     # Melody filter and assign
     filtered_melody = _filter_gate(notes)
-    note_entries = _assign_to_bars(filtered_melody, beats, beats_per_bar, rhythm_info=rhythm_info)
+    note_entries = _assign_to_bars(filtered_melody, beats, beats_per_bar, bpm=bpm, time_signature=time_signature, rhythm_info=rhythm_info)
 
     # Backing filter and assign
     backing_entries = []
     if is_2tracks:
         filtered_backing = _filter_gate(backing_notes)
-        backing_entries = _assign_to_bars(filtered_backing, beats, beats_per_bar, rhythm_info=rhythm_info)
+        backing_entries = _assign_to_bars(filtered_backing, beats, beats_per_bar, bpm=bpm, time_signature=time_signature, rhythm_info=rhythm_info)
 
     # Calculate total bars (max of both tracks)
     combined = note_entries + backing_entries
@@ -321,7 +321,9 @@ def notes_to_tab_musicxml(notes: List[dict], *,
 
                         if entry.get("is_dotted"):
                             ET.SubElement(note_el, "dot")
-                        if is_triplet_mode and dur in [4, 8]:
+                        
+                        is_trip = entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8])
+                        if is_trip:
                             tm = ET.SubElement(note_el, "time-modification")
                             ET.SubElement(tm, "actual-notes").text = "3"
                             ET.SubElement(tm, "normal-notes").text = "2"
@@ -341,11 +343,25 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                         notations = ET.SubElement(note_el, "notations")
                         if entry.get("_tie_start"):
                             ET.SubElement(notations, "tied", type="start")
-                        if is_triplet_mode and i == 0 and dur in [4, 8] and bar_num < 4:
-                            cycle = dur * 3
-                            rem = target_pos % cycle
-                            if rem == 0: ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                            elif rem == cycle - dur: ET.SubElement(notations, "tuplet", type="stop")
+
+                        # Tuplet brackets across all measures
+                        if is_trip and i == 0:
+                            t_role = entry.get("tuplet_role", "none")
+                            if t_role == "start":
+                                ET.SubElement(notations, "tuplet", type="start", bracket="yes")
+                            elif t_role == "stop":
+                                ET.SubElement(notations, "tuplet", type="stop")
+                            elif t_role == "start_stop":
+                                ET.SubElement(notations, "tuplet", type="start", bracket="yes")
+                                ET.SubElement(notations, "tuplet", type="stop")
+                            elif t_role == "none":
+                                # Fallback: beat modulo calculation
+                                cycle = 12
+                                rem = target_pos % cycle
+                                if rem == 0:
+                                    ET.SubElement(notations, "tuplet", type="start", bracket="yes")
+                                elif rem >= 8:
+                                    ET.SubElement(notations, "tuplet", type="stop")
 
                         # --- PREVIOUS TECHNIQUE STOP (type="stop") ---
                         if string_num in active_slurs:
@@ -545,271 +561,49 @@ def notes_to_tab_musicxml(notes: List[dict], *,
         return header + xml_str, technique_map
 
 
-def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, rhythm_info: dict | None = None) -> List[dict]:
-    """Assign each note to a bar and beat position (in divisions).
-    
-    同時発音ノート(50ms以内)は先にグルーピングし、
-    代表時刻で統一的にビートスナップすることで和音を正しく出力する。
-    """
-    import numpy as np  # type: ignore
-
+def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, bpm: float = 120.0, time_signature: str = "4/4", rhythm_info: dict | None = None) -> List[dict]:
+    """Assign each note to a bar and beat position (in divisions) using Universal Quantizer."""
     if not beats or not notes:
         return []
 
-    beats_arr = np.array(beats)
-    divisions = 12  # per quarter note (12 = 三連符にも対応: 4*3)
-    
-    # 各ノートに個別のbeat_posを計算（グループ化しない → アルペジオの順次音を分離）
-    sorted_notes = sorted(notes, key=lambda n: (float(n["start"]), int(n["pitch"])))
-    
-    entries: List[dict] = []
-
-    for note_idx, note in enumerate(sorted_notes):
-        t = float(note["start"])
-        
-        # Find the beat that is strictly before or exactly at t
-        idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
-        idx = max(0, min(idx, len(beats_arr) - 1))
-
-        bar = idx // beats_per_bar
-        beat_in_bar = idx % beats_per_bar
-
-        # Sub-beat position (fractional divisions)
-        if idx < len(beats_arr):
-            beat_time = float(beats_arr[idx])
-            next_beat_time = float(beats_arr[idx + 1]) if idx + 1 < len(beats_arr) else beat_time + 0.5
-            frac = (t - beat_time) / (next_beat_time - beat_time) if next_beat_time > beat_time else 0.0
-            frac = max(0.0, min(frac, 0.99))
-            
-            # --- MUSICAL QUANTIZATION ---
-            # Force raw fractions to snap precisely to musical grids.
-            # Triplet mode: snap to 1/3 divisions (0, 4, 8)
-            # Straight mode: snap to 1/4 and 1/3 (0, 3, 4, 6, 8, 9, 12)
-            raw_sub = frac * divisions
-            
-            is_triplet = (rhythm_info or {}).get('subdivision') == 'triplet'
-            if is_triplet:
-                # 3連符: 0, 4, 8 のみ (= beat/3 divisions)
-                grid = [0, 4, 8, 12]
-            else:
-                # Straight: 16分音符グリッドのみ（GP5レンダラと一致）
-                grid = [0, 3, 6, 9, 12]
-            sub_divs = min(grid, key=lambda x: abs(x - raw_sub))
-            if sub_divs == 12:
-                sub_divs = 0
-                beat_in_bar = (beat_in_bar + 1) % beats_per_bar
-                if beat_in_bar == 0:
-                    bar += 1
-        else:
-            sub_divs = 0
-
-        beat_pos = bar * (beats_per_bar * divisions) + beat_in_bar * divisions + sub_divs
-        # 局所ビート間隔（ルバート・テンポ揺れに対応）
-        if idx + 1 < len(beats_arr):
-            beat_interval = float(beats_arr[idx + 1]) - float(beats_arr[idx])
-        elif idx > 0:
-            beat_interval = float(beats_arr[idx]) - float(beats_arr[idx - 1])
-        else:
-            beat_interval = 0.5
-        beat_interval = max(beat_interval, 0.1)  # ゼロ除算防止
-
-        # --- Hybrid IOI duration ---
-        # アルペジオ内(弦間10-20ms) → 同弦IOI（正しい和音持続時間）
-        # 単音パッセージ → 全弦IOI（音が被らない）
-        MAX_DUR_BEATS = 4.0
-        CHORD_WINDOW = 0.050
-        my_string = int(note.get("string", 0))
-
-        # 直近ノートとの距離（アルペジオ検出用）
-        raw_next_ioi = None
-        for k in range(note_idx + 1, len(sorted_notes)):
-            next_t = float(sorted_notes[k]["start"])
-            if next_t > t + 0.005:
-                raw_next_ioi = next_t - t
-                break
-        is_in_arpeggio = raw_next_ioi is not None and raw_next_ioi < CHORD_WINDOW
-
-        # Same-string IOI
-        same_str_ioi = None
-        if my_string > 0:
-            for k in range(note_idx + 1, len(sorted_notes)):
-                other = sorted_notes[k]
-                t_diff = float(other["start"]) - t
-                if t_diff < CHORD_WINDOW:
-                    continue
-                if int(other.get("string", 0)) == my_string:
-                    same_str_ioi = t_diff
-                    # Bug fix #6: Cap same-string IOI at bar boundary
-                    # so duration doesn't incorrectly span into the next bar
-                    bar_end_beat_idx = (bar + 1) * beats_per_bar
-                    if bar_end_beat_idx < len(beats_arr):
-                        bar_end_time = float(beats_arr[bar_end_beat_idx])
-                        remaining_in_bar = bar_end_time - t
-                        if remaining_in_bar > 0 and same_str_ioi > remaining_in_bar:
-                            same_str_ioi = remaining_in_bar
-                    break
-                if t_diff > MAX_DUR_BEATS * beat_interval:
-                    break
-
-        # All-string IOI
-        all_str_ioi = None
-        for k in range(note_idx + 1, len(sorted_notes)):
-            next_t = float(sorted_notes[k]["start"])
-            if next_t > t + CHORD_WINDOW:
-                all_str_ioi = next_t - t
-                break
-
-        # Hybrid: arpeggio → same-string, else → all-string
-        if is_in_arpeggio and same_str_ioi is not None:
-            actual_dur_sec = same_str_ioi
-        elif all_str_ioi is not None:
-            actual_dur_sec = all_str_ioi
-        elif same_str_ioi is not None:
-            actual_dur_sec = same_str_ioi
-        else:
-            actual_dur_sec = beat_interval
-
-        actual_dur_sec = min(actual_dur_sec, MAX_DUR_BEATS * beat_interval)
-        actual_dur_sec = max(0.030, actual_dur_sec)
-
-        # 秒→divisions: 1拍 = beat_interval秒 = divisions (12) divs
-        actual_dur_divs = max(1, int(round(actual_dur_sec / beat_interval * divisions)))
-
-        entries.append({
-            "bar": bar,
-            "beat_pos_absolute": beat_pos,
-            "beat_pos_in_bar": beat_in_bar * divisions + sub_divs,
-            "duration_divs": actual_dur_divs,  # ★ノートの実際の持続時間
-            "pitch": note["pitch"],
-            "string": note.get("string", 1),
-            "fret": note.get("fret", 0),
-            "technique": note.get("technique"),
-            "velocity": note.get("velocity", 0.5),
-            "finger": note.get("finger"),
-            "pluck_direction": note.get("pluck_direction"),
-            "start_time": t,
-        })
-
-    # --- tripletモード: 強制3音/拍は廃止 ---
-    # 以前はノートを3つずつ拍に強制配分していたが、
-    # 実際のonset時刻ベースの量子化（上記のグリッドスナップ）を使用する。
-    # これにより実際のリズムが保持される。
-    # ベース音の統合窓デデュプのみ維持。
-    is_triplet = (rhythm_info or {}).get('subdivision') == 'triplet'
-    split_pitch = 52
-    if is_triplet and entries:
-        from collections import defaultdict
-        bar_groups = defaultdict(list)
-        for i, e in enumerate(entries):
-            if int(e.get('pitch', 60)) <= split_pitch:
-                continue
-            bar_groups[e['bar']].append(i)
-
-        remove_indices = set()
-        for bar, indices in bar_groups.items():
-            indices.sort(key=lambda i: entries[i]['start_time'])
-
-            # 統合窓ベースの同一ピッチ除去（心理音響学）のみ維持
-            beat_interval_sec = (float(beats_arr[1]) - float(beats_arr[0])) if len(beats_arr) > 1 else 0.5
-            min_rhythmic_unit = beat_interval_sec / 3
-            INTEGRATION_WINDOW_DEDUP = min(0.300, min_rhythmic_unit * 0.6)
-            cleaned = []
-            for idx in indices:
-                if cleaned:
-                    prev_idx = cleaned[-1]
-                    prev_pitch = int(entries[prev_idx].get('pitch', 0))
-                    curr_pitch = int(entries[idx].get('pitch', 0))
-                    time_diff = entries[idx]['start_time'] - entries[prev_idx]['start_time']
-                    if prev_pitch == curr_pitch and time_diff < INTEGRATION_WINDOW_DEDUP:
-                        if float(entries[idx].get('velocity', 0)) > float(entries[prev_idx].get('velocity', 0)):
-                            remove_indices.add(prev_idx)
-                            cleaned[-1] = idx
-                        else:
-                            remove_indices.add(idx)
-                        continue
-                cleaned.append(idx)
-
-        if remove_indices:
-            entries = [e for i, e in enumerate(entries) if i not in remove_indices]
-
-    # Bug fix #4: Early return if entries is empty after filtering
-    if not entries:
-        return []
-
-    # beat_pos: _group_by_time が参照するキーを設定
-    for e in entries:
-        e["beat_pos"] = e["beat_pos_in_bar"]
-
-    # --- 同一弦のグリッド被りを防止 (Hammer-On / Slide 等の消失防止) ---
-    # 同一弦上の連続ノートが同じ beat_pos にクオンタイズされた場合、
-    # 後発のノートを1グリッド(16分音符=3divs)後ろに押し出し、_group_by_timeでの重複消去を防ぐ。
-    bar_total = beats_per_bar * divisions
-    entries.sort(key=lambda x: x["start_time"])
-    for i in range(len(entries)):
-        my_string = entries[i].get("string", 0)
-        if my_string == 0:
-            continue
-        for j in range(i + 1, len(entries)):
-            other = entries[j]
-            if other.get("string", -1) == my_string:
-                # 同じ弦で同じ beat_pos_absolute になってしまった場合
-                if other["beat_pos_absolute"] <= entries[i]["beat_pos_absolute"]:
-                    if other["start_time"] > entries[i]["start_time"] + 0.02:
-                        # 後発ノートなので最低16分音符(3 divs)分後ろにずらす
-                        shift = 3
-                        other["beat_pos_absolute"] = entries[i]["beat_pos_absolute"] + shift
-                        other["beat_pos_in_bar"] = entries[i]["beat_pos_in_bar"] + shift
-                        # bar_total超えチェック
-                        if other["beat_pos_in_bar"] >= bar_total:
-                            other["beat_pos_in_bar"] = bar_total - 1
-                        other["beat_pos"] = other["beat_pos_in_bar"]
-                break # 同じ弦の直後のノートだけチェック
-
-    # ソートし直す
-    entries.sort(key=lambda x: x["beat_pos_absolute"])
-
-    # --- duration_divsの後処理: 同一弦の次のノートとの重複を防止 ---
-    # ギターの物理特性: 異なる弦のノートは同時に鳴り続ける
-    # 同じ弦の次のノートが来た時だけ、前のノートは切れる
-    bar_total = beats_per_bar * divisions
-    for i, e in enumerate(entries):
-        my_string = e.get("string", 0)
-        # 同じ弦の次のノートを探す
-        gap_same_string = bar_total * 2  # デフォルト: 制限なし
-        for j in range(i + 1, len(entries)):
-            other = entries[j]
-            gap = other["beat_pos_absolute"] - e["beat_pos_absolute"]
-            if gap <= 0:
-                continue  # 同時発音はスキップ
-            if other.get("string", -1) == my_string:
-                gap_same_string = gap
-                break
-            # 弦情報がない場合は全ノートを考慮
-            if my_string == 0:
-                gap_same_string = min(gap_same_string, gap)
-                break
-        # Bug fix #1: Ensure capped duration is at least 1 div
-        e["duration_divs"] = max(1, min(e["duration_divs"], gap_same_string))
-        # Bug fix #3: Ensure beat_pos_in_bar + duration_divs <= bar_total
-        max_in_bar = bar_total - e["beat_pos_in_bar"]
-        if max_in_bar < 1:
-            max_in_bar = 1
-        e["duration_divs"] = min(e["duration_divs"], max_in_bar)
-        e["duration_divs"] = max(1, e["duration_divs"])
-
-    # Bug fix #2: Final clamp pass — ensure beat_pos_in_bar is always < bar_total
-    for e in entries:
-        if e["beat_pos_in_bar"] >= bar_total:
-            e["beat_pos_in_bar"] = bar_total - 1
-        # Bug fix #3 (final): Re-check duration_divs after clamp
-        if e["beat_pos_in_bar"] + e["duration_divs"] > bar_total:
-            e["duration_divs"] = max(1, bar_total - e["beat_pos_in_bar"])
-
-    # Bug fix #5: Ensure beat_pos == beat_pos_in_bar for consistency
-    for e in entries:
-        e["beat_pos"] = e["beat_pos_in_bar"]
-
-    return entries
+    try:
+        from universal_quantizer import quantize_notes_universal
+        entries = quantize_notes_universal(
+            notes=notes,
+            beats=beats,
+            bpm=bpm,
+            time_signature=time_signature,
+            beats_per_bar=beats_per_bar,
+        )
+        return entries
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        # フォールバック処理
+        divisions = 12
+        beats_arr = np.array(beats)
+        entries = []
+        for note in notes:
+            t = float(note["start"])
+            idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
+            idx = max(0, min(idx, len(beats_arr) - 1))
+            bar = idx // beats_per_bar
+            beat_in_bar = idx % beats_per_bar
+            entries.append({
+                "bar": bar,
+                "beat_pos": beat_in_bar * divisions,
+                "beat_pos_in_bar": beat_in_bar * divisions,
+                "beat_pos_absolute": bar * (beats_per_bar * divisions) + beat_in_bar * divisions,
+                "duration_divs": 4,
+                "pitch": note["pitch"],
+                "string": note.get("string", 1),
+                "fret": note.get("fret", 0),
+                "technique": note.get("technique"),
+                "velocity": note.get("velocity", 0.5),
+                "start_time": t,
+                "is_triplet": False,
+            })
+        return entries
 
 
 def _group_by_time(entries: List[dict], threshold: float = 0.1) -> list:

@@ -187,27 +187,19 @@ def notes_to_gp5(notes: List[dict], *,
     else:
         filtered_backing = []
 
-    # Quantization helper
+    # Quantization helper using Universal Quantizer
     def _quantize_track(filtered_notes):
         try:
-            from music_quantizer import quantize_notes_music21
-            entries = quantize_notes_music21(
+            from universal_quantizer import quantize_notes_universal
+            entries = quantize_notes_universal(
                 filtered_notes, beats, bpm,
                 time_signature=time_signature,
                 beats_per_bar=beats_per_bar,
-                rhythm_subdivision=(rhythm_info or {}).get("subdivision", "straight"),
             )
         except Exception as e:
-            print(f"[gp_renderer] music21 quantizer failed, falling back: {e}")
+            print(f"[gp_renderer] Universal Quantizer failed, falling back: {e}")
             from tab_renderer import _assign_to_bars
-            entries = _assign_to_bars(filtered_notes, beats, beats_per_bar, rhythm_info=rhythm_info)
-            try:
-                from music_theory import quantize_note_durations
-                entries = quantize_note_durations(
-                    entries, is_triplet_mode=is_triplet, beats_per_bar=beats_per_bar
-                )
-            except Exception:
-                pass
+            entries = _assign_to_bars(filtered_notes, beats, beats_per_bar, bpm=bpm, time_signature=time_signature, rhythm_info=rhythm_info)
 
         # Validate playability
         entries = _validate_beat_playability(entries, tuning)
@@ -460,10 +452,11 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
         # Create beat with all notes in this chord group
         beat = gp.Beat(voice, status=gp.BeatStatus.normal)
-        gp_dur, gp_dotted, gp_tuplet = _divs_to_gp_duration(dur_divs, is_triplet)
+        group_is_triplet = is_triplet or group[0].get("is_triplet", False)
+        gp_dur, gp_dotted, gp_tuplet = _divs_to_gp_duration(dur_divs, group_is_triplet)
         beat.duration.value = gp_dur
         beat.duration.isDotted = gp_dotted
-        if gp_tuplet and is_triplet:
+        if (gp_tuplet and group_is_triplet) or group_is_triplet and dur_divs in [2, 4, 8]:
             beat.duration.tuplet = gp.Tuplet(enters=3, times=2)
 
         for entry in group:
