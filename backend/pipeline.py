@@ -1177,6 +1177,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     with open(session_dir / "techniques.json", "w") as f:
         json.dump(_to_native(tech_map), f)
 
+    # NextChord SoloTab テキスト形式出力
+    try:
+        from nextchord_renderer import notes_to_nextchord_text
+        nextchord_txt = notes_to_nextchord_text(
+            notes=notes_to_save,
+            bpm=bpm,
+            time_signature=time_signature,
+            title=title,
+            chords=refined_chords if 'refined_chords' in locals() else chords,
+            beats_per_bar=beats_per_bar,
+        )
+        nextchord_path = session_dir / "tab.nextchord.txt"
+        with open(nextchord_path, "w", encoding="utf-8") as f:
+            f.write(nextchord_txt)
+        report("musicxml", f"NextChord SoloTabテキスト出力完了: {nextchord_path.name}")
+    except Exception as e:
+        print(f"[pipeline] nextchord_renderer failed: {e}", flush=True)
+
     report("musicxml", f"TAB譜生成完了 ({time.time()-t0:.1f}s)")
 
     return {
