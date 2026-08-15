@@ -41,6 +41,9 @@ export default function SoloTabApp() {
   const [toast, setToast] = useState(null);
   const [soloGuitar, setSoloGuitar] = useState(true);
   const [guitarType, setGuitarType] = useState("auto");
+  const [transProfile, setTransProfile] = useState(() => {
+    try { return localStorage.getItem('solotab-profile') || 'standard'; } catch { return 'standard'; }
+  });
   const [techGp5, setTechGp5] = useState(() => {
     try { return localStorage.getItem('solotab-tech-gp5') === 'true'; } catch { return false; }
   });
@@ -342,6 +345,7 @@ export default function SoloTabApp() {
     formData.append("skip_demucs", soloGuitar);
     formData.append("fast_moe", "true");
     formData.append("guitar_type", guitarType);
+    formData.append("transcription_profile", transProfile);
     formData.append("enable_technique_gp5", techGp5);
     formData.append("enable_technique_overlay", techOverlay);
     formData.append("enable_technique_fingers", techFingers);
@@ -373,7 +377,7 @@ export default function SoloTabApp() {
       const res = await fetch(`${API_BASE}/upload/youtube`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urlToUse.trim(), guitar_type: guitarType }),
+        body: JSON.stringify({ url: urlToUse.trim(), guitar_type: guitarType, transcription_profile: transProfile }),
       });
       if (!res.ok) throw new Error("YouTube upload failed");
       const data = await res.json();
@@ -829,7 +833,26 @@ export default function SoloTabApp() {
                 </select>
               </div>
 
-              {/* Technique Toggles (Experimental) */}
+              {/* Transcription Profile Selector */}
+              <div onClick={(e) => e.stopPropagation()} style={{
+                display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 10px',
+                fontSize: '0.85rem', color: 'var(--st-text-dim)',
+                userSelect: 'none',
+                padding: '10px 16px', borderRadius: 12,
+                background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+              }}>
+                <span>🎼 解析モード:</span>
+                <select value={transProfile} onChange={(e) => {
+                  setTransProfile(e.target.value);
+                  localStorage.setItem('solotab-profile', e.target.value);
+                }}
+                  style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 8,
+                    background: 'var(--st-surface-2)', color: 'var(--st-text)',
+                    border: '1px solid var(--st-border)', cursor: 'pointer' }}>
+                  <option value="standard">標準ソロギター (ストローク/ソロ)</option>
+                  <option value="classic">クラシック・アルペジオ (繊細・分散和音)</option>
+                </select>
+              </div>
               <div onClick={(e) => e.stopPropagation()} style={{
                 display: 'flex', flexDirection: 'column', gap: 6, margin: '0',
                 fontSize: '0.8rem', color: 'var(--st-text-dim)',

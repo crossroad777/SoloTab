@@ -160,6 +160,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  moe_vote_prob_threshold: float = 0.5,
                  bp_only_threshold: float = 0.05,
                  guitar_type: str = "auto",
+                 transcription_profile: str = "standard",
                  enable_technique_gp5: bool = False,
                  enable_technique_overlay: bool = False,
                  enable_technique_fingers: bool = False):
@@ -173,6 +174,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
     tuning_pitches = _get_open_string_pitches(tuning)
+    is_classic_profile = transcription_profile.lower() in ("classic", "arpeggio")
 
     # --- PARALLEL PHASE: Beat/Key + Note Detection ---
     # Beat detection and note detection are independent.
@@ -294,14 +296,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             moe_meta = {}
 
         # --- Style Detection & Adaptive Parameters ---
+        is_classic_profile = transcription_profile.lower() in ("classic", "arpeggio")
+        
         adaptive_onset = bp_onset_threshold
         adaptive_min_len = bp_minimum_note_length
+        adaptive_frame_th = 0.30
         style = "NEUTRAL"
         
         pick_ratio = moe_meta.get("pick_ratio", 0.0) if moe_meta else 0.0
         finger_ratio = moe_meta.get("finger_ratio", 0.0) if moe_meta else 0.0
         
-        if pick_ratio > 0.6:
+        if is_classic_profile:
+            style = "CLASSIC_ARPEGGIO"
+            adaptive_onset = 0.50
+            adaptive_min_len = 58.0
+            adaptive_frame_th = 0.30
+        elif pick_ratio > 0.6:
             style = "STROKE"
             adaptive_onset = 0.85
             adaptive_min_len = 120.0
@@ -310,7 +320,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             adaptive_onset = 0.70
             adaptive_min_len = 80.0
             
-        report("notes", f"[Style Detection] Pick Ratio: {pick_ratio:.2f}, Finger Ratio: {finger_ratio:.2f} -> Adaptive Mode: {style} (onset={adaptive_onset}, min_len={adaptive_min_len}ms)")
+        report("notes", f"[Style Profile] Profile: {transcription_profile}, Style: {style} (onset={adaptive_onset}, min_len={adaptive_min_len}ms, frame_th={adaptive_frame_th})")
 
         # CRNN (fallback — MoE失敗時のみ)
         if not _moe_notes:
@@ -343,6 +353,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             _, midi_data, _ = bp_predict(str(transcription_wav_path),
                                           model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
                                           onset_threshold=adaptive_onset,
+                                          frame_threshold=adaptive_frame_th,
                                           minimum_note_length=adaptive_min_len)
             for inst in midi_data.instruments:
                 for note in inst.notes:
@@ -474,11 +485,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                     break
 
         # MoE独自ノート (BPに一致しなかった高確信度MoEノート)
+        moe_only_min_vel = 0.50 if is_classic_profile else 0.60
         moe_only_added = 0
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
                 vel = float(moe_n.get("velocity", 0))
-                if vel >= 0.60:  # 0.50 -> 0.60 (低確信度MoE過剰検出を抑制)
+                if vel >= moe_only_min_vel:
                     downgraded = dict(moe_n)
                     downgraded["velocity"] = vel * 0.85
                     fused_notes.append(downgraded)
@@ -493,14 +505,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         else:
             moe_coverage = 1.0
             
-        if moe_coverage < 0.50:
+        if is_classic_profile:
+            # クラシック・アルペジオ: 繊細な音を拾うため閾値を 0.20 に設定
+            BP_ONLY_THRESHOLD = 0.20
+        elif moe_coverage < 0.50:
             # MoE 信頼性低: BP の判定を優先
             BP_ONLY_THRESHOLD = 0.10
         else:
             # MoE 信頼性高: A1見逃しとA2過剰検出の最適バランス点 (Phase 6.5)
             BP_ONLY_THRESHOLD = 0.40
             
-        report("notes", f"[Ensemble] MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), threshold: {BP_ONLY_THRESHOLD}")
+        report("notes", f"[Ensemble] Profile: {transcription_profile}, MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), BP_ONLY threshold: {BP_ONLY_THRESHOLD}")
         bp_only_added = 0
         for i, bp_n in enumerate(bp_notes_list):
             if i not in used_bp:
