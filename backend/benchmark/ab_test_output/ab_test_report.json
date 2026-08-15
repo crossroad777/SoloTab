@@ -1,0 +1,54 @@
+{
+  "standard": {
+    "name": "Standard Mode (Phase 6.5)",
+    "elapsed_sec": 20.58,
+    "total_notes": 575,
+    "fast_notes_triplets": 391,
+    "bass_notes": 82,
+    "treble_notes": 493,
+    "string_counts": {
+      "1": 179,
+      "6": 31,
+      "2": 122,
+      "3": 88,
+      "0": 127,
+      "5": 20,
+      "4": 8
+    },
+    "model_stats": {
+      "bp_notes": 654,
+      "moe_notes": 448,
+      "fused_notes": 575,
+      "moe_only_added": 64,
+      "bp_only_added": 127
+    },
+    "xml_path": "D:\\Music\\chordlink-solotab\\backend\\benchmark\\ab_test_output\\standard\\tab.musicxml",
+    "gp5_path": "D:\\Music\\chordlink-solotab\\backend\\benchmark\\ab_test_output\\standard\\tab.gp5"
+  },
+  "classic": {
+    "name": "Classic / Arpeggio Mode",
+    "elapsed_sec": 9.92,
+    "total_notes": 995,
+    "fast_notes_triplets": 432,
+    "bass_notes": 184,
+    "treble_notes": 811,
+    "string_counts": {
+      "1": 179,
+      "6": 31,
+      "0": 547,
+      "2": 122,
+      "3": 88,
+      "5": 20,
+      "4": 8
+    },
+    "model_stats": {
+      "bp_notes": 955,
+      "moe_notes": 448,
+      "fused_notes": 995,
+      "moe_only_added": 40,
+      "bp_only_added": 547
+    },
+    "xml_path": "D:\\Music\\chordlink-solotab\\backend\\benchmark\\ab_test_output\\classic\\tab.musicxml",
+    "gp5_path": "D:\\Music\\chordlink-solotab\\backend\\benchmark\\ab_test_output\\classic\\tab.gp5"
+  }
+}

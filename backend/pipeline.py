@@ -1143,10 +1143,18 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("musicxml", f"GP5生成完了: {len(gp5_bytes)} bytes")
     except Exception as e:
         report("musicxml", f"GP5生成失敗: {e}")
-        import traceback; traceback.print_exc()
-
     # 量子化・位置情報（bar, beat_pos）付きの最終ノート情報を notes_assigned.json に保存
     notes_to_save = final_note_entries if final_note_entries is not None else notes
+
+    # Notation Transformer (SoloTab-26K 記譜文法モデル) による声部・3連符タグの洗練
+    try:
+        from notation_transformer_infer import apply_notation_transformer
+        notes_to_save = apply_notation_transformer(notes_to_save, beats_per_bar=beats_per_bar, divisions=12)
+        notes = apply_notation_transformer(notes, beats_per_bar=beats_per_bar, divisions=12)
+        report("musicxml", "Notation Transformer 適用完了 (SoloTab-26K)")
+    except Exception as e:
+        report("musicxml", f"Notation Transformer スキップ (フォールバック): {e}")
+
     with open(session_dir / "notes_assigned.json", "w", encoding="utf-8") as f:
         json.dump(_to_native(notes_to_save), f, ensure_ascii=False, indent=2)
 

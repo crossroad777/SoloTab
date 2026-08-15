@@ -1,0 +1,322 @@
+[
+  {
+    "start": -0.39680134680134693,
+    "end": 0.2765993265993265,
+    "chord": "D7",
+    "confidence": 0.7554493919636593
+  },
+  {
+    "start": 0.2765993265993265,
+    "end": 0.95,
+    "chord": "B7",
+    "confidence": 0.8718165951135314
+  },
+  {
+    "start": 0.95,
+    "end": 1.6234006734006734,
+    "chord": "D7",
+    "confidence": 0.7084677168970127
+  },
+  {
+    "start": 1.6234006734006734,
+    "end": 14.418013468013468,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 14.418013468013468,
+    "end": 18.458417508417508,
+    "chord": "Am",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Am"
+  },
+  {
+    "start": 18.458417508417508,
+    "end": 22.49882154882155,
+    "chord": "B",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B"
+  },
+  {
+    "start": 22.49882154882155,
+    "end": 26.53922558922559,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 26.53922558922559,
+    "end": 28.559427609427612,
+    "chord": "G",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G"
+  },
+  {
+    "start": 28.559427609427612,
+    "end": 30.579629629629633,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 30.579629629629633,
+    "end": 46.741245791245795,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 46.741245791245795,
+    "end": 47.414646464646474,
+    "chord": "Am",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Am"
+  },
+  {
+    "start": 47.414646464646474,
+    "end": 48.088047138047145,
+    "chord": "Am7",
+    "confidence": 0.9747924947892616,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 48.088047138047145,
+    "end": 50.78164983164984,
+    "chord": "Am",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Am"
+  },
+  {
+    "start": 50.78164983164984,
+    "end": 51.45505050505051,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 51.45505050505051,
+    "end": 55.49545454545455,
+    "chord": "B",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B"
+  },
+  {
+    "start": 55.49545454545455,
+    "end": 59.53585858585859,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 59.53585858585859,
+    "end": 61.55606060606061,
+    "chord": "G",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G"
+  },
+  {
+    "start": 61.55606060606061,
+    "end": 63.57626262626263,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 63.57626262626263,
+    "end": 64.2496632996633,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 64.2496632996633,
+    "end": 64.92306397306398,
+    "chord": "G",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "G"
+  },
+  {
+    "start": 64.92306397306398,
+    "end": 67.61666666666667,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 67.61666666666667,
+    "end": 71.65707070707072,
+    "chord": "E",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E"
+  },
+  {
+    "start": 71.65707070707072,
+    "end": 72.3304713804714,
+    "chord": "F#7",
+    "confidence": 0.8715811847981585,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "F#7"
+  },
+  {
+    "start": 72.3304713804714,
+    "end": 73.00387205387206,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 73.00387205387206,
+    "end": 73.67727272727274,
+    "chord": "F#m",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "F#m"
+  },
+  {
+    "start": 73.67727272727274,
+    "end": 75.02407407407408,
+    "chord": "D",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "D"
+  },
+  {
+    "start": 75.02407407407408,
+    "end": 75.69747474747476,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 75.69747474747476,
+    "end": 79.7378787878788,
+    "chord": "B",
+    "confidence": 0.8973639891545874,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B"
+  },
+  {
+    "start": 79.7378787878788,
+    "end": 81.75808080808082,
+    "chord": "E",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E"
+  },
+  {
+    "start": 81.75808080808082,
+    "end": 82.43148148148148,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 82.43148148148148,
+    "end": 86.47188552188553,
+    "chord": "E",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E"
+  },
+  {
+    "start": 86.47188552188553,
+    "end": 87.81868686868688,
+    "chord": "E7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E7"
+  },
+  {
+    "start": 87.81868686868688,
+    "end": 91.85909090909092,
+    "chord": "A",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "A"
+  },
+  {
+    "start": 91.85909090909092,
+    "end": 93.87929292929294,
+    "chord": "E",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E"
+  },
+  {
+    "start": 93.87929292929294,
+    "end": 95.89949494949497,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 95.89949494949497,
+    "end": 96.57289562289563,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 96.57289562289563,
+    "end": 97.24629629629631,
+    "chord": "B7",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "B7"
+  },
+  {
+    "start": 97.24629629629631,
+    "end": 97.91969696969697,
+    "chord": "Em",
+    "confidence": 0.9662345061700459,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Abm"
+  },
+  {
+    "start": 97.91969696969697,
+    "end": 98.59309764309765,
+    "chord": "E",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "E"
+  },
+  {
+    "start": 98.59309764309765,
+    "end": 100.61329966329967,
+    "chord": "Em",
+    "confidence": 1.0,
+    "_source": "diatonic_refinement",
+    "_original_audio_chord": "Em"
+  },
+  {
+    "start": 100.61329966329967,
+    "end": 101.28670033670035,
+    "chord": "B7",
+    "confidence": 0.7558435469052794
+  }
+]

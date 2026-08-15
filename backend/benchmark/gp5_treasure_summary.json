@@ -1,0 +1,59 @@
+{
+  "inventory": {
+    "total_files": 26092,
+    "total_gp5": 48,
+    "total_bytes_mb": 1051.35,
+    "extensions": {
+      ".gp5": 48,
+      ".gpx": 32,
+      ".gp": 26012
+    },
+    "top_folders": {
+      "blink-182": 593,
+      "ariya": 465,
+      "the-beatles": 404,
+      "acdc": 358,
+      "black-sabbath": 333,
+      "clapton-eric": 287,
+      "composers-of-msb": 287,
+      "dream-theater": 260,
+      "bon-jovi": 245,
+      "deep-purple": 235
+    }
+  },
+  "feasibility": {
+    "sampled": 200,
+    "success": 160,
+    "failed": 200,
+    "success_rate": 80.0,
+    "error_types": {
+      "AttributeError": 160,
+      "GPException": 20,
+      "UnicodeDecodeError": 20
+    }
+  },
+  "analysis": {
+    "tuning_dist": {
+      "Standard": 112,
+      "Custom": 32,
+      "Drop D": 8,
+      "4-String": 4,
+      "DADGAD": 2,
+      "Open G": 1
+    },
+    "genre_dist": {
+      "Classical": 60,
+      "Fingerstyle": 40,
+      "Rock/Pop/Other": 100
+    },
+    "polyphony_rate": 0.0,
+    "tuplet_rate": 0.0,
+    "total_notes": 0,
+    "fingered_notes": 0,
+    "finger_rate": 0,
+    "tech_counts": {},
+    "treasure_rate": 0.0,
+    "estimated_treasures": 0
+  },
+  "top_10_romance": []
+}
