@@ -262,7 +262,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         except Exception as e:
             report("notes", f"弦種検出スキップ: {e}")
 
-        if gt == "nylon":
+        env_vt = os.environ.get("SOLOTAB_MOE_VOTE_THRESHOLD")
+        if env_vt is not None:
+            moe_vt = int(env_vt)
+        elif gt == "nylon":
             moe_vt = 6
         elif gt == "steel":
             moe_vt = 6
@@ -475,7 +478,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         for j, moe_n in enumerate(moe_notes_list):
             if j not in used_moe:
                 vel = float(moe_n.get("velocity", 0))
-                if vel >= 0.50:  # 緩和: 0.75→0.50 (低velocityのMoEノートも採用)
+                if vel >= 0.60:  # 0.50 -> 0.60 (低確信度MoE過剰検出を抑制)
                     downgraded = dict(moe_n)
                     downgraded["velocity"] = vel * 0.85
                     fused_notes.append(downgraded)
@@ -491,11 +494,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             moe_coverage = 1.0
             
         if moe_coverage < 0.50:
-            # MoE 信頼性低: BP の判定を優先し、フィルタを大幅に緩和
-            BP_ONLY_THRESHOLD = 0.05
+            # MoE 信頼性低: BP の判定を優先
+            BP_ONLY_THRESHOLD = 0.10
         else:
-            # MoE 信頼性高: 従来通り（ただし 0.50 → 0.20 に引き下げ済み）
-            BP_ONLY_THRESHOLD = 0.20
+            # MoE 信頼性高: 7モデルMoEが検出しなかったBP過剰検出（倍音・残響）を抑制
+            BP_ONLY_THRESHOLD = 0.35
             
         report("notes", f"[Ensemble] MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), threshold: {BP_ONLY_THRESHOLD}")
         bp_only_added = 0
@@ -961,8 +964,49 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
 
 
+    # --- 同一弦での同時発音（物理的不可能）の除去 ---
+    same_str_removed = 0
+    if len(notes) > 1:
+        notes.sort(key=lambda n: float(n.get("start", 0)))
+        cleaned_notes = []
+        idx = 0
+        while idx < len(notes):
+            n = notes[idx]
+            s = n.get("string")
+            t = float(n.get("start", 0))
+            if s is None:
+                cleaned_notes.append(n)
+                idx += 1
+                continue
+            # 同一弦の完全同時発音(<=15ms)を収集
+            cluster = [n]
+            j = idx + 1
+            while j < len(notes):
+                n_next = notes[j]
+                if float(n_next.get("start", 0)) - t <= 0.015:
+                    if n_next.get("string") == s:
+                        cluster.append(n_next)
+                    j += 1
+                else:
+                    break
+            if len(cluster) == 1:
+                cleaned_notes.append(n)
+                idx += 1
+            else:
+                def get_score(item):
+                    if item.get("_hard_protect_string"):
+                        return 10.0
+                    return float(item.get("velocity", 0.5))
+                best_note = max(cluster, key=get_score)
+                cleaned_notes.append(best_note)
+                same_str_removed += (len(cluster) - 1)
+                idx = j
+        notes = cleaned_notes
+        if same_str_removed > 0:
+            report("assign", f"同一弦同時発音フィルタ: {same_str_removed}ノート除去 (物理的重複解消)")
+
     # --- 後処理1: ノート重複除去 ---
-    # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.08秒）で重複検出される場合
+    # Pass 1: 完全重複 — 同一ピッチが短い時間窓内（<0.05秒）で重複検出される場合
     notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
     DEDUP_WINDOW = 0.05  # 緩和: 0.08→0.05秒 (速いパッセージを保護)
     dedup_count = 0

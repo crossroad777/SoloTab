@@ -586,14 +586,37 @@ def validate_notes_by_music_theory(
                 elif d_min >= 0.09:   # オフグリッド（ノイズ等）
                     s_rhythm = -0.30
                     
+        # 2.5 極端に短いduration (<30ms) または極低velocityノイズの除去
+        dur = float(n.get("duration", float(n.get("end", 0.0)) - t))
+        is_hard_protect = bool(n.get("_hard_protect_string") is not None)
+        is_chord_tone = bool(s_harmonic >= 0.30)
+        
+        # 安全装置: ハードプロテクトまたはコード構成音は保護ボーナス
+        if is_hard_protect:
+            mvs_bonus = 0.30
+        elif is_chord_tone:
+            mvs_bonus = 0.15
+        else:
+            mvs_bonus = 0.0
+            
+        # 極端に短い duration (<30ms) かつ 非保護
+        if dur < 0.03 and not (is_hard_protect or is_chord_tone):
+            removed_count += 1
+            continue
+            
+        # 極低velocityノイズ (vel < 0.15 かつ オフグリッド)
+        if vel < 0.15 and s_rhythm <= -0.20 and not (is_hard_protect or is_chord_tone):
+            removed_count += 1
+            continue
+
         # 3. 総合MVS判定
-        mvs = vel + s_harmonic + s_rhythm
+        mvs = vel + s_harmonic + s_rhythm + mvs_bonus
         
         n["_mvs"] = float(mvs)
         n["_s_harmonic"] = float(s_harmonic)
         n["_s_rhythm"] = float(s_rhythm)
         
-        if mvs >= threshold:
+        if mvs >= threshold or is_hard_protect:
             validated_notes.append(n)
         else:
             removed_count += 1

@@ -1,0 +1,35 @@
+[
+  {
+    "vote_threshold": 4,
+    "pitch_f1": 0.8518,
+    "pitch_precision": 0.8153,
+    "pitch_recall": 0.8929,
+    "string_accuracy": 0.8118,
+    "a1_false_negative": 87,
+    "a2_false_positive": 238,
+    "a3_pitch_mismatch": 197,
+    "elapsed_sec": 114.7675142288208
+  },
+  {
+    "vote_threshold": 5,
+    "pitch_f1": 0.8521,
+    "pitch_precision": 0.8196,
+    "pitch_recall": 0.8885,
+    "string_accuracy": 0.8105,
+    "a1_false_negative": 87,
+    "a2_false_positive": 238,
+    "a3_pitch_mismatch": 197,
+    "elapsed_sec": 114.58596968650818
+  },
+  {
+    "vote_threshold": 6,
+    "pitch_f1": 0.8562,
+    "pitch_precision": 0.8324,
+    "pitch_recall": 0.8828,
+    "string_accuracy": 0.8153,
+    "a1_false_negative": 87,
+    "a2_false_positive": 238,
+    "a3_pitch_mismatch": 197,
+    "elapsed_sec": 114.39757704734802
+  }
+]
