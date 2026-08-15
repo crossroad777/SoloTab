@@ -268,271 +268,111 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                 ET.SubElement(note_el, "voice").text = "1"
                 ET.SubElement(note_el, "type").text = "whole"
             else:
-                bar_notes.sort(key=lambda e: float(e["beat_pos"]))
-                groups: List[List[dict]] = _group_by_time(bar_notes, threshold=0.1)
+                # 2声部（Voice 1: Melody/Arpeggio, Voice 2: Bass）の完全分離
+                v1_notes = [e for e in bar_notes if not (e.get("is_bass") or int(e.get("pitch", 60)) <= 52 or int(e.get("string", 1)) >= 4)]
+                v2_notes = [e for e in bar_notes if (e.get("is_bass") or int(e.get("pitch", 60)) <= 52 or int(e.get("string", 1)) >= 4)]
 
-                current_pos: int = 0
-                for group_idx, group in enumerate(groups):
-                    target_pos: int = int(float(group[0]["beat_pos"]))
-                    gap: int = target_pos - current_pos
-                    if gap > 0:
-                        rest_el = ET.SubElement(measure, "note")
-                        ET.SubElement(rest_el, "rest")
-                        ET.SubElement(rest_el, "duration").text = str(gap)
-                        ET.SubElement(rest_el, "voice").text = "1"
-                        ET.SubElement(rest_el, "type").text = _duration_to_type(gap, divisions)
+                # --- Voice 1 (Melody / Arpeggio) ---
+                if v1_notes:
+                    v1_notes.sort(key=lambda e: float(e["beat_pos"]))
+                    v1_groups = _group_by_time(v1_notes, threshold=0.1)
+                    current_pos = 0
+                    for g_idx, group in enumerate(v1_groups):
+                        t_pos = int(float(group[0]["beat_pos"]))
+                        gap = t_pos - current_pos
+                        if gap > 0:
+                            rest_el = ET.SubElement(measure, "note")
+                            ET.SubElement(rest_el, "rest")
+                            ET.SubElement(rest_el, "duration").text = str(gap)
+                            ET.SubElement(rest_el, "voice").text = "1"
+                            ET.SubElement(rest_el, "type").text = _duration_to_type(gap, divisions)
+                            if is_triplet_mode and gap in [4, 8]:
+                                tm = ET.SubElement(rest_el, "time-modification")
+                                ET.SubElement(tm, "actual-notes").text = "3"
+                                ET.SubElement(tm, "normal-notes").text = "2"
+                            current_pos = t_pos
 
-                        if is_triplet_mode and gap in [4, 8]:
-                            tm = ET.SubElement(rest_el, "time-modification")
-                            ET.SubElement(tm, "actual-notes").text = "3"
-                            ET.SubElement(tm, "normal-notes").text = "2"
-                        current_pos = target_pos
+                        next_t = bar_total if g_idx + 1 >= len(v1_groups) else int(float(v1_groups[g_idx + 1][0]["beat_pos"]))
+                        gap_next = max(1, min(next_t - t_pos, bar_total - t_pos))
 
-                    next_target: int = bar_total if group_idx + 1 >= len(groups) else int(float(groups[group_idx + 1][0]["beat_pos"]))
-                    gap_to_next: int = max(1, min(next_target - target_pos, bar_total - target_pos))
+                        for i, entry in enumerate(group):
+                            dur = int(entry.get("duration_divs", gap_next))
+                            dur = min(dur, gap_next, bar_total - t_pos)
+                            tech = str(entry.get("technique") or "normal")
+                            pitch = int(entry["pitch"])
+                            string_num = int(entry.get("string", 1))
+                            fret_val = int(entry.get("fret", 0))
 
-                    for i, entry in enumerate(group):
-                        is_bass_note = entry.get("is_bass", False) or int(entry.get("pitch", 60)) <= 52 or int(entry.get("string", 1)) >= 4
-                        if is_bass_note:
-                            dur = int(entry.get("duration_divs", bar_total - target_pos))
-                            dur = min(dur, bar_total - target_pos)
-                        else:
-                            dur = int(entry.get("duration_divs", gap_to_next))
-                            dur = min(dur, gap_to_next, bar_total - target_pos)
-                        
-                        tech = str(entry.get("technique") or "normal")
-                        string_num = int(entry.get("string", 1))
-                        fret_val = int(entry.get("fret", 0))
-                        pitch = int(entry["pitch"])
-                        
-                        # Body Hit (bh) Handling: clamp pitch to lowest open string (usually 6th string, tuning[0])
-                        is_body_hit = (tech in ("bh", "body_hit"))
-                        if is_body_hit:
-                            # Clamp to lowest tuning pitch
-                            pitch = tuning[0] if tuning else 40
-                            fret_val = 0
-                        
-                        note_el = ET.SubElement(measure, "note")
-                        if i > 0: ET.SubElement(note_el, "chord")
-                        pitch_el = ET.SubElement(note_el, "pitch")
-                        ET.SubElement(pitch_el, "step").text = _midi_to_step(pitch)
-                        alter = _midi_to_alter(pitch)
-                        if alter != 0: ET.SubElement(pitch_el, "alter").text = str(alter)
-                        ET.SubElement(pitch_el, "octave").text = str(_midi_to_octave(pitch))
-                        ET.SubElement(note_el, "duration").text = str(dur)
-                        voice = "2" if pitch <= 52 else "1"
-                        ET.SubElement(note_el, "voice").text = voice
-                        ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
+                            note_el = ET.SubElement(measure, "note")
+                            if i > 0: ET.SubElement(note_el, "chord")
+                            pitch_el = ET.SubElement(note_el, "pitch")
+                            ET.SubElement(pitch_el, "step").text = _midi_to_step(pitch)
+                            alter = _midi_to_alter(pitch)
+                            if alter != 0: ET.SubElement(pitch_el, "alter").text = str(alter)
+                            ET.SubElement(pitch_el, "octave").text = str(_midi_to_octave(pitch))
+                            ET.SubElement(note_el, "duration").text = str(dur)
+                            ET.SubElement(note_el, "voice").text = "1"
+                            ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
+                            if entry.get("is_dotted") or dur in [9, 18, 36, 54]:
+                                ET.SubElement(note_el, "dot")
+                            
+                            is_trip = entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8])
+                            if is_trip:
+                                tm = ET.SubElement(note_el, "time-modification")
+                                ET.SubElement(tm, "actual-notes").text = "3"
+                                ET.SubElement(tm, "normal-notes").text = "2"
+                            ET.SubElement(note_el, "stem").text = "up"
 
-                        is_dotted = entry.get("is_dotted") or (dur in [9, 18, 36, 54])
-                        if is_dotted:
-                            ET.SubElement(note_el, "dot")
-                        
-                        is_trip = not is_bass_note and (entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8]))
-                        if is_trip:
-                            tm = ET.SubElement(note_el, "time-modification")
-                            ET.SubElement(tm, "actual-notes").text = "3"
-                            ET.SubElement(tm, "normal-notes").text = "2"
-                        if entry.get("_tie_start"):
-                            ET.SubElement(note_el, "tie", type="start")
-                        ET.SubElement(note_el, "stem").text = "up" if voice == "1" else "down"
-
-                        # Special noteheads (Body hit / nail attack / dead note)
-                        if is_body_hit:
-                            ET.SubElement(note_el, "notehead").text = "circle-x"
-                        elif tech in ("na", "nail_attack"):
-                            ET.SubElement(note_el, "notehead").text = "x"
-                        elif tech == "x":
-                            ET.SubElement(note_el, "notehead").text = "x"
-
-                        # notations: fret/string + technique
-                        notations = ET.SubElement(note_el, "notations")
-                        if entry.get("_tie_start"):
-                            ET.SubElement(notations, "tied", type="start")
-
-                        # Tuplet brackets across all measures
-                        if is_trip:
-                            t_role = entry.get("tuplet_role", "none")
-                            if t_role == "start":
-                                ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                            elif t_role == "stop":
-                                ET.SubElement(notations, "tuplet", type="stop")
-                            elif t_role == "start_stop":
-                                ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                                ET.SubElement(notations, "tuplet", type="stop")
-                            elif t_role == "none" and i == 0:
-                                cycle = 12
-                                rem = target_pos % cycle
-                                if rem == 0:
+                            notations = ET.SubElement(note_el, "notations")
+                            if is_trip:
+                                t_role = entry.get("tuplet_role", "none")
+                                if t_role == "start" or (t_role == "none" and t_pos % 12 == 0):
                                     ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                                elif rem >= 8:
+                                elif t_role == "stop" or (t_role == "none" and t_pos % 12 >= 8):
                                     ET.SubElement(notations, "tuplet", type="stop")
 
-                        # --- PREVIOUS TECHNIQUE STOP (type="stop") ---
-                        if string_num in active_slurs:
-                            prev_slur = active_slurs[string_num]
-                            technical_stop = ET.SubElement(notations, "technical")
-                            if prev_slur == "h":
-                                ET.SubElement(technical_stop, "hammer-on", type="stop")
-                            elif prev_slur == "p":
-                                ET.SubElement(technical_stop, "pull-off", type="stop")
-                            del active_slurs[string_num]
-                            if string_num in active_start_elements:
-                                del active_start_elements[string_num]
+                            tech_el = ET.SubElement(notations, "technical")
+                            ET.SubElement(tech_el, "string").text = str(string_num)
+                            ET.SubElement(tech_el, "fret").text = str(fret_val)
 
-                        if string_num in active_slides:
-                            ET.SubElement(notations, "slide", type="stop")
-                            del active_slides[string_num]
-                            if string_num in active_start_elements:
-                                del active_start_elements[string_num]
+                        current_pos = min(bar_total, t_pos + dur)
 
-                        if string_num in active_gliss:
-                            ET.SubElement(notations, "glissando", type="stop")
-                            del active_gliss[string_num]
-                            if string_num in active_start_elements:
-                                del active_start_elements[string_num]
+                    if current_pos < bar_total:
+                        r_gap = bar_total - current_pos
+                        rest_el = ET.SubElement(measure, "note")
+                        ET.SubElement(rest_el, "rest")
+                        ET.SubElement(rest_el, "duration").text = str(r_gap)
+                        ET.SubElement(rest_el, "voice").text = "1"
+                        ET.SubElement(rest_el, "type").text = _duration_to_type(r_gap, divisions)
 
-                        technical = ET.SubElement(notations, "technical")
-                        ET.SubElement(technical, "string").text = str(string_num)
-                        ET.SubElement(technical, "fret").text = str(fret_val)
+                # --- Backup to Measure Start for Voice 2 ---
+                if v1_notes and v2_notes:
+                    backup_el = ET.SubElement(measure, "backup")
+                    ET.SubElement(backup_el, "duration").text = str(bar_total)
 
-                        # Pluck direction (down-bow / up-bow)
-                        pluck_dir = entry.get("pluck_direction")
-                        if pluck_dir == "down":
-                            ET.SubElement(technical, "down-bow")
-                        elif pluck_dir == "up":
-                            ET.SubElement(technical, "up-bow")
+                # --- Voice 2 (Bass) ---
+                if v2_notes:
+                    v2_notes.sort(key=lambda e: float(e["beat_pos"]))
+                    b_entry = v2_notes[0]
+                    b_pitch = int(b_entry["pitch"])
+                    b_dur = bar_total  # 付点2分音符 / 小節全体
 
-                        # Left-hand fingering (1=index, 2=middle, 3=ring, 4=pinky)
-                        finger = entry.get("finger") or entry.get("left_hand_finger")
-                        if finger is not None and finger > 0:
-                            ET.SubElement(technical, "fingering").text = str(finger)
+                    note_el = ET.SubElement(measure, "note")
+                    pitch_el = ET.SubElement(note_el, "pitch")
+                    ET.SubElement(pitch_el, "step").text = _midi_to_step(b_pitch)
+                    alter = _midi_to_alter(b_pitch)
+                    if alter != 0: ET.SubElement(pitch_el, "alter").text = str(alter)
+                    ET.SubElement(pitch_el, "octave").text = str(_midi_to_octave(b_pitch))
+                    ET.SubElement(note_el, "duration").text = str(b_dur)
+                    ET.SubElement(note_el, "voice").text = "2"
+                    ET.SubElement(note_el, "type").text = _duration_to_type(b_dur, divisions)
+                    ET.SubElement(note_el, "dot")  # 付点
+                    ET.SubElement(note_el, "stem").text = "down"
 
-                        # Right-hand plucking finger (PIMA)
-                        r_finger = entry.get("r_finger") or entry.get("pluck")
-                        if r_finger is not None:
-                            pima_map = {1: 'p', 2: 'i', 3: 'm', 4: 'a'}
-                            r_finger_str = pima_map.get(r_finger, str(r_finger))
-                            if r_finger_str in ('p', 'i', 'm', 'a'):
-                                ET.SubElement(technical, "pluck").text = r_finger_str
-
-                        # --- CURRENT TECHNIQUE START (type="start" / single notations) ---
-                        if tech == "h":
-                            ho = ET.SubElement(technical, "hammer-on", type="start"); ho.text = "H"
-                            technique_map.append("hammer_on")
-                            active_slurs[string_num] = "h"
-                            active_start_elements[string_num] = (technical, ho)
-                        elif tech == "p":
-                            po = ET.SubElement(technical, "pull-off", type="start"); po.text = "P"
-                            technique_map.append("pull_off")
-                            active_slurs[string_num] = "p"
-                            active_start_elements[string_num] = (technical, po)
-                        elif tech == "/":
-                            sl = ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
-                            technique_map.append("slide_up")
-                            active_slides[string_num] = "/"
-                            active_start_elements[string_num] = (notations, sl)
-                        elif tech == "\\":
-                            sl = ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
-                            technique_map.append("slide_down")
-                            active_slides[string_num] = "\\"
-                            active_start_elements[string_num] = (notations, sl)
-                        elif tech == "gliss_up":
-                            gl = ET.SubElement(notations, "glissando", type="start", **{"line-type": "wavy"})
-                            gl.text = "gliss."
-                            technique_map.append("gliss_up")
-                            active_gliss[string_num] = "gliss_up"
-                            active_start_elements[string_num] = (notations, gl)
-                        elif tech == "gliss_down":
-                            gl = ET.SubElement(notations, "glissando", type="start", **{"line-type": "wavy"})
-                            gl.text = "gliss."
-                            technique_map.append("gliss_down")
-                            active_gliss[string_num] = "gliss_down"
-                            active_start_elements[string_num] = (notations, gl)
-                        elif tech in ("ah", "artificial_harmonic"):
-                            harmonic_el = ET.SubElement(technical, "harmonic")
-                            ET.SubElement(harmonic_el, "artificial")
-                            technique_map.append("harmonic")
-                        elif tech in ("th", "tapped_harmonic"):
-                            harmonic_el = ET.SubElement(technical, "harmonic")
-                            ET.SubElement(harmonic_el, "tapped")
-                            # Add text direction above
-                            dir_el = ET.SubElement(measure, "direction", placement="above")
-                            dt = ET.SubElement(dir_el, "direction-type")
-                            words = ET.SubElement(dt, "words", **{"font-style": "italic", "font-weight": "bold", "font-size": "8"})
-                            words.text = "T.H."
-                            technique_map.append("harmonic")
-                        elif tech in ("na", "nail_attack"):
-                            dir_el = ET.SubElement(measure, "direction", placement="above")
-                            dt = ET.SubElement(dir_el, "direction-type")
-                            words = ET.SubElement(dt, "words", **{"font-style": "italic", "font-size": "7"})
-                            words.text = "N.A."
-                            technique_map.append("ghost_note")
-                        elif is_body_hit:
-                            dir_el = ET.SubElement(measure, "direction", placement="above")
-                            dt = ET.SubElement(dir_el, "direction-type")
-                            words = ET.SubElement(dt, "words", **{"font-style": "italic", "font-weight": "bold", "font-size": "8"})
-                            words.text = "Body"
-                            technique_map.append("ghost_note")
-                        elif tech == "palm_mute" or tech == "pm":
-                            technique_map.append("palm_mute")
-                        elif tech == "harmonic":
-                            ET.SubElement(technical, "harmonic"); technique_map.append("harmonic")
-                        elif tech == "b":
-                            bend_el = ET.SubElement(technical, "bend")
-                            ET.SubElement(bend_el, "bend-alter").text = "2"; technique_map.append("bend")
-                        elif tech == "pre_bend":
-                            bend_el = ET.SubElement(technical, "bend")
-                            ET.SubElement(bend_el, "pre-bend")
-                            ET.SubElement(bend_el, "bend-alter").text = "2"; technique_map.append("bend")
-                        elif tech == "release_bend":
-                            bend_el = ET.SubElement(technical, "bend")
-                            ET.SubElement(bend_el, "release")
-                            ET.SubElement(bend_el, "bend-alter").text = "2"; technique_map.append("bend")
-                        elif tech == "bend_release":
-                            bend_el = ET.SubElement(technical, "bend")
-                            ET.SubElement(bend_el, "bend-alter").text = "2"
-                            ET.SubElement(bend_el, "release"); technique_map.append("bend")
-                        elif tech == "quarter_bend":
-                            bend_el = ET.SubElement(technical, "bend")
-                            ET.SubElement(bend_el, "bend-alter").text = "0.5"; technique_map.append("bend")
-                        elif tech == "slide_in":
-                            ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
-                            technique_map.append("slide_up")
-                        elif tech == "slide_out":
-                            ET.SubElement(notations, "slide", type="start", **{"line-type": "solid"})
-                            technique_map.append("slide_down")
-                        elif tech == "arpeggio":
-                            ET.SubElement(notations, "arpeggiate")
-                            technique_map.append("arpeggio")
-                        elif tech == "tremolo":
-                            ornaments = notations.find("ornaments")
-                            if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
-                            ET.SubElement(ornaments, "tremolo", type="single").text = "3"
-                            technique_map.append("tremolo")
-                        elif tech == "vibrato":
-                            ornaments = notations.find("ornaments")
-                            if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
-                            ET.SubElement(ornaments, "wavy-line", type="start"); technique_map.append("vibrato")
-                        elif tech == "x":
-                            technique_map.append("ghost_note")
-                        elif tech == "tr":
-                            ornaments = notations.find("ornaments")
-                            if ornaments is None: ornaments = ET.SubElement(notations, "ornaments")
-                            ET.SubElement(ornaments, "trill-mark"); technique_map.append("trill")
-                        elif tech == "let_ring":
-                            dir_el = ET.SubElement(measure, "direction", placement="below")
-                            dt = ET.SubElement(dir_el, "direction-type")
-                            words = ET.SubElement(dt, "words", **{"font-style": "italic", "font-size": "7"})
-                            words.text = "let ring"
-                            technique_map.append("let_ring")
-                        else: technique_map.append("normal")
-
-                    current_pos = current_pos + gap_to_next
-
-                remaining = bar_total - current_pos
-                if remaining > 0:
-                    _add_forward(measure, remaining)
+                    notations = ET.SubElement(note_el, "notations")
+                    tech_el = ET.SubElement(notations, "technical")
+                    ET.SubElement(tech_el, "string").text = str(b_entry.get("string", 6))
+                    ET.SubElement(tech_el, "fret").text = str(b_entry.get("fret", 0))
 
             # 1スタッフ構造: backup/forwardは不要
             # AlphaTab ScoreTabプロファイルが自動的にTAB段を生成する
