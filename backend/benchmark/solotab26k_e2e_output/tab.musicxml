@@ -336,27 +336,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <pitch>
           <step>B</step>
           <octave>3</octave>
@@ -496,7 +475,7 @@
       </backup>
       <note>
         <pitch>
-          <step>E</step>
+          <step>A</step>
           <octave>3</octave>
         </pitch>
         <duration>36</duration>
@@ -506,7 +485,7 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>5</string>
+            <string>4</string>
             <fret>7</fret>
           </technical>
         </notations>
@@ -626,28 +605,6 @@
       <note>
         <pitch>
           <step>B</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
           <octave>3</octave>
         </pitch>
         <duration>4</duration>
@@ -659,6 +616,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="stop"/>
           <technical>
             <string>2</string>
             <fret>0</fret>
@@ -744,7 +702,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -753,8 +711,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>2</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -799,28 +757,6 @@
       </note>
       <note>
         <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
           <step>B</step>
           <octave>3</octave>
         </pitch>
@@ -833,6 +769,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="stop"/>
           <technical>
             <string>2</string>
             <fret>0</fret>
@@ -1614,27 +1551,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>5</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <rest/>
         <duration>4</duration>
         <voice>1</voice>
@@ -1861,27 +1777,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>5</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <pitch>
           <step>C</step>
           <octave>4</octave>
@@ -1990,7 +1885,7 @@
       <note>
         <pitch>
           <step>A</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -1999,8 +1894,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>7</fret>
+            <string>5</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -2091,28 +1986,6 @@
           <tuplet type="start" bracket="yes"/>
           <technical>
             <string>1</string>
-            <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>F</step>
-          <alter>1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
             <fret>7</fret>
           </technical>
         </notations>
@@ -2309,6 +2182,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="stop"/>
           <technical>
             <string>2</string>
             <fret>4</fret>
@@ -2316,51 +2190,18 @@
         </notations>
       </note>
       <note>
+        <rest/>
+        <duration>8</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+        <time-modification>
+          <actual-notes>3</actual-notes>
+          <normal-notes>2</normal-notes>
+        </time-modification>
+      </note>
+      <note>
         <pitch>
           <step>D</step>
-          <alter>1</alter>
-          <octave>5</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>11</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>F</step>
           <alter>1</alter>
           <octave>4</octave>
         </pitch>
@@ -2374,27 +2215,6 @@
         <stem>up</stem>
         <notations>
           <tuplet type="start" bracket="yes"/>
-          <technical>
-            <string>2</string>
-            <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <pitch>
-          <step>D</step>
-          <alter>1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
           <technical>
             <string>2</string>
             <fret>4</fret>
@@ -2501,8 +2321,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>6</string>
-            <fret>7</fret>
+            <string>5</string>
+            <fret>2</fret>
           </technical>
         </notations>
       </note>
@@ -2879,28 +2699,6 @@
       <note>
         <pitch>
           <step>B</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="start" bracket="yes"/>
-          <technical>
-            <string>1</string>
-            <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
           <octave>3</octave>
         </pitch>
         <duration>4</duration>
@@ -2912,6 +2710,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="start" bracket="yes"/>
           <technical>
             <string>2</string>
             <fret>0</fret>
@@ -2976,7 +2775,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -2985,8 +2784,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>2</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -3147,7 +2946,7 @@
         <root>
           <root-step>B</root-step>
         </root>
-        <kind>minor</kind>
+        <kind>major</kind>
       </harmony>
       <note>
         <rest/>
@@ -3858,7 +3657,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -3867,8 +3666,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>5</string>
-            <fret>7</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -4276,7 +4075,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -4285,8 +4084,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>2</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -5431,27 +5230,6 @@
       <note>
         <chord/>
         <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>5</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
           <step>C</step>
           <octave>4</octave>
         </pitch>
@@ -5823,7 +5601,7 @@
       </harmony>
       <note>
         <rest/>
-        <duration>8</duration>
+        <duration>4</duration>
         <voice>1</voice>
         <type>eighth</type>
         <time-modification>
@@ -5846,6 +5624,26 @@
         <stem>up</stem>
         <notations>
           <tuplet type="start" bracket="yes"/>
+          <technical>
+            <string>1</string>
+            <fret>7</fret>
+          </technical>
+        </notations>
+      </note>
+      <note>
+        <pitch>
+          <step>B</step>
+          <octave>4</octave>
+        </pitch>
+        <duration>4</duration>
+        <voice>1</voice>
+        <type>eighth</type>
+        <time-modification>
+          <actual-notes>3</actual-notes>
+          <normal-notes>2</normal-notes>
+        </time-modification>
+        <stem>up</stem>
+        <notations>
           <tuplet type="stop"/>
           <technical>
             <string>1</string>
@@ -5892,8 +5690,8 @@
         <notations>
           <tuplet type="start" bracket="yes"/>
           <technical>
-            <string>2</string>
-            <fret>4</fret>
+            <string>3</string>
+            <fret>8</fret>
           </technical>
         </notations>
       </note>
@@ -5914,27 +5712,6 @@
           <technical>
             <string>1</string>
             <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>B</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>3</string>
-            <fret>4</fret>
           </technical>
         </notations>
       </note>
@@ -5955,28 +5732,6 @@
           <tuplet type="stop"/>
           <technical>
             <string>1</string>
-            <fret>7</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
-          <step>F</step>
-          <alter>1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
             <fret>7</fret>
           </technical>
         </notations>
@@ -6051,7 +5806,7 @@
       <note>
         <pitch>
           <step>B</step>
-          <octave>4</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -6060,7 +5815,7 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>1</string>
+            <string>6</string>
             <fret>7</fret>
           </technical>
         </notations>
@@ -6493,7 +6248,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -6502,8 +6257,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>2</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -6687,7 +6442,7 @@
         <root>
           <root-step>B</root-step>
         </root>
-        <kind>minor</kind>
+        <kind>major</kind>
       </harmony>
       <note>
         <rest/>
@@ -7145,27 +6900,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>G</step>
-          <octave>3</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>3</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <rest/>
         <duration>3</duration>
         <voice>1</voice>
@@ -7194,28 +6928,6 @@
       </note>
       <note>
         <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
           <step>G</step>
           <octave>3</octave>
         </pitch>
@@ -7228,6 +6940,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="stop"/>
           <technical>
             <string>3</string>
             <fret>0</fret>
@@ -7311,8 +7024,8 @@
         <notations>
           <tuplet type="stop"/>
           <technical>
-            <string>2</string>
-            <fret>0</fret>
+            <string>3</string>
+            <fret>4</fret>
           </technical>
         </notations>
       </note>
@@ -7684,6 +7397,7 @@
         <stem>up</stem>
         <notations>
           <tuplet type="start" bracket="yes"/>
+          <tuplet type="stop"/>
           <technical>
             <string>3</string>
             <fret>1</fret>
@@ -7691,35 +7405,10 @@
         </notations>
       </note>
       <note>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>0</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <rest/>
-        <duration>8</duration>
+        <duration>12</duration>
         <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
+        <type>quarter</type>
       </note>
       <note>
         <pitch>
@@ -8243,8 +7932,8 @@
         <notations>
           <tuplet type="start" bracket="yes"/>
           <technical>
-            <string>2</string>
-            <fret>7</fret>
+            <string>1</string>
+            <fret>2</fret>
           </technical>
         </notations>
       </note>
@@ -8263,18 +7952,15 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="stop"/>
           <technical>
-            <string>3</string>
-            <fret>8</fret>
+            <string>2</string>
+            <fret>4</fret>
           </technical>
         </notations>
       </note>
       <note>
-        <pitch>
-          <step>F</step>
-          <alter>1</alter>
-          <octave>4</octave>
-        </pitch>
+        <rest/>
         <duration>4</duration>
         <voice>1</voice>
         <type>eighth</type>
@@ -8282,14 +7968,6 @@
           <actual-notes>3</actual-notes>
           <normal-notes>2</normal-notes>
         </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="stop"/>
-          <technical>
-            <string>1</string>
-            <fret>2</fret>
-          </technical>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -8821,28 +8499,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>G</step>
-          <alter>1</alter>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>9</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <pitch>
           <step>C</step>
           <alter>1</alter>
@@ -8892,7 +8548,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -8901,8 +8557,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>5</string>
-            <fret>7</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -9146,7 +8802,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -9155,8 +8811,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>5</string>
-            <fret>7</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -9339,27 +8995,6 @@
         </notations>
       </note>
       <note>
-        <chord/>
-        <pitch>
-          <step>E</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>5</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
         <rest/>
         <duration>4</duration>
         <voice>1</voice>
@@ -9440,7 +9075,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -9449,8 +9084,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>5</string>
-            <fret>7</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -9614,10 +9249,7 @@
         </notations>
       </note>
       <note>
-        <pitch>
-          <step>A</step>
-          <octave>4</octave>
-        </pitch>
+        <rest/>
         <duration>4</duration>
         <voice>1</voice>
         <type>eighth</type>
@@ -9625,14 +9257,6 @@
           <actual-notes>3</actual-notes>
           <normal-notes>2</normal-notes>
         </time-modification>
-        <stem>up</stem>
-        <notations>
-          <tuplet type="start" bracket="yes"/>
-          <technical>
-            <string>1</string>
-            <fret>5</fret>
-          </technical>
-        </notations>
       </note>
       <note>
         <pitch>
@@ -9649,6 +9273,7 @@
         </time-modification>
         <stem>up</stem>
         <notations>
+          <tuplet type="start" bracket="yes"/>
           <technical>
             <string>1</string>
             <fret>9</fret>
@@ -9831,27 +9456,6 @@
       <note>
         <chord/>
         <pitch>
-          <step>A</step>
-          <octave>4</octave>
-        </pitch>
-        <duration>4</duration>
-        <voice>1</voice>
-        <type>eighth</type>
-        <time-modification>
-          <actual-notes>3</actual-notes>
-          <normal-notes>2</normal-notes>
-        </time-modification>
-        <stem>up</stem>
-        <notations>
-          <technical>
-            <string>2</string>
-            <fret>10</fret>
-          </technical>
-        </notations>
-      </note>
-      <note>
-        <chord/>
-        <pitch>
           <step>C</step>
           <alter>1</alter>
           <octave>4</octave>
@@ -9927,7 +9531,7 @@
       <note>
         <pitch>
           <step>A</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -9936,8 +9540,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>7</fret>
+            <string>5</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>
@@ -10166,7 +9770,7 @@
       <note>
         <pitch>
           <step>E</step>
-          <octave>3</octave>
+          <octave>2</octave>
         </pitch>
         <duration>36</duration>
         <voice>2</voice>
@@ -10175,8 +9779,8 @@
         <stem>down</stem>
         <notations>
           <technical>
-            <string>4</string>
-            <fret>2</fret>
+            <string>6</string>
+            <fret>0</fret>
           </technical>
         </notations>
       </note>

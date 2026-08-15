@@ -638,22 +638,21 @@ def validate_notes_by_music_theory(
     return validated_notes
 
 
-def filter_overtones_by_music_theory(notes: List[dict], time_threshold: float = 0.05) -> List[dict]:
+def filter_overtones_by_music_theory(notes: List[dict], time_threshold: float = 0.08) -> List[dict]:
     """
-    同時発音グループ（<=50ms）内において、基本音に対してオクターブ上（+12, +24）または
-    5度上（+19, +7）であり、音量が基本音より有意に弱く、かつコード構成音でない倍音誤検出を除外する。
-    
-    安全装置:
-      - CNNハードプロテクト（_hard_protect_string）は除外しない
-      - コード構成音（_s_harmonic >= 0.30）は除外しない
-      - 基本音とオクターブ音がほぼ同等音量（メロディのオクターブ奏法）の場合は除外しない
+    Alice Lin (2026) 倍音抑制ゲート (Harmonic Gate):
+    低音（ベース音/開放弦）の倍音系列 (+12, +19, +24, +28, +31 semitones) に位置し、
+    アタック/velocityが基本音より弱いゴースト倍音・共鳴音を完全に除外する。
     """
     if len(notes) < 2:
         return notes
         
     sorted_notes = sorted(notes, key=lambda n: float(n.get("start", n.get("start_time", 0.0))))
     
-    # 同時発音グループに分割
+    # 倍音系列半音差: 第2倍音(+12), 第3倍音(+19), 第4倍音(+24), 第5倍音(+28), 第6倍音(+31)
+    HARMONIC_INTERVALS = {12, 19, 24, 28, 31}
+    
+    # 1. 時間グループ（同時発音）での倍音判定
     groups = []
     current_group = []
     for n in sorted_notes:
@@ -671,17 +670,15 @@ def filter_overtones_by_music_theory(notes: List[dict], time_threshold: float = 
         groups.append(current_group)
         
     filtered = []
+    removed_overtones = 0
     for grp in groups:
         if len(grp) < 2:
             filtered.extend(grp)
             continue
             
-        # グループ内の基本音と倍音候補を判定
         to_remove = set()
         for idx_high, n_high in enumerate(grp):
             if n_high.get("_hard_protect_string"):
-                continue
-            if n_high.get("_s_harmonic", 0.0) >= 0.30:  # コード構成音は保護
                 continue
                 
             p_high = int(n_high.get("pitch", 60))
@@ -695,17 +692,45 @@ def filter_overtones_by_music_theory(notes: List[dict], time_threshold: float = 
                 v_low = float(n_low.get("velocity", 0.5))
                 if v_low > 1.0: v_low /= 127.0
                 
-                # 低音側が基本音である条件: p_high > p_low
                 p_diff = p_high - p_low
-                # オクターブ上 (+12, +24) または 5度上 (+7, +19)
-                if p_diff in [12, 24, 19]:
-                    # 基本音より明確に音量が弱い (v_high < 0.65 * v_low)
-                    if v_high < (0.65 * v_low):
+                if p_diff in HARMONIC_INTERVALS:
+                    # 基本音より弱い場合 (倍音共鳴)
+                    if v_high < (0.75 * v_low):
                         to_remove.add(idx_high)
+                        removed_overtones += 1
                         break
                         
         for idx, n in enumerate(grp):
             if idx not in to_remove:
                 filtered.append(n)
                 
-    return filtered
+    # 2. 直前の持続低音（開放弦等）からの残響倍音除去
+    final_notes = []
+    last_bass_note = None
+    for n in filtered:
+        p = int(n.get("pitch", 60))
+        t = float(n.get("start", n.get("start_time", 0.0)))
+        vel = float(n.get("velocity", 0.5))
+        if vel > 1.0: vel /= 127.0
+        
+        # 低音弦ベース音の記録
+        if p <= 52:
+            last_bass_note = (t, p, vel)
+            final_notes.append(n)
+            continue
+            
+        # 先行ベース音の倍音チェック (300ms以内)
+        if last_bass_note is not None:
+            b_t, b_p, b_vel = last_bass_note
+            if t - b_t <= 0.35:
+                p_diff = p - b_p
+                if p_diff in HARMONIC_INTERVALS and vel < 0.60 * b_vel:
+                    removed_overtones += 1
+                    continue
+                    
+        final_notes.append(n)
+        
+    if removed_overtones > 0:
+        print(f"[music_theory] Harmonic Gate: removed {removed_overtones} resonance/overtone notes")
+        
+    return final_notes
