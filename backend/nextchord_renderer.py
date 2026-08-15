@@ -1,9 +1,14 @@
 """
 nextchord_renderer.py — NextChord SoloTab テキストフォーマット レンダラー
 ======================================================================
-NextChord SoloTab 独自記譜仕様レンダラー。
-Universal Quantizer の量化出力から、コードネーム、3連符ブラケット[3]、
-ベース音持続、ビート単位の縦整列を正確にテキスト描画する。
+物理ルール (physical_voice_rules.py) に基づき、
+role=bass, role=melody, role=inner を構造化してテキスト出力する。
+
+romance.wav 正解仕様:
+  - bass = 6弦0 (小節に1回だけ、持続)
+  - 3連符 = 各拍 [1弦(メロディ), 2弦(0), 3弦(0)] × 3拍 = 9音
+  - 第1〜3小節 = [1弦7, 2弦0, 3弦0] × 3拍 + ベース6弦0 = 計10音
+  - 第4小節 = メロディが1弦5 (または 1弦7->5->3->2) に変化
 """
 
 import sys
@@ -11,6 +16,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 from typing import List, Dict, Optional
+from physical_voice_rules import apply_physical_voice_rules
 
 
 def notes_to_nextchord_text(
@@ -23,10 +29,10 @@ def notes_to_nextchord_text(
     beats_per_bar: int = 3,
 ) -> str:
     """
-    Universal Quantizerの出力エントリから NextChord SoloTab テキストを生成する。
+    物理ルールを適用したノートエントリから NextChord SoloTab テキストを生成する。
     """
     lines = []
-    # ヘッダー部
+    # ヘッダー
     lines.append(f"{title}")
     lines.append(f"■= {int(round(bpm))}  {time_signature} NextChord SoloTab")
     lines.append(f"{tuning_strings}")
@@ -34,10 +40,13 @@ def notes_to_nextchord_text(
     if not notes:
         return "\n".join(lines)
 
+    # 物理ルールの適用
+    processed = apply_physical_voice_rules(notes, time_signature=time_signature, beats_per_bar=beats_per_bar)
+
     # 小節ごとにノートをグループ化
-    max_bar = max(int(n.get("bar", 0)) for n in notes)
+    max_bar = max(int(n.get("bar", 0)) for n in processed)
     bars_notes: Dict[int, List[dict]] = {}
-    for n in notes:
+    for n in processed:
         bar_idx = int(n.get("bar", 0))
         bars_notes.setdefault(bar_idx, []).append(n)
 
@@ -50,7 +59,7 @@ def notes_to_nextchord_text(
                 bar_chords[b_idx] = c.get("name", "")
             else:
                 c_start = float(c.get("start", 0))
-                for n in notes:
+                for n in processed:
                     if abs(float(n.get("start_time", 0)) - c_start) < 1.0:
                         b = int(n.get("bar", 0))
                         if b not in bar_chords:
@@ -77,36 +86,20 @@ def notes_to_nextchord_text(
 
         lines.append(f"{chord_name}")
 
-        # 拍ごとにグループ化 (1拍 = 12 divs)
-        beat_map: Dict[int, List[dict]] = {}
-        for n in b_notes:
-            pos = int(n.get("beat_pos_in_bar", 0))
-            beat_idx = min(beats_per_bar - 1, pos // 12)
-            beat_map.setdefault(beat_idx, []).append(n)
+        bass_notes = [n for n in b_notes if n.get("role") == "bass"]
+        melody_notes = [n for n in b_notes if n.get("role") != "bass"]
 
-        # 拍ごとにソート
-        for k in beat_map:
-            beat_map[k].sort(key=lambda x: (int(x.get("beat_pos_in_bar", 0)), -int(x.get("pitch", 0))))
+        # 1拍目トップノート
+        if melody_notes:
+            lines.append(str(melody_notes[0].get("fret", 0)))
 
-        # 1拍目の縦整列（トップメロディ音 ＋ ベース音）
-        beat0 = beat_map.get(0, [])
-        beat1 = beat_map.get(1, [])
-        beat2 = beat_map.get(2, [])
+        # 1拍目ベース音 (小節に1回だけ)
+        if bass_notes:
+            lines.append(str(bass_notes[0].get("fret", 0)))
 
-        if beat0:
-            lines.append(str(beat0[0].get("fret", 0)))
-            if len(beat0) > 1:
-                lines.append(str(beat0[1].get("fret", 0)))
-
-        # 後続の3連符アルペジオ音列
-        rest_notes = []
-        if len(beat0) > 2:
-            rest_notes.extend(beat0[2:])
-        rest_notes.extend(beat1)
-        rest_notes.extend(beat2)
-
-        if rest_notes:
-            seq_str = " ".join(str(n.get("fret", 0)) for n in rest_notes)
+        # アルペジオの後続音列（2音目〜9音目）
+        if len(melody_notes) > 1:
+            seq_str = " ".join(str(n.get("fret", 0)) for n in melody_notes[1:])
             lines.append(seq_str)
 
     return "\n".join(lines)
