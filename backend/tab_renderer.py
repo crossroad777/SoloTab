@@ -269,16 +269,33 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                 ET.SubElement(note_el, "type").text = "whole"
             else:
                 # 2声部（Voice 1: Melody/Arpeggio, Voice 2: Bass）の完全分離
-                v1_notes = [e for e in bar_notes if not (e.get("is_bass") or int(e.get("pitch", 60)) <= 52 or int(e.get("string", 1)) >= 4)]
                 v2_notes = [e for e in bar_notes if (e.get("is_bass") or int(e.get("pitch", 60)) <= 52 or int(e.get("string", 1)) >= 4)]
+                if not v2_notes and bar_notes:
+                    # 明示的な低音弦がない場合、小節内最低音（1拍目優先）をベース声部に配置
+                    sorted_by_pitch = sorted(bar_notes, key=lambda e: (float(e["beat_pos"]), int(e["pitch"])))
+                    v2_notes = [sorted_by_pitch[0]]
+                v1_notes = [e for e in bar_notes if e not in v2_notes]
 
                 # --- Voice 1 (Melody / Arpeggio) ---
                 if v1_notes:
                     v1_notes.sort(key=lambda e: float(e["beat_pos"]))
                     v1_groups = _group_by_time(v1_notes, threshold=0.1)
                     current_pos = 0
+
+                    # 拍ごとのグループ集計（3連符のstart/stopペアリング用）
+                    beat_groups_map = {}
                     for g_idx, group in enumerate(v1_groups):
                         t_pos = int(float(group[0]["beat_pos"]))
+                        b_idx = t_pos // int(divisions)
+                        beat_groups_map.setdefault(b_idx, []).append((g_idx, group, t_pos))
+
+                    for g_idx, group in enumerate(v1_groups):
+                        t_pos = int(float(group[0]["beat_pos"]))
+                        b_idx = t_pos // int(divisions)
+                        b_list = beat_groups_map.get(b_idx, [])
+                        is_first_in_beat = (b_list and b_list[0][0] == g_idx)
+                        is_last_in_beat  = (b_list and b_list[-1][0] == g_idx)
+
                         gap = t_pos - current_pos
                         if gap > 0:
                             rest_el = ET.SubElement(measure, "note")
@@ -316,7 +333,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                             if entry.get("is_dotted") or dur in [9, 18, 36, 54]:
                                 ET.SubElement(note_el, "dot")
                             
-                            is_trip = entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8])
+                            is_trip = entry.get("is_triplet", False) or is_triplet_mode or (dur in [2, 4, 8])
                             if is_trip:
                                 tm = ET.SubElement(note_el, "time-modification")
                                 ET.SubElement(tm, "actual-notes").text = "3"
@@ -324,11 +341,14 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                             ET.SubElement(note_el, "stem").text = "up"
 
                             notations = ET.SubElement(note_el, "notations")
-                            if is_trip:
-                                t_role = entry.get("tuplet_role", "none")
-                                if t_role == "start" or (t_role == "none" and t_pos % 12 == 0):
+                            if is_trip and i == 0:  # 和音の場合は最初のノートのみtupletタグを付与
+                                if len(b_list) > 1:
+                                    if is_first_in_beat:
+                                        ET.SubElement(notations, "tuplet", type="start", bracket="yes")
+                                    elif is_last_in_beat:
+                                        ET.SubElement(notations, "tuplet", type="stop")
+                                else:
                                     ET.SubElement(notations, "tuplet", type="start", bracket="yes")
-                                elif t_role == "stop" or (t_role == "none" and t_pos % 12 >= 8):
                                     ET.SubElement(notations, "tuplet", type="stop")
 
                             tech_el = ET.SubElement(notations, "technical")

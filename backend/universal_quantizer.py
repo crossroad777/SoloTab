@@ -117,8 +117,12 @@ def quantize_notes_universal(
         is_triplet_beat = False
         is_sextuplet = False
 
-        if len(time_clusters) == 3:
-            if err_triplet <= err_straight * 1.2 or err_triplet < 0.8:
+        # 3/4拍子または全体が3連符傾向の場合の判定強化
+        if time_signature == "3/4" or len(time_clusters) == 3:
+            if len(time_clusters) >= 2 and err_triplet <= err_straight * 1.5:
+                selected_grid = GRID_TRIPLET_8TH
+                is_triplet_beat = True
+            elif len(time_clusters) == 3:
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
         elif len(time_clusters) >= 5:

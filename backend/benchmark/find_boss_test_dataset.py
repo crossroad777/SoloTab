@@ -114,4 +114,6 @@ with open("datasets/solotab26k/boss_test_summary.json", "w", encoding="utf-8") a
     json.dump(found_files, f, ensure_ascii=False, indent=2)
 
 for i, item in enumerate(found_files[:15]):
-    print(f"[{i+1}] {item['artist']} - {item['title']} ({item['tuning']}, 奏法率: {item['tech_ratio']}%, 音数: {item['total_notes']})")
+    artist_safe = item['artist'].encode('ascii', 'replace').decode('ascii')
+    title_safe = item['title'].encode('ascii', 'replace').decode('ascii')
+    print(f"[{i+1}] {artist_safe} - {title_safe} ({item['tuning']}, 奏法率: {item['tech_ratio']}%, 音数: {item['total_notes']})")
