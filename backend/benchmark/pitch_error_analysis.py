@@ -70,7 +70,8 @@ def main():
                 wav_path=Path(wav_path),
                 tuning_name="standard",
                 skip_demucs=True,
-                fast_moe=True
+                fast_moe=True,
+                moe_vote_threshold=4
             )
 
             json_path = os.path.join(temp_dir, "notes_assigned_original.json")

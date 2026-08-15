@@ -778,24 +778,24 @@ def get_possible_positions(pitch: int, tuning: List[int] = None,
 # --- 重みパラメータ (V7: Multi-track Optuna 150trial + 論文改善) ---
 # 多曲最適化 (20曲GProTab) + 先読み/ガイドフィンガー/開放弦準備
 WEIGHTS = {
-    # 位置コスト — Multi-track Optuna最適化済み
-    "w_fret_height":          0.64,   # 多曲: フレット高さ一律ペナルティ軽減
-    "w_mid_fret_extra":       1.5,    # V3f: 10→3→1.5 (f5-9へのペナルティを更に軽減)
-    "w_high_fret_extra":     33.23,   # 多曲: f10+を個別に強くペナルティ
-    "w_low_string_high_fret": 4.9,    # 低弦ハイフレット
-    "w_sweet_spot_bonus":     0.0,    # V3f: ゼロ化 (f0-4過集中防止)
-    "w_low_fret_bonus":       0.0,    # V3f: ゼロ化 (L06: f0-4=54.7%目標)
+    # 位置コスト — Multi-track Optuna最適化済み (段階的10-20%緩和)
+    "w_fret_height":          0.60,   # 多曲: フレット高さ一律ペナルティ (0.64 -> 0.60)
+    "w_mid_fret_extra":       1.5,    # 維持
+    "w_high_fret_extra":     26.00,   # f10+ペナルティ (33.23 -> 26.0: 20%緩和)
+    "w_low_string_high_fret": 4.5,    # 低弦ハイフレット (4.9 -> 4.5)
+    "w_sweet_spot_bonus":     0.0,    # 維持
+    "w_low_fret_bonus":       0.0,    # 維持
 
-    # 遷移コスト — 多曲最適化 + 論文改善
-    "w_movement":            10.0,    # フレット移動基本
-    "w_movement_up":          6.19,   # 多曲: ロー→ハイ抑制
-    "w_movement_down":        0.3,    # ハイ→ロー移動（戻りやすい）
-    "w_position_shift":      27.72,   # V3: ポジション移動緩和 (55→28, L04適合)
-    "w_string_switch":        9.68,   # V3: 弦変更コスト適正化 (5.3→9.7)
-    "w_string_skip":         35.95,   # V3: 弦飛ばし二次ペナルティ (隣弦率26→51%)
-    "w_same_string_repeat":  10.0,    # 同弦連打回避
-    "w_open_to_fret":         0.15,   # 開放弦→フレットの遷移
-    "w_from_open":            0.05,   # 開放弦からの遷移 (論文: 準備時間あるので大幅軽減)
+    # 遷移コスト — 多曲最適化 + 論文改善 (段階的10-20%緩和)
+    "w_movement":             9.0,    # フレット移動基本 (10.0 -> 9.0)
+    "w_movement_up":          5.50,   # ロー→ハイ抑制 (6.19 -> 5.5)
+    "w_movement_down":        0.3,    # 維持
+    "w_position_shift":      24.00,   # ポジション移動 (27.72 -> 24.0: 13%緩和)
+    "w_string_switch":        8.50,   # 弦変更コスト (9.68 -> 8.5: 12%緩和)
+    "w_string_skip":         30.00,   # 弦飛ばし二次ペナルティ (35.95 -> 30.0: 16%緩和)
+    "w_same_string_repeat":   9.0,    # 同弦連打回避 (10.0 -> 9.0: 10%緩和)
+    "w_open_to_fret":         0.15,   # 維持
+    "w_from_open":            0.05,   # 維持
 
     # 先読みボーナス (Higher-Order Viterbi, Hori & Sagayama 2016)
     "w_lookahead":            0.3,    # 次ノートの最良遷移コスト × この係数をボーナス
@@ -1787,13 +1787,11 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
                 prob = 0.0
                 if str(s) in cnn_probs:
                     prob = float(cnn_probs[str(s)])
-                elif s in cnn_probs:
-                    prob = float(cnn_probs[s])
                 if prob >= 0.6:
                     _w = notes[i].get('_cnn_weight', 5.0)
                     emission -= prob * _w
             if f == 0:
-                emission -= 30.0
+                emission += WEIGHTS.get("w_open_string_bonus", 0.0)
             
             prev_note = notes[i - 1]
             cur_note = notes[i]
@@ -1898,8 +1896,8 @@ def _minimax_postprocess(notes: List[dict], tuning: List[int],
                 if cnn_probs:
                     old_cnn = cnn_probs.get(old_s, cnn_probs.get(str(old_s), 0))
                     new_cnn = cnn_probs.get(new_s, cnn_probs.get(str(new_s), 0))
-                    if old_cnn > new_cnn and old_cnn > 0.7:
-                        # CNN-firstの決定を保護（CNN確率70%以上の高確信時のみ）
+                    if old_cnn > new_cnn and old_cnn > 0.50:
+                        # CNN-firstの決定を保護（CNN確率50%以上の確信時）
                         skipped_cnn += 1
                         continue
                 notes[i]["string"] = new_s
@@ -1940,16 +1938,11 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
                  prev_fingering: Optional[List[Tuple[int, int]]],
                  tuning: List[int],
                  chord_name: str = "",
-                 scale_positions: Optional[List[int]] = None) -> float:
+                 scale_positions: Optional[List[int]] = None,
+                 notes: Optional[List[dict]] = None) -> float:
     """
     和音のスコアリング (高いほど良い)。
-    音楽理論コスト（典型フォーム一致、ルート音制約、構成音一致）を統合。
-
-    Parameters
-    ----------
-    combo : ((string, fret), ...) フィンガリング候補
-    prev_fingering : 前のフィンガリング
-    tuning : チューニング
+    音楽理論コスト（典型フォーム一致、ルート音制約、構成音一致）およびCNN弦確率を統合。
     """
     # コストを負のスコアに変換
     score = 0.0
@@ -1964,15 +1957,32 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
     for s, f in combo:
         score -= _position_cost(s, f, scale_positions)
 
-    # 2.5 和音フレット高ペナルティ（人間はローポジを好む）
+    # 2.5 和音フレット高ペナルティ（適正化）
     max_f = max(f for _, f in combo) if combo else 0
     for s, f in combo:
         if f >= 10:
-            score -= WEIGHTS.get("w_chord_f10_penalty", 50.0)
+            score -= WEIGHTS.get("w_chord_f10_penalty", 15.0)
         elif f >= 5:
-            score -= WEIGHTS.get("w_chord_f5_penalty", 10.0)
+            score -= WEIGHTS.get("w_chord_f5_penalty", 5.0)
         else:
-            score += WEIGHTS.get("w_chord_f04_bonus", 10.0)
+            score += WEIGHTS.get("w_chord_f04_bonus", 5.0)
+
+    # 2.6 CNN弦分類器ボーナス (和音内ノート)
+    if notes and len(notes) == len(combo):
+        for note, (s, f) in zip(notes, combo):
+            hard_s = note.get('_hard_protect_string')
+            if hard_s is not None:
+                if s == hard_s:
+                    score += 80.0
+                else:
+                    score -= 80.0
+            else:
+                cnn_probs = note.get('cnn_string_probs')
+                if cnn_probs:
+                    prob = float(cnn_probs.get(s, cnn_probs.get(str(s), 0.0)))
+                    if prob >= 0.5:
+                        w_cnn = note.get('_cnn_weight', 40.0)
+                        score += prob * w_cnn
 
     # 3. 音色コスト
     for s, f in combo:
@@ -1995,28 +2005,23 @@ def _score_chord(combo: Tuple[Tuple[int, int], ...],
         )
 
     # ⑦ フィンガースタイル弦域分離 (SMC Fingerstyle論文)
-    # 和音内のベース音(最低ピッチ)は低弦、メロディ(最高ピッチ)は高弦を優先
     if len(combo) >= 2:
-        # ピッチ情報が必要なので、comboから弦→ピッチを推定
         strings = [s for s, _ in combo]
-        # 最も低い弦(大きい弦番号)がベース、最も高い弦(小さい弦番号)がメロディ
-        bass_string = max(strings)  # 弦番号が大きい方 = 低い弦
+        bass_string = max(strings)
         melody_string = min(strings)
 
-        # ベース音が低弦(4-6弦)にいればボーナス
         if bass_string >= 4:
-            score -= WEIGHTS["w_bass_low_string"]  # 負の重み → スコア加算
+            score -= WEIGHTS["w_bass_low_string"]
         else:
-            score -= WEIGHTS["w_bass_wrong_string"]  # 正の重み → スコア減算
+            score -= WEIGHTS["w_bass_wrong_string"]
 
-        # メロディ音が高弦(1-3弦)にいればボーナス
         if melody_string <= 3:
-            score -= WEIGHTS["w_melody_high_string"]  # 負の重み → スコア加算
+            score -= WEIGHTS["w_melody_high_string"]
 
     # ⑩ 音楽理論コスト (坂井論文準拠: 典型フォーム一致 + ルート音 + 構成音)
     if chord_name:
         theory_cost = _music_theory_output_cost(combo, chord_name, tuning)
-        score -= theory_cost  # コストを減算 → スコア化
+        score -= theory_cost
 
     return score
 
@@ -2030,7 +2035,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     """
     和音のフィンガリング割り当て。
     全組み合わせを列挙し、_score_chord でスコアリング。
-    音楽理論コスト（典型フォーム一致、ルート音制約）を統合。
+    音楽理論コスト（典型フォーム一致、ルート音制約）およびCNN弦確率を統合。
     """
     # ギターは6弦までしか同時に鳴らせないので、6音を超える場合はピッチで一意にし、それでも超える場合は削る
     if len(notes) > 6:
@@ -2042,7 +2047,6 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
                 filtered_notes.append(n)
         
         if len(filtered_notes) > 6:
-            # ベース音(最低音)とメロディ(高音)を優先して残す
             filtered_notes.sort(key=lambda x: x["pitch"], reverse=True)
             filtered_notes = filtered_notes[:5] + [filtered_notes[-1]]
             
@@ -2056,6 +2060,11 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
             positions = [forced_positions[note_key]]
         elif 'fixed_string' in note and 'fixed_fret' in note:
             positions = [(note['fixed_string'], note['fixed_fret'])]
+        elif note.get('_hard_protect_string') is not None:
+            hard_s = note['_hard_protect_string']
+            all_pos = get_possible_positions(note["pitch"], tuning, max_fret)
+            pruned = [p for p in all_pos if p[0] == hard_s]
+            positions = pruned if pruned else all_pos
         else:
             positions = get_possible_positions(note["pitch"], tuning, max_fret)
             if not positions:
@@ -2068,9 +2077,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
     for p in note_positions:
         total_combos *= len(p)
     if total_combos > 5000:
-        # 候補を3つまでに制限 (低フレット順)
         note_positions = [sorted(p, key=lambda x: x[1])[:3] for p in note_positions]
-
 
     best_combo = None
     best_score = -float('inf')
@@ -2081,7 +2088,7 @@ def _assign_chord_notes(notes: List[dict], tuning: List[int],
         if len(set(strings_used)) != len(strings_used):
             continue
 
-        score = _score_chord(combo, prev_fingering, tuning, chord_name=chord_name, scale_positions=scale_positions)
+        score = _score_chord(combo, prev_fingering, tuning, chord_name=chord_name, scale_positions=scale_positions, notes=notes)
 
         if score > best_score:
             best_score = score
@@ -2268,8 +2275,8 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                 dynamic_w = cnn_weight_base
             else:
                 if max_prob >= 0.90:
-                    dynamic_w = 40.0
-                    # note['_hard_protect_string'] = max_s
+                    dynamic_w = 55.0  # ユーザー許可範囲: 50-60
+                    note['_hard_protect_string'] = max_s
                     w_stats[">=0.90"] += 1
                 elif max_prob >= 0.80:
                     dynamic_w = 40.0

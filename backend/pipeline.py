@@ -791,10 +791,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     try:
         from string_assigner import assign_strings_dp  # type: ignore
 
-        # カポ適用チューニング
+        # カポ適用チューニング (tuning_nameが明示指定されている場合はユーザー指定を優先)
         capo = capo_result.get("capo", 0)
-        if capo > 0:
+        capo_conf = capo_result.get("confidence", 0.0)
+        if capo > 0 and capo_conf >= 0.95 and tuning_name == "auto":
             dp_tuning = [p + capo for p in tuning]
+            report("assign", f"カポ{capo}フレット適用チューニングを使用 (確信度: {capo_conf:.2f})")
         else:
             dp_tuning = tuning
 

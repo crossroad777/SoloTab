@@ -1,5 +1,9 @@
 import os
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
 import glob
 import json
 import time
@@ -178,7 +182,8 @@ def main():
                 tuning_name="standard",
                 progress_cb=track_progress,
                 skip_demucs=True, # GuitarSetはギター単一トラックのため
-                fast_moe=True     # 本番同様にBasic Pitch + MoEの融合を利用
+                fast_moe=True,    # 本番同様にBasic Pitch + MoEの融合を利用
+                moe_vote_threshold=int(os.environ.get("VOTE_THRESH", -1))
             )
             
             t1 = time.time()

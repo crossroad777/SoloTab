@@ -34,16 +34,16 @@ MAX_FRET = 14  # v2.2: 15→14 統一
 # ここのWEIGHTSは PIMA R5後処理とコードスコアリングで参照される。
 _DEFAULT_WEIGHTS = {
     # 位置コスト (V5: フレット高コスト極限削減)
-    "w_fret_height":          0.50,
-    "w_high_fret_extra":      15.0,
-    "w_low_string_high_fret": 3.5,
-    "w_sweet_spot_bonus":     0.0,
+    "w_fret_height":          0.11,    # V5: 0.93→0.11
+    "w_high_fret_extra":      7.0,     # V5: 9.7→7.0
+    "w_low_string_high_fret": 4.9,     # V5: 1.5→4.9
+    "w_sweet_spot_bonus":    -7.4,     # V5: -4.8→-7.4
 
     # 遷移コスト (V5: ポジション一貫性超重視)
-    "w_movement":            20.0,
-    "w_position_shift":      30.0,
-    "w_string_switch":        8.0,
-    "w_same_string_repeat":  15.0,
+    "w_movement":            99.0,     # V5: 29.5→99.0
+    "w_position_shift":      99.3,     # V5: 75.1→99.3
+    "w_string_switch":        5.3,     # V5: 1.1→5.3
+    "w_same_string_repeat":  25.3,     # V5: 13.9→25.3
 
     # 人間工学コスト
     "w_fret_span":          100.0,

@@ -1,0 +1,371 @@
+[
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 45,
+    "gt_string": 6,
+    "raw_string": 6,
+    "assigned_string": 5,
+    "fret": 0,
+    "time": 2.882650340136138
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 2.905303401360584
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 45,
+    "gt_string": 6,
+    "raw_string": 6,
+    "assigned_string": 5,
+    "fret": 0,
+    "time": 3.1937614512471555
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 3.22219682539685
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 45,
+    "gt_string": 6,
+    "raw_string": 6,
+    "assigned_string": 5,
+    "fret": 0,
+    "time": 3.5200879818595467
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 3.5453487528345704
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 61,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 2,
+    "fret": 2,
+    "time": 3.697208163265259
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 3.7368453514740168
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 3.860858956916104
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 4.51314920634934
+  },
+  {
+    "track": "05_Jazz2-187-F#_comp",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 4.822083446712099
+  },
+  {
+    "track": "00_SS1-68-E_comp",
+    "pitch": 56,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 4,
+    "fret": 6,
+    "time": 11.174022675736978
+  },
+  {
+    "track": "03_BN1-147-Gb_comp",
+    "pitch": 58,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 4,
+    "fret": 6,
+    "time": 0.007234467120156296
+  },
+  {
+    "track": "03_BN1-147-Gb_comp",
+    "pitch": 53,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 5,
+    "fret": 6,
+    "time": 0.00941133786852788
+  },
+  {
+    "track": "03_BN1-147-Gb_comp",
+    "pitch": 45,
+    "gt_string": 5,
+    "raw_string": 5,
+    "assigned_string": 6,
+    "fret": 3,
+    "time": 7.204604081632624
+  },
+  {
+    "track": "03_BN1-147-Gb_comp",
+    "pitch": 55,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 4,
+    "fret": 3,
+    "time": 12.658436281179092
+  },
+  {
+    "track": "03_BN1-147-Gb_comp",
+    "pitch": 50,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 5,
+    "fret": 3,
+    "time": 12.666304761904826
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 0.023059410430846583
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 4.02317278911562
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 69,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 5,
+    "time": 9.931336054421763
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 65,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 2,
+    "fret": 6,
+    "time": 12.062333786848058
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 60,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 3,
+    "fret": 5,
+    "time": 12.065961904761934
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 69,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 5,
+    "time": 12.084079818594091
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 65,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 2,
+    "fret": 6,
+    "time": 13.627163718820839
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 69,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 5,
+    "time": 13.63006621315185
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 69,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 5,
+    "time": 14.727004988662088
+  },
+  {
+    "track": "01_Funk1-97-C_comp",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 17.948388208616734
+  },
+  {
+    "track": "05_Jazz2-187-F#_solo",
+    "pitch": 62,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 2,
+    "fret": 1,
+    "time": 10.748296598639513
+  },
+  {
+    "track": "05_Jazz2-187-F#_solo",
+    "pitch": 57,
+    "gt_string": 5,
+    "raw_string": 5,
+    "assigned_string": 3,
+    "fret": 0,
+    "time": 15.651652607709707
+  },
+  {
+    "track": "04_Rock1-130-A_solo",
+    "pitch": 64,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 4.340808163265306
+  },
+  {
+    "track": "04_Rock1-130-A_solo",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 14.522486167800452
+  },
+  {
+    "track": "04_Rock1-130-A_solo",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 15.004232199546482
+  },
+  {
+    "track": "04_Rock1-130-A_solo",
+    "pitch": 64,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 1,
+    "fret": 0,
+    "time": 15.233325170068028
+  },
+  {
+    "track": "05_SS2-88-F_solo",
+    "pitch": 70,
+    "gt_string": 2,
+    "raw_string": 2,
+    "assigned_string": 1,
+    "fret": 5,
+    "time": 26.32443265306125
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 55,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 4,
+    "fret": 4,
+    "time": 0.005150113378476817
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 48,
+    "gt_string": 5,
+    "raw_string": 5,
+    "assigned_string": 6,
+    "fret": 7,
+    "time": 0.005308843537250141
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 55,
+    "gt_string": 3,
+    "raw_string": 3,
+    "assigned_string": 4,
+    "fret": 4,
+    "time": 1.8248326530610939
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 58,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 3,
+    "fret": 2,
+    "time": 6.792202267573657
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 51,
+    "gt_string": 5,
+    "raw_string": 5,
+    "assigned_string": 4,
+    "fret": 0,
+    "time": 6.800116099773277
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 60,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 2,
+    "fret": 0,
+    "time": 19.19147664399088
+  },
+  {
+    "track": "02_Funk2-119-G_comp",
+    "pitch": 58,
+    "gt_string": 4,
+    "raw_string": 4,
+    "assigned_string": 3,
+    "fret": 2,
+    "time": 22.447757823129223
+  }
+]

@@ -428,6 +428,75 @@ def get_diatonic_pcs(key: str) -> List[int]:
     return [(root_pc + i) % 12 for i in intervals]
 
 
+def apply_physical_constraints(notes: List[dict], max_span: int = 6, time_threshold: float = 0.03) -> List[dict]:
+    """
+    物理的制約（同一弦での同時発音、不可能なストレッチ）に基づくフィルタリング。
+    """
+    if not notes:
+        return []
+    
+    # 時間順にソート
+    sorted_notes = sorted(notes, key=lambda n: float(n.get("start", n.get("start_time", 0.0))))
+    
+    # 同時発音のグループ化
+    groups = []
+    current_group = []
+    
+    for n in sorted_notes:
+        t = float(n.get("start", n.get("start_time", 0.0)))
+        if not current_group:
+            current_group.append(n)
+        else:
+            first_t = float(current_group[0].get("start", current_group[0].get("start_time", 0.0)))
+            if t - first_t <= time_threshold:
+                current_group.append(n)
+            else:
+                groups.append(current_group)
+                current_group = [n]
+    if current_group:
+        groups.append(current_group)
+        
+    filtered_notes = []
+    
+    for group in groups:
+        # 1. 同一弦の重複を除去（確信度/MVS/velocityが高い方を残す）
+        string_map = {}
+        for n in group:
+            s = n.get("string")
+            if s is None:
+                continue
+            
+            score = n.get("_mvs", n.get("velocity", 0.5))
+            if s not in string_map or score > string_map[s].get("_mvs", string_map[s].get("velocity", 0.5)):
+                string_map[s] = n
+                
+        valid_in_group = list(string_map.values())
+        
+        # stringを持たないノートはそのまま追加
+        valid_in_group.extend([n for n in group if n.get("string") is None])
+        
+        # 2. 物理的に不可能なストレッチの検出 (開放弦を除く)
+        fretted_notes = [n for n in valid_in_group if n.get("fret", 0) > 0]
+        if len(fretted_notes) >= 2:
+            frets = [n.get("fret", 0) for n in fretted_notes]
+            f_min = min(frets)
+            f_max = max(frets)
+            if f_max - f_min > max_span:
+                # ストレッチ不可能な場合は最も確信度が低いものを1つフラグ付けして無効化
+                # ※ここでは直接削除せずに、後処理で落とせるようフラグを立てるか、MVSを大幅に下げる
+                sorted_by_score = sorted(fretted_notes, key=lambda n: n.get("_mvs", n.get("velocity", 0.5)))
+                lowest_conf_note = sorted_by_score[0]
+                lowest_conf_note["_impossible_stretch"] = True
+                lowest_conf_note["_mvs"] = -1.0  # 強制除外用
+        
+        # グループ内の有効なノートを追加
+        for n in valid_in_group:
+            if n.get("_mvs", 0) >= 0:  # impossible stretch で落とされたものを除外
+                filtered_notes.append(n)
+                
+    return filtered_notes
+
+
 def validate_notes_by_music_theory(
     notes: List[dict],
     beats: List[float],
@@ -530,4 +599,12 @@ def validate_notes_by_music_theory(
             removed_count += 1
             
     print(f"[music_theory] MVS validation: kept {len(validated_notes)} / {len(notes)} notes, removed {removed_count} notes (threshold={threshold})")
+    
+    # 物理的制約の適用 (GPU処理不要の安全なフィルタ)
+    before_phys = len(validated_notes)
+    validated_notes = apply_physical_constraints(validated_notes)
+    after_phys = len(validated_notes)
+    if before_phys > after_phys:
+        print(f"[music_theory] Physical constraint validation: removed {before_phys - after_phys} notes")
+        
     return validated_notes
