@@ -263,9 +263,12 @@ def _pass1_melodic_smoothing(notes: List[dict], logs: List[Dict[str, Any]]) -> L
 
     return sorted_notes
 
-def _pass2_harmonic_merging(notes: List[dict], logs: List[Dict[str, Any]]) -> List[dict]:
+def _pass2_harmonic_merging(notes: List[dict], chords: List[dict], logs: List[Dict[str, Any]]) -> List[dict]:
     """
-    Pass 2: Harmonic Merging (Resonance / Overtone deduplication)
+    Pass 2 v2: Harmonic Merging (Resonance / Overtone deduplication)
+    Safety Guard 1: Do not delete chord tones
+    Safety Guard 2: Velocity must be < 40% of base note
+    Safety Guard 3: Duration must be < 50% of base note
     """
     groups = _group_simultaneous_notes(notes, time_tolerance=0.05)
     kept_notes = []
@@ -276,6 +279,16 @@ def _pass2_harmonic_merging(notes: List[dict], logs: List[Dict[str, Any]]) -> Li
             continue
             
         group_sorted = sorted(group, key=lambda n: n["pitch"])
+        
+        # Get active chord for Safety Guard 1
+        t_sec = group_sorted[0]["start"]
+        active_chord = _get_chord_at_time(chords, t_sec)
+        chord_pcs = []
+        if active_chord not in ("N.C.", "N", "X"):
+            c_root, c_q = _parse_chord_name(active_chord)
+            if c_root >= 0:
+                chord_pcs = _get_chord_notes_pc(c_root, c_q)
+                
         to_remove = set()
         
         for i, base_n in enumerate(group_sorted):
@@ -284,6 +297,7 @@ def _pass2_harmonic_merging(notes: List[dict], logs: List[Dict[str, Any]]) -> Li
                 
             base_p = base_n["pitch"]
             base_v = base_n.get("velocity", 0.5)
+            base_d = base_n["end"] - base_n["start"]
             
             for j in range(i+1, len(group_sorted)):
                 over_n = group_sorted[j]
@@ -292,20 +306,31 @@ def _pass2_harmonic_merging(notes: List[dict], logs: List[Dict[str, Any]]) -> Li
                     
                 over_p = over_n["pitch"]
                 diff = over_p - base_p
+                over_pc = over_p % 12
                 
                 # +12 (octave), +19 (octave+fifth), +24 (2 octaves)
                 if diff in (12, 19, 24):
+                    # Safety Guard 1: Never delete chord tones
+                    if over_pc in chord_pcs:
+                        logs.append({
+                            "pass": 2,
+                            "action": "protected",
+                            "note": dict(over_n),
+                            "reason": f"Protected by chord guard (+{diff})"
+                        })
+                        continue
+                        
                     over_v = over_n.get("velocity", 0.5)
                     over_d = over_n["end"] - over_n["start"]
                     
-                    # If overtone is softer or much shorter, remove it
-                    if over_v < base_v * 1.1 or over_d < 0.15:
+                    # Safety Guard 2 & 3: OR condition (v < 65% OR d < 55%)
+                    if over_v < base_v * 0.65 or over_d < base_d * 0.55:
                         to_remove.add(id(over_n))
                         logs.append({
                             "pass": 2,
                             "action": "delete",
                             "note": dict(over_n),
-                            "reason": f"Overtone of {base_p} (+{diff})"
+                            "reason": f"Overtone of {base_p} (+{diff}, v={over_v:.2f}, d={over_d:.2f})"
                         })
                         
         for n in group:
@@ -415,7 +440,7 @@ def heuristic_pitch_correction(notes: List[dict], chords: List[dict] = None, key
     working_notes = _pass1_melodic_smoothing(working_notes, logs)
     
     # Pass 2
-    # working_notes = _pass2_harmonic_merging(working_notes, logs) # DISABLED due to >5% false deletion
+    # working_notes = _pass2_harmonic_merging(working_notes, chords, logs) # DISABLED per fallback rule
     
     # Pass 3
     working_notes = _pass3_non_chord_tone_filtering(working_notes, chords, key, genre, logs)

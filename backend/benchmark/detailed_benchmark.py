@@ -33,14 +33,15 @@ ANNOTATIONS_DIR = os.path.join(GUITARSET_DIR, "annotation")
 AUDIO_DIR = os.path.join(GUITARSET_DIR, "audio_mono-mic")
 
 # 最適パラメータ（全360曲グリッドサーチ結果）
-VOTE_THRESHOLD = 5
+VOTE_THRESHOLD = int(os.environ.get("VOTE_THRESH", 5))
 ONSET_THRESHOLD = 0.8
 VOTE_PROB_THRESHOLD = 0.5
 
 MODELS = [
-    "finetuned_martin_finger_guitarset_ft", "finetuned_taylor_finger_guitarset_ft",
-    "finetuned_luthier_finger_guitarset_ft", "finetuned_martin_pick_guitarset_ft",
-    "finetuned_taylor_pick_guitarset_ft", "finetuned_luthier_pick_guitarset_ft",
+    "finetuned_martin_finger_model_retrained", "finetuned_taylor_finger_model_retrained",
+    "finetuned_luthier_finger_model_retrained", "finetuned_martin_pick_model_retrained",
+    "finetuned_taylor_pick_model_retrained", "finetuned_luthier_pick_model_retrained",
+    "finetuned_gibson_thumb_model_retrained",
 ]
 
 

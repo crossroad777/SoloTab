@@ -253,18 +253,19 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             _votes = (1 if _hf4k < 0.057 else 0) + (1 if _hf6k < 0.057 else 0) + (1 if _bw < 1386 else 0)
             is_nylon = _votes >= 2
             if gt == "nylon" or (gt == "auto" and is_nylon):
-                moe_vt = 15
+                moe_vt = 6
                 gt = "nylon"
-                report("notes", f"弦種: ナイロン弦 → vote_threshold={moe_vt}/35")
+                report("notes", f"弦種: ナイロン弦 -> vote_threshold={moe_vt}/35")
             else:
-                report("notes", f"弦種: スチール弦 → vote_threshold={moe_vt}/35")
+                moe_vt = 6
+                report("notes", f"弦種: スチール弦 -> vote_threshold={moe_vt}/35")
         except Exception as e:
             report("notes", f"弦種検出スキップ: {e}")
 
         if gt == "nylon":
-            moe_vt = 15
+            moe_vt = 6
         elif gt == "steel":
-            moe_vt = 21
+            moe_vt = 6
         _guitar_type_detected[0] = gt
         _moe_vote_threshold[0] = moe_vt
 

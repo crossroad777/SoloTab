@@ -20,19 +20,9 @@ from model import architecture
 from guitar_transcriber import _frames_to_notes
 
 # 高速モード用ステージ構成 (21モデル: modelと3ds_gaを除外)
-_FAST_STAGES = [
-    "guitarset_ft",     # + GuitarSet FT
-    "multitask",        # + GAPS混合
-    "multitask_3ds",    # + GAPS + AG-PT混合
-]
+_FAST_STAGES = ["model_retrained"]
 # フルモード用ステージ構成 (35モデル)
-_FULL_STAGES = [
-    "model",            # 合成データのみ（事前学習）
-    "guitarset_ft",     # + GuitarSet FT
-    "multitask",        # + GAPS混合
-    "multitask_3ds",    # + GAPS + AG-PT混合
-    "multitask_3ds_ga", # + GAPS + Synth V2混合
-]
+_FULL_STAGES = ["model_retrained"]
 _DOMAINS = [
     "martin_finger", "taylor_finger", "luthier_finger",
     "martin_pick", "taylor_pick", "luthier_pick",

@@ -823,7 +823,7 @@ WEIGHTS = {
 
     # 音色コスト — 開放弦優遇を法則に合わせて抑制
     "w_open_string_bonus":   0.0,   # 開放弦ペナルティの撤廃
-    "w_open_match_bonus":   -10.7,
+    "w_open_match_bonus":   -2.0,
     "w_open_emission_bonus":  0.0,   # 開放弦出現ペナルティの撤廃
     "w_barre_bonus":         -5.0,
 
@@ -2268,14 +2268,14 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                 dynamic_w = cnn_weight_base
             else:
                 if max_prob >= 0.90:
-                    dynamic_w = 100.0
-                    note['_hard_protect_string'] = max_s
+                    dynamic_w = 40.0
+                    # note['_hard_protect_string'] = max_s
                     w_stats[">=0.90"] += 1
                 elif max_prob >= 0.80:
-                    dynamic_w = 100.0
+                    dynamic_w = 40.0
                     w_stats["0.80-0.90"] += 1
                 elif max_prob >= 0.50:
-                    dynamic_w = 50.0
+                    dynamic_w = 20.0
                     w_stats["0.5-0.8"] += 1
                 else:
                     dynamic_w = 10.0

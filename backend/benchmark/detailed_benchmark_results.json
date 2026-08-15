@@ -1,13 +1,13 @@
 {
   "parameters": {
-    "vote_threshold": 5,
+    "vote_threshold": 3,
     "onset_threshold": 0.8,
     "vote_prob_threshold": 0.5
   },
   "overall": {
-    "f1": 0.8392977910499495,
-    "precision": 0.8376740328614278,
-    "recall": 0.8430431581845594,
+    "f1": 0.8370826692930453,
+    "precision": 0.8232235248135371,
+    "recall": 0.8538321727043671,
     "n_tracks": 360
   },
   "per_track": [
@@ -27,383 +27,383 @@
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8,
-      "precision": 0.7837837837837838,
-      "recall": 0.8169014084507042,
+      "f1": 0.7857142857142857,
+      "precision": 0.7971014492753623,
+      "recall": 0.7746478873239436,
       "gt_notes": 71,
-      "pred_notes": 74
+      "pred_notes": 69
     },
     {
       "name": "00_BN1-147-Gb_comp",
       "player": "00",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.7785714285714286,
-      "precision": 0.8449612403100775,
-      "recall": 0.7218543046357616,
+      "f1": 0.7916666666666666,
+      "precision": 0.8321167883211679,
+      "recall": 0.7549668874172185,
       "gt_notes": 151,
-      "pred_notes": 129
+      "pred_notes": 137
     },
     {
       "name": "00_BN1-147-Gb_solo",
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8651685393258428,
-      "precision": 0.8651685393258427,
+      "f1": 0.8953488372093023,
+      "precision": 0.927710843373494,
       "recall": 0.8651685393258427,
       "gt_notes": 89,
-      "pred_notes": 89
+      "pred_notes": 83
     },
     {
       "name": "00_BN2-131-B_comp",
       "player": "00",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.7725321888412017,
-      "precision": 0.7929515418502202,
-      "recall": 0.7531380753138075,
+      "f1": 0.7964989059080962,
+      "precision": 0.8348623853211009,
+      "recall": 0.7615062761506276,
       "gt_notes": 239,
-      "pred_notes": 227
+      "pred_notes": 218
     },
     {
       "name": "00_BN2-131-B_solo",
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8717948717948717,
-      "precision": 0.8673469387755102,
-      "recall": 0.8762886597938144,
+      "f1": 0.7731958762886598,
+      "precision": 0.7731958762886598,
+      "recall": 0.7731958762886598,
       "gt_notes": 97,
-      "pred_notes": 98
+      "pred_notes": 97
     },
     {
       "name": "00_BN2-166-Ab_comp",
       "player": "00",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8620689655172414,
-      "precision": 0.8495145631067961,
-      "recall": 0.875,
+      "f1": 0.8528678304239402,
+      "precision": 0.8507462686567164,
+      "recall": 0.855,
       "gt_notes": 200,
-      "pred_notes": 206
+      "pred_notes": 201
     },
     {
       "name": "00_BN2-166-Ab_solo",
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8343558282208589,
-      "precision": 0.8947368421052632,
-      "recall": 0.7816091954022989,
+      "f1": 0.8639053254437871,
+      "precision": 0.8902439024390244,
+      "recall": 0.8390804597701149,
       "gt_notes": 87,
-      "pred_notes": 76
+      "pred_notes": 82
     },
     {
       "name": "00_BN3-119-G_comp",
       "player": "00",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8173374613003095,
-      "precision": 0.8571428571428571,
-      "recall": 0.7810650887573964,
+      "f1": 0.8580441640378549,
+      "precision": 0.918918918918919,
+      "recall": 0.8047337278106509,
       "gt_notes": 169,
-      "pred_notes": 154
+      "pred_notes": 148
     },
     {
       "name": "00_BN3-119-G_solo",
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8947368421052632,
-      "precision": 0.9315068493150684,
-      "recall": 0.8607594936708861,
+      "f1": 0.9113924050632911,
+      "precision": 0.9113924050632911,
+      "recall": 0.9113924050632911,
       "gt_notes": 79,
-      "pred_notes": 73
+      "pred_notes": 79
     },
     {
       "name": "00_BN3-154-E_comp",
       "player": "00",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8137535816618912,
-      "precision": 0.8068181818181818,
-      "recall": 0.8208092485549133,
+      "f1": 0.8057971014492752,
+      "precision": 0.8081395348837209,
+      "recall": 0.8034682080924855,
       "gt_notes": 173,
-      "pred_notes": 176
+      "pred_notes": 172
     },
     {
       "name": "00_BN3-154-E_solo",
       "player": "00",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8530805687203792,
-      "precision": 0.8181818181818182,
-      "recall": 0.8910891089108911,
+      "f1": 0.7534883720930233,
+      "precision": 0.7105263157894737,
+      "recall": 0.801980198019802,
       "gt_notes": 101,
-      "pred_notes": 110
+      "pred_notes": 114
     },
     {
       "name": "00_Funk1-114-Ab_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7934959349593497,
-      "precision": 0.7922077922077922,
-      "recall": 0.7947882736156352,
+      "f1": 0.7785016286644951,
+      "precision": 0.7785016286644951,
+      "recall": 0.7785016286644951,
       "gt_notes": 307,
-      "pred_notes": 308
+      "pred_notes": 307
     },
     {
       "name": "00_Funk1-114-Ab_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7857142857142857,
-      "precision": 0.8148148148148148,
+      "f1": 0.7719298245614034,
+      "precision": 0.7857142857142857,
       "recall": 0.7586206896551724,
       "gt_notes": 58,
-      "pred_notes": 54
+      "pred_notes": 56
     },
     {
       "name": "00_Funk1-97-C_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.836228287841191,
-      "precision": 0.8219512195121951,
+      "f1": 0.8239608801955989,
+      "precision": 0.7985781990521327,
       "recall": 0.851010101010101,
       "gt_notes": 396,
-      "pred_notes": 410
+      "pred_notes": 422
     },
     {
       "name": "00_Funk1-97-C_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.6486486486486487,
-      "precision": 0.7346938775510204,
-      "recall": 0.5806451612903226,
+      "f1": 0.6722689075630253,
+      "precision": 0.7017543859649122,
+      "recall": 0.6451612903225806,
       "gt_notes": 62,
-      "pred_notes": 49
+      "pred_notes": 57
     },
     {
       "name": "00_Funk2-108-Eb_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8238583410997203,
-      "precision": 0.8036363636363636,
-      "recall": 0.8451242829827916,
+      "f1": 0.8146118721461187,
+      "precision": 0.7797202797202797,
+      "recall": 0.8527724665391969,
       "gt_notes": 523,
-      "pred_notes": 550
+      "pred_notes": 572
     },
     {
       "name": "00_Funk2-108-Eb_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8524590163934428,
-      "precision": 0.8455284552845529,
-      "recall": 0.859504132231405,
+      "f1": 0.8112449799196787,
+      "precision": 0.7890625,
+      "recall": 0.8347107438016529,
       "gt_notes": 121,
-      "pred_notes": 123
+      "pred_notes": 128
     },
     {
       "name": "00_Funk2-119-G_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8104712041884816,
-      "precision": 0.7849898580121704,
-      "recall": 0.8376623376623377,
+      "f1": 0.8144329896907215,
+      "precision": 0.7775590551181102,
+      "recall": 0.854978354978355,
       "gt_notes": 462,
-      "pred_notes": 493
+      "pred_notes": 508
     },
     {
       "name": "00_Funk2-119-G_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.802547770700637,
-      "precision": 0.7974683544303798,
-      "recall": 0.8076923076923077,
+      "f1": 0.7468354430379747,
+      "precision": 0.7375,
+      "recall": 0.7564102564102564,
       "gt_notes": 78,
-      "pred_notes": 79
+      "pred_notes": 80
     },
     {
       "name": "00_Funk3-112-C#_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8226950354609929,
-      "precision": 0.8202020202020202,
-      "recall": 0.8252032520325203,
+      "f1": 0.82246740220662,
+      "precision": 0.8118811881188119,
+      "recall": 0.8333333333333334,
       "gt_notes": 492,
-      "pred_notes": 495
+      "pred_notes": 505
     },
     {
       "name": "00_Funk3-112-C#_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7931034482758622,
-      "precision": 0.7876712328767124,
-      "recall": 0.7986111111111112,
+      "f1": 0.7483443708609273,
+      "precision": 0.7151898734177216,
+      "recall": 0.7847222222222222,
       "gt_notes": 144,
-      "pred_notes": 146
+      "pred_notes": 158
     },
     {
       "name": "00_Funk3-98-A_comp",
       "player": "00",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8411016949152542,
-      "precision": 0.8052738336713996,
-      "recall": 0.8802660753880266,
+      "f1": 0.8232848232848231,
+      "precision": 0.7749510763209393,
+      "recall": 0.8780487804878049,
       "gt_notes": 451,
-      "pred_notes": 493
+      "pred_notes": 511
     },
     {
       "name": "00_Funk3-98-A_solo",
       "player": "00",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8240343347639484,
-      "precision": 0.8421052631578947,
-      "recall": 0.8067226890756303,
+      "f1": 0.7547169811320755,
+      "precision": 0.8602150537634409,
+      "recall": 0.6722689075630253,
       "gt_notes": 119,
-      "pred_notes": 114
+      "pred_notes": 93
     },
     {
       "name": "00_Jazz1-130-D_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.808411214953271,
-      "precision": 0.7792792792792793,
-      "recall": 0.8398058252427184,
+      "f1": 0.8081264108352145,
+      "precision": 0.7552742616033755,
+      "recall": 0.8689320388349514,
       "gt_notes": 206,
-      "pred_notes": 222
+      "pred_notes": 237
     },
     {
       "name": "00_Jazz1-130-D_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8305084745762712,
-      "precision": 0.8032786885245902,
-      "recall": 0.8596491228070176,
+      "f1": 0.8965517241379309,
+      "precision": 0.8813559322033898,
+      "recall": 0.9122807017543859,
       "gt_notes": 57,
-      "pred_notes": 61
+      "pred_notes": 59
     },
     {
       "name": "00_Jazz1-200-B_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7798742138364779,
-      "precision": 0.8051948051948052,
-      "recall": 0.7560975609756098,
+      "f1": 0.7889908256880735,
+      "precision": 0.7914110429447853,
+      "recall": 0.7865853658536586,
       "gt_notes": 164,
-      "pred_notes": 154
+      "pred_notes": 163
     },
     {
       "name": "00_Jazz1-200-B_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.7999999999999999,
-      "precision": 0.8076923076923077,
-      "recall": 0.7924528301886793,
+      "f1": 0.7102803738317758,
+      "precision": 0.7037037037037037,
+      "recall": 0.7169811320754716,
       "gt_notes": 53,
-      "pred_notes": 52
+      "pred_notes": 54
     },
     {
       "name": "00_Jazz2-110-Bb_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8527131782945736,
-      "precision": 0.8333333333333334,
-      "recall": 0.873015873015873,
+      "f1": 0.8533333333333333,
+      "precision": 0.8205128205128205,
+      "recall": 0.8888888888888888,
       "gt_notes": 252,
-      "pred_notes": 264
+      "pred_notes": 273
     },
     {
       "name": "00_Jazz2-110-Bb_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8263473053892215,
-      "precision": 0.8414634146341463,
+      "f1": 0.793103448275862,
+      "precision": 0.7752808988764045,
       "recall": 0.8117647058823529,
       "gt_notes": 85,
-      "pred_notes": 82
+      "pred_notes": 89
     },
     {
       "name": "00_Jazz2-187-F#_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8050314465408805,
-      "precision": 0.8170212765957446,
-      "recall": 0.7933884297520661,
+      "f1": 0.8157349896480331,
+      "precision": 0.8174273858921162,
+      "recall": 0.8140495867768595,
       "gt_notes": 242,
-      "pred_notes": 235
+      "pred_notes": 241
     },
     {
       "name": "00_Jazz2-187-F#_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8085106382978724,
-      "precision": 0.8636363636363636,
-      "recall": 0.76,
+      "f1": 0.6111111111111112,
+      "precision": 0.6875,
+      "recall": 0.55,
       "gt_notes": 100,
-      "pred_notes": 88
+      "pred_notes": 80
     },
     {
       "name": "00_Jazz3-137-Eb_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7731481481481481,
-      "precision": 0.7625570776255708,
-      "recall": 0.784037558685446,
+      "f1": 0.7804878048780489,
+      "precision": 0.7394957983193278,
+      "recall": 0.8262910798122066,
       "gt_notes": 213,
-      "pred_notes": 219
+      "pred_notes": 238
     },
     {
       "name": "00_Jazz3-137-Eb_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8503937007874015,
-      "precision": 0.84375,
-      "recall": 0.8571428571428571,
+      "f1": 0.7611940298507462,
+      "precision": 0.7183098591549296,
+      "recall": 0.8095238095238095,
       "gt_notes": 63,
-      "pred_notes": 64
+      "pred_notes": 71
     },
     {
       "name": "00_Jazz3-150-C_comp",
       "player": "00",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8548387096774194,
-      "precision": 0.8688524590163934,
-      "recall": 0.8412698412698413,
+      "f1": 0.8543689320388349,
+      "precision": 0.8365019011406845,
+      "recall": 0.873015873015873,
       "gt_notes": 252,
-      "pred_notes": 244
+      "pred_notes": 263
     },
     {
       "name": "00_Jazz3-150-C_solo",
       "player": "00",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.7948717948717949,
-      "precision": 0.8266666666666667,
-      "recall": 0.7654320987654321,
+      "f1": 0.7564102564102564,
+      "precision": 0.7866666666666666,
+      "recall": 0.7283950617283951,
       "gt_notes": 81,
       "pred_notes": 75
     },
@@ -412,185 +412,185 @@
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8403361344537814,
-      "precision": 0.813953488372093,
-      "recall": 0.8684863523573201,
+      "f1": 0.8578088578088577,
+      "precision": 0.8087912087912088,
+      "recall": 0.913151364764268,
       "gt_notes": 403,
-      "pred_notes": 430
+      "pred_notes": 455
     },
     {
       "name": "00_Rock1-130-A_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.6735751295336787,
-      "precision": 0.6190476190476191,
-      "recall": 0.7386363636363636,
+      "f1": 0.7078651685393258,
+      "precision": 0.7,
+      "recall": 0.7159090909090909,
       "gt_notes": 88,
-      "pred_notes": 105
+      "pred_notes": 90
     },
     {
       "name": "00_Rock1-90-C#_comp",
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.872278664731495,
-      "precision": 0.8429172510518934,
-      "recall": 0.9037593984962407,
+      "f1": 0.8778735632183908,
+      "precision": 0.8404401650618982,
+      "recall": 0.9187969924812031,
       "gt_notes": 665,
-      "pred_notes": 713
+      "pred_notes": 727
     },
     {
       "name": "00_Rock1-90-C#_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8011869436201781,
-      "precision": 0.8490566037735849,
-      "recall": 0.7584269662921348,
+      "f1": 0.7954545454545455,
+      "precision": 0.8045977011494253,
+      "recall": 0.7865168539325843,
       "gt_notes": 178,
-      "pred_notes": 159
+      "pred_notes": 174
     },
     {
       "name": "00_Rock2-142-D_comp",
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.825974025974026,
-      "precision": 0.7845394736842105,
-      "recall": 0.8720292504570384,
+      "f1": 0.8166089965397924,
+      "precision": 0.7750410509031199,
+      "recall": 0.8628884826325411,
       "gt_notes": 547,
-      "pred_notes": 608
+      "pred_notes": 609
     },
     {
       "name": "00_Rock2-142-D_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7447698744769875,
-      "precision": 0.8165137614678899,
-      "recall": 0.6846153846153846,
+      "f1": 0.7704918032786885,
+      "precision": 0.8245614035087719,
+      "recall": 0.7230769230769231,
       "gt_notes": 130,
-      "pred_notes": 109
+      "pred_notes": 114
     },
     {
       "name": "00_Rock2-85-F_comp",
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8305288461538463,
-      "precision": 0.8148584905660378,
-      "recall": 0.8468137254901961,
+      "f1": 0.8372093023255814,
+      "precision": 0.8153310104529616,
+      "recall": 0.8602941176470589,
       "gt_notes": 816,
-      "pred_notes": 848
+      "pred_notes": 861
     },
     {
       "name": "00_Rock2-85-F_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7250996015936255,
-      "precision": 0.7982456140350878,
-      "recall": 0.6642335766423357,
+      "f1": 0.7153284671532847,
+      "precision": 0.7153284671532847,
+      "recall": 0.7153284671532847,
       "gt_notes": 137,
-      "pred_notes": 114
+      "pred_notes": 137
     },
     {
       "name": "00_Rock3-117-Bb_comp",
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8312453942520267,
-      "precision": 0.7988668555240793,
-      "recall": 0.8663594470046083,
+      "f1": 0.8219971056439942,
+      "precision": 0.7770177838577291,
+      "recall": 0.8725038402457758,
       "gt_notes": 651,
-      "pred_notes": 706
+      "pred_notes": 731
     },
     {
       "name": "00_Rock3-117-Bb_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8098159509202455,
-      "precision": 0.7904191616766467,
-      "recall": 0.8301886792452831,
+      "f1": 0.7581699346405228,
+      "precision": 0.7891156462585034,
+      "recall": 0.7295597484276729,
       "gt_notes": 159,
-      "pred_notes": 167
+      "pred_notes": 147
     },
     {
       "name": "00_Rock3-148-C_comp",
       "player": "00",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7474429583005507,
-      "precision": 0.8161512027491409,
-      "recall": 0.6894049346879536,
+      "f1": 0.795234549516009,
+      "precision": 0.8165137614678899,
+      "recall": 0.7750362844702468,
       "gt_notes": 689,
-      "pred_notes": 582
+      "pred_notes": 654
     },
     {
       "name": "00_Rock3-148-C_solo",
       "player": "00",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7874564459930314,
-      "precision": 0.8014184397163121,
-      "recall": 0.773972602739726,
+      "f1": 0.7849829351535836,
+      "precision": 0.782312925170068,
+      "recall": 0.7876712328767124,
       "gt_notes": 146,
-      "pred_notes": 141
+      "pred_notes": 147
     },
     {
       "name": "00_SS1-100-C#_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8619854721549637,
-      "precision": 0.8516746411483254,
-      "recall": 0.8725490196078431,
+      "f1": 0.8759493670886075,
+      "precision": 0.9057591623036649,
+      "recall": 0.8480392156862745,
       "gt_notes": 204,
-      "pred_notes": 209
+      "pred_notes": 191
     },
     {
       "name": "00_SS1-100-C#_solo",
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8153846153846153,
-      "precision": 0.803030303030303,
-      "recall": 0.828125,
+      "f1": 0.8396946564885497,
+      "precision": 0.8208955223880597,
+      "recall": 0.859375,
       "gt_notes": 64,
-      "pred_notes": 66
+      "pred_notes": 67
     },
     {
       "name": "00_SS1-68-E_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.773841961852861,
-      "precision": 0.797752808988764,
-      "recall": 0.7513227513227513,
+      "f1": 0.7957559681697611,
+      "precision": 0.7978723404255319,
+      "recall": 0.7936507936507936,
       "gt_notes": 189,
-      "pred_notes": 178
+      "pred_notes": 188
     },
     {
       "name": "00_SS1-68-E_solo",
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7224080267558529,
-      "precision": 0.782608695652174,
-      "recall": 0.6708074534161491,
+      "f1": 0.7677419354838709,
+      "precision": 0.7986577181208053,
+      "recall": 0.7391304347826086,
       "gt_notes": 161,
-      "pred_notes": 138
+      "pred_notes": 149
     },
     {
       "name": "00_SS2-107-Ab_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8682505399568033,
-      "precision": 0.881578947368421,
-      "recall": 0.8553191489361702,
+      "f1": 0.8336933045356371,
+      "precision": 0.8464912280701754,
+      "recall": 0.8212765957446808,
       "gt_notes": 235,
       "pred_notes": 228
     },
@@ -599,141 +599,141 @@
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7950819672131147,
-      "precision": 0.7578125,
-      "recall": 0.8362068965517241,
+      "f1": 0.8101265822784811,
+      "precision": 0.7933884297520661,
+      "recall": 0.8275862068965517,
       "gt_notes": 116,
-      "pred_notes": 128
+      "pred_notes": 121
     },
     {
       "name": "00_SS2-88-F_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8318965517241379,
-      "precision": 0.8247863247863247,
-      "recall": 0.8391304347826087,
+      "f1": 0.8484848484848485,
+      "precision": 0.8448275862068966,
+      "recall": 0.8521739130434782,
       "gt_notes": 230,
-      "pred_notes": 234
+      "pred_notes": 232
     },
     {
       "name": "00_SS2-88-F_solo",
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7753303964757711,
-      "precision": 0.7521367521367521,
-      "recall": 0.8,
+      "f1": 0.7319148936170212,
+      "precision": 0.688,
+      "recall": 0.7818181818181819,
       "gt_notes": 110,
-      "pred_notes": 117
+      "pred_notes": 125
     },
     {
       "name": "00_SS3-84-Bb_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7052341597796143,
-      "precision": 0.7150837988826816,
-      "recall": 0.6956521739130435,
+      "f1": 0.5795454545454545,
+      "precision": 0.6071428571428571,
+      "recall": 0.5543478260869565,
       "gt_notes": 184,
-      "pred_notes": 179
+      "pred_notes": 168
     },
     {
       "name": "00_SS3-84-Bb_solo",
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8145161290322582,
-      "precision": 0.808,
-      "recall": 0.8211382113821138,
+      "f1": 0.8060836501901141,
+      "precision": 0.7571428571428571,
+      "recall": 0.8617886178861789,
       "gt_notes": 123,
-      "pred_notes": 125
+      "pred_notes": 140
     },
     {
       "name": "00_SS3-98-C_comp",
       "player": "00",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8439306358381502,
-      "precision": 0.8830645161290323,
-      "recall": 0.8081180811808119,
+      "f1": 0.8749999999999999,
+      "precision": 0.9294605809128631,
+      "recall": 0.8265682656826568,
       "gt_notes": 271,
-      "pred_notes": 248
+      "pred_notes": 241
     },
     {
       "name": "00_SS3-98-C_solo",
       "player": "00",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8571428571428572,
-      "precision": 0.8741721854304636,
-      "recall": 0.8407643312101911,
+      "f1": 0.8366013071895426,
+      "precision": 0.8590604026845637,
+      "recall": 0.8152866242038217,
       "gt_notes": 157,
-      "pred_notes": 151
+      "pred_notes": 149
     },
     {
       "name": "01_BN1-129-Eb_comp",
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8669950738916257,
-      "precision": 0.8979591836734694,
-      "recall": 0.8380952380952381,
+      "f1": 0.9047619047619048,
+      "precision": 0.9047619047619048,
+      "recall": 0.9047619047619048,
       "gt_notes": 105,
-      "pred_notes": 98
+      "pred_notes": 105
     },
     {
       "name": "01_BN1-129-Eb_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8852459016393442,
-      "precision": 0.8852459016393442,
-      "recall": 0.8852459016393442,
+      "f1": 0.868217054263566,
+      "precision": 0.8235294117647058,
+      "recall": 0.9180327868852459,
       "gt_notes": 61,
-      "pred_notes": 61
+      "pred_notes": 68
     },
     {
       "name": "01_BN1-147-Gb_comp",
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8219178082191781,
-      "precision": 0.759493670886076,
-      "recall": 0.8955223880597015,
+      "f1": 0.8316151202749141,
+      "precision": 0.7707006369426752,
+      "recall": 0.9029850746268657,
       "gt_notes": 134,
-      "pred_notes": 158
+      "pred_notes": 157
     },
     {
       "name": "01_BN1-147-Gb_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8695652173913043,
-      "precision": 0.8571428571428571,
-      "recall": 0.8823529411764706,
+      "f1": 0.8676470588235294,
+      "precision": 0.8676470588235294,
+      "recall": 0.8676470588235294,
       "gt_notes": 68,
-      "pred_notes": 70
+      "pred_notes": 68
     },
     {
       "name": "01_BN2-131-B_comp",
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8630136986301369,
-      "precision": 0.8111587982832618,
+      "f1": 0.8456375838926175,
+      "precision": 0.78099173553719,
       "recall": 0.9219512195121952,
       "gt_notes": 205,
-      "pred_notes": 233
+      "pred_notes": 242
     },
     {
       "name": "01_BN2-131-B_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.9194312796208531,
-      "precision": 0.9150943396226415,
-      "recall": 0.9238095238095239,
+      "f1": 0.9383886255924171,
+      "precision": 0.9339622641509434,
+      "recall": 0.9428571428571428,
       "gt_notes": 105,
       "pred_notes": 106
     },
@@ -742,174 +742,174 @@
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8123861566484517,
-      "precision": 0.7716262975778547,
-      "recall": 0.8576923076923076,
+      "f1": 0.8545454545454546,
+      "precision": 0.8103448275862069,
+      "recall": 0.9038461538461539,
       "gt_notes": 260,
-      "pred_notes": 289
+      "pred_notes": 290
     },
     {
       "name": "01_BN2-166-Ab_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8521739130434782,
-      "precision": 0.8521739130434782,
-      "recall": 0.8521739130434782,
+      "f1": 0.8620689655172413,
+      "precision": 0.8547008547008547,
+      "recall": 0.8695652173913043,
       "gt_notes": 115,
-      "pred_notes": 115
+      "pred_notes": 117
     },
     {
       "name": "01_BN3-119-G_comp",
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8858695652173914,
-      "precision": 0.8716577540106952,
-      "recall": 0.9005524861878453,
+      "f1": 0.877922077922078,
+      "precision": 0.8284313725490197,
+      "recall": 0.9337016574585635,
       "gt_notes": 181,
-      "pred_notes": 187
+      "pred_notes": 204
     },
     {
       "name": "01_BN3-119-G_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.9171270718232043,
-      "precision": 0.9021739130434783,
-      "recall": 0.9325842696629213,
+      "f1": 0.8791208791208791,
+      "precision": 0.8602150537634409,
+      "recall": 0.898876404494382,
       "gt_notes": 89,
-      "pred_notes": 92
+      "pred_notes": 93
     },
     {
       "name": "01_BN3-154-E_comp",
       "player": "01",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.7556675062972293,
-      "precision": 0.7653061224489796,
-      "recall": 0.746268656716418,
+      "f1": 0.7894736842105264,
+      "precision": 0.7603686635944701,
+      "recall": 0.8208955223880597,
       "gt_notes": 201,
-      "pred_notes": 196
+      "pred_notes": 217
     },
     {
       "name": "01_BN3-154-E_solo",
       "player": "01",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8461538461538461,
-      "precision": 0.8627450980392157,
-      "recall": 0.8301886792452831,
+      "f1": 0.8465116279069768,
+      "precision": 0.8348623853211009,
+      "recall": 0.8584905660377359,
       "gt_notes": 106,
-      "pred_notes": 102
+      "pred_notes": 109
     },
     {
       "name": "01_Funk1-114-Ab_comp",
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.9090909090909092,
-      "precision": 0.9130434782608695,
-      "recall": 0.9051724137931034,
+      "f1": 0.875,
+      "precision": 0.9074074074074074,
+      "recall": 0.8448275862068966,
       "gt_notes": 232,
-      "pred_notes": 230
+      "pred_notes": 216
     },
     {
       "name": "01_Funk1-114-Ab_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7755102040816326,
-      "precision": 0.76,
-      "recall": 0.7916666666666666,
+      "f1": 0.776,
+      "precision": 0.7461538461538462,
+      "recall": 0.8083333333333333,
       "gt_notes": 120,
-      "pred_notes": 125
+      "pred_notes": 130
     },
     {
       "name": "01_Funk1-97-C_comp",
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.9516441005802708,
-      "precision": 0.9283018867924528,
-      "recall": 0.9761904761904762,
+      "f1": 0.9548133595284872,
+      "precision": 0.9455252918287937,
+      "recall": 0.9642857142857143,
       "gt_notes": 252,
-      "pred_notes": 265
+      "pred_notes": 257
     },
     {
       "name": "01_Funk1-97-C_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.761467889908257,
-      "precision": 0.7280701754385965,
+      "f1": 0.7757009345794391,
+      "precision": 0.7545454545454545,
       "recall": 0.7980769230769231,
       "gt_notes": 104,
-      "pred_notes": 114
+      "pred_notes": 110
     },
     {
       "name": "01_Funk2-108-Eb_comp",
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8580750407830342,
-      "precision": 0.821875,
-      "recall": 0.8976109215017065,
+      "f1": 0.8655737704918033,
+      "precision": 0.832807570977918,
+      "recall": 0.9010238907849829,
       "gt_notes": 293,
-      "pred_notes": 320
+      "pred_notes": 317
     },
     {
       "name": "01_Funk2-108-Eb_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.825136612021858,
-      "precision": 0.8628571428571429,
-      "recall": 0.7905759162303665,
+      "f1": 0.8324324324324324,
+      "precision": 0.8603351955307262,
+      "recall": 0.806282722513089,
       "gt_notes": 191,
-      "pred_notes": 175
+      "pred_notes": 179
     },
     {
       "name": "01_Funk2-119-G_comp",
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.805704099821747,
-      "precision": 0.7929824561403509,
-      "recall": 0.8188405797101449,
+      "f1": 0.8146788990825689,
+      "precision": 0.8252788104089219,
+      "recall": 0.8043478260869565,
       "gt_notes": 276,
-      "pred_notes": 285
+      "pred_notes": 269
     },
     {
       "name": "01_Funk2-119-G_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8044280442804429,
-      "precision": 0.8134328358208955,
-      "recall": 0.7956204379562044,
+      "f1": 0.7954545454545454,
+      "precision": 0.8267716535433071,
+      "recall": 0.7664233576642335,
       "gt_notes": 137,
-      "pred_notes": 134
+      "pred_notes": 127
     },
     {
       "name": "01_Funk3-112-C#_comp",
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8354755784061697,
-      "precision": 0.7946210268948656,
-      "recall": 0.8807588075880759,
+      "f1": 0.8267326732673267,
+      "precision": 0.7608200455580866,
+      "recall": 0.9051490514905149,
       "gt_notes": 369,
-      "pred_notes": 409
+      "pred_notes": 439
     },
     {
       "name": "01_Funk3-112-C#_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8141592920353983,
-      "precision": 0.8023255813953488,
-      "recall": 0.8263473053892215,
+      "f1": 0.8082595870206489,
+      "precision": 0.7965116279069767,
+      "recall": 0.8203592814371258,
       "gt_notes": 167,
       "pred_notes": 172
     },
@@ -918,581 +918,581 @@
       "player": "01",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8698224852071006,
-      "precision": 0.901840490797546,
-      "recall": 0.84,
+      "f1": 0.8431654676258993,
+      "precision": 0.8492753623188406,
+      "recall": 0.8371428571428572,
       "gt_notes": 350,
-      "pred_notes": 326
+      "pred_notes": 345
     },
     {
       "name": "01_Funk3-98-A_solo",
       "player": "01",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8091603053435115,
-      "precision": 0.803030303030303,
-      "recall": 0.8153846153846154,
+      "f1": 0.7806122448979591,
+      "precision": 0.7766497461928934,
+      "recall": 0.7846153846153846,
       "gt_notes": 195,
-      "pred_notes": 198
+      "pred_notes": 197
     },
     {
       "name": "01_Jazz1-130-D_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9395348837209301,
-      "precision": 0.9017857142857143,
-      "recall": 0.9805825242718447,
+      "f1": 0.9333333333333335,
+      "precision": 0.9158878504672897,
+      "recall": 0.9514563106796117,
       "gt_notes": 103,
-      "pred_notes": 112
+      "pred_notes": 107
     },
     {
       "name": "01_Jazz1-130-D_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8794326241134752,
-      "precision": 0.8493150684931506,
-      "recall": 0.9117647058823529,
+      "f1": 0.8201438848920864,
+      "precision": 0.8028169014084507,
+      "recall": 0.8382352941176471,
       "gt_notes": 68,
-      "pred_notes": 73
+      "pred_notes": 71
     },
     {
       "name": "01_Jazz1-200-B_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8620689655172413,
-      "precision": 0.8928571428571429,
-      "recall": 0.8333333333333334,
+      "f1": 0.9098712446351931,
+      "precision": 0.9380530973451328,
+      "recall": 0.8833333333333333,
       "gt_notes": 120,
-      "pred_notes": 112
+      "pred_notes": 113
     },
     {
       "name": "01_Jazz1-200-B_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8095238095238095,
-      "precision": 0.8095238095238095,
-      "recall": 0.8095238095238095,
+      "f1": 0.8520710059171598,
+      "precision": 0.8470588235294118,
+      "recall": 0.8571428571428571,
       "gt_notes": 84,
-      "pred_notes": 84
+      "pred_notes": 85
     },
     {
       "name": "01_Jazz2-110-Bb_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8558558558558559,
-      "precision": 0.8482142857142857,
-      "recall": 0.8636363636363636,
+      "f1": 0.8540305010893247,
+      "precision": 0.8200836820083682,
+      "recall": 0.8909090909090909,
       "gt_notes": 220,
-      "pred_notes": 224
+      "pred_notes": 239
     },
     {
       "name": "01_Jazz2-110-Bb_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8769230769230768,
-      "precision": 0.890625,
-      "recall": 0.8636363636363636,
+      "f1": 0.8787878787878788,
+      "precision": 0.8787878787878788,
+      "recall": 0.8787878787878788,
       "gt_notes": 132,
-      "pred_notes": 128
+      "pred_notes": 132
     },
     {
       "name": "01_Jazz2-187-F#_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8466257668711658,
-      "precision": 0.8625,
-      "recall": 0.8313253012048193,
+      "f1": 0.8318042813455657,
+      "precision": 0.84472049689441,
+      "recall": 0.8192771084337349,
       "gt_notes": 166,
-      "pred_notes": 160
+      "pred_notes": 161
     },
     {
       "name": "01_Jazz2-187-F#_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.7851239669421487,
-      "precision": 0.8333333333333334,
-      "recall": 0.7421875,
+      "f1": 0.7572016460905351,
+      "precision": 0.8,
+      "recall": 0.71875,
       "gt_notes": 128,
-      "pred_notes": 114
+      "pred_notes": 115
     },
     {
       "name": "01_Jazz3-137-Eb_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8602150537634409,
-      "precision": 0.851063829787234,
-      "recall": 0.8695652173913043,
+      "f1": 0.8704663212435233,
+      "precision": 0.8316831683168316,
+      "recall": 0.9130434782608695,
       "gt_notes": 184,
-      "pred_notes": 188
+      "pred_notes": 202
     },
     {
       "name": "01_Jazz3-137-Eb_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8617886178861788,
-      "precision": 0.848,
-      "recall": 0.8760330578512396,
+      "f1": 0.8888888888888888,
+      "precision": 0.8852459016393442,
+      "recall": 0.8925619834710744,
       "gt_notes": 121,
-      "pred_notes": 125
+      "pred_notes": 122
     },
     {
       "name": "01_Jazz3-150-C_comp",
       "player": "01",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7986577181208053,
-      "precision": 0.7777777777777778,
+      "f1": 0.7880794701986754,
+      "precision": 0.7579617834394905,
       "recall": 0.8206896551724138,
       "gt_notes": 145,
-      "pred_notes": 153
+      "pred_notes": 157
     },
     {
       "name": "01_Jazz3-150-C_solo",
       "player": "01",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8648648648648649,
-      "precision": 0.8495575221238938,
-      "recall": 0.8807339449541285,
+      "f1": 0.8699551569506726,
+      "precision": 0.8508771929824561,
+      "recall": 0.8899082568807339,
       "gt_notes": 109,
-      "pred_notes": 113
+      "pred_notes": 114
     },
     {
       "name": "01_Rock1-130-A_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9099999999999999,
-      "precision": 0.8921568627450981,
-      "recall": 0.9285714285714286,
+      "f1": 0.9379652605459057,
+      "precision": 0.9130434782608695,
+      "recall": 0.9642857142857143,
       "gt_notes": 196,
-      "pred_notes": 204
+      "pred_notes": 207
     },
     {
       "name": "01_Rock1-130-A_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7810650887573964,
-      "precision": 0.8048780487804879,
+      "f1": 0.7630057803468209,
+      "precision": 0.7674418604651163,
       "recall": 0.7586206896551724,
       "gt_notes": 87,
-      "pred_notes": 82
+      "pred_notes": 86
     },
     {
       "name": "01_Rock1-90-C#_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9176470588235294,
-      "precision": 0.8892508143322475,
-      "recall": 0.9479166666666666,
+      "f1": 0.9184692179700499,
+      "precision": 0.8817891373801917,
+      "recall": 0.9583333333333334,
       "gt_notes": 288,
-      "pred_notes": 307
+      "pred_notes": 313
     },
     {
       "name": "01_Rock1-90-C#_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7938931297709922,
-      "precision": 0.8188976377952756,
-      "recall": 0.7703703703703704,
+      "f1": 0.7925925925925926,
+      "precision": 0.7925925925925926,
+      "recall": 0.7925925925925926,
       "gt_notes": 135,
-      "pred_notes": 127
+      "pred_notes": 135
     },
     {
       "name": "01_Rock2-142-D_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8813559322033898,
-      "precision": 0.8813559322033898,
-      "recall": 0.8813559322033898,
+      "f1": 0.9011725293132327,
+      "precision": 0.890728476821192,
+      "recall": 0.911864406779661,
       "gt_notes": 295,
-      "pred_notes": 295
+      "pred_notes": 302
     },
     {
       "name": "01_Rock2-142-D_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8251121076233183,
-      "precision": 0.8440366972477065,
-      "recall": 0.8070175438596491,
+      "f1": 0.850877192982456,
+      "precision": 0.8508771929824561,
+      "recall": 0.8508771929824561,
       "gt_notes": 114,
-      "pred_notes": 109
+      "pred_notes": 114
     },
     {
       "name": "01_Rock2-85-F_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.906930693069307,
-      "precision": 0.8910505836575876,
-      "recall": 0.9233870967741935,
+      "f1": 0.9090909090909092,
+      "precision": 0.8736059479553904,
+      "recall": 0.9475806451612904,
       "gt_notes": 248,
-      "pred_notes": 257
+      "pred_notes": 269
     },
     {
       "name": "01_Rock2-85-F_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8829787234042553,
-      "precision": 0.8924731182795699,
-      "recall": 0.8736842105263158,
+      "f1": 0.8859416445623343,
+      "precision": 0.893048128342246,
+      "recall": 0.8789473684210526,
       "gt_notes": 190,
-      "pred_notes": 186
+      "pred_notes": 187
     },
     {
       "name": "01_Rock3-117-Bb_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8856447688564478,
-      "precision": 0.8584905660377359,
-      "recall": 0.914572864321608,
+      "f1": 0.8847058823529411,
+      "precision": 0.831858407079646,
+      "recall": 0.9447236180904522,
       "gt_notes": 398,
-      "pred_notes": 424
+      "pred_notes": 452
     },
     {
       "name": "01_Rock3-117-Bb_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8571428571428571,
-      "precision": 0.8357142857142857,
+      "f1": 0.8666666666666667,
+      "precision": 0.8540145985401459,
       "recall": 0.8796992481203008,
       "gt_notes": 133,
-      "pred_notes": 140
+      "pred_notes": 137
     },
     {
       "name": "01_Rock3-148-C_comp",
       "player": "01",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8039702233250621,
-      "precision": 0.8059701492537313,
-      "recall": 0.801980198019802,
+      "f1": 0.7238605898123325,
+      "precision": 0.7894736842105263,
+      "recall": 0.6683168316831684,
       "gt_notes": 202,
-      "pred_notes": 201
+      "pred_notes": 171
     },
     {
       "name": "01_Rock3-148-C_solo",
       "player": "01",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.801762114537445,
-      "precision": 0.8198198198198198,
-      "recall": 0.7844827586206896,
+      "f1": 0.8245614035087718,
+      "precision": 0.8392857142857143,
+      "recall": 0.8103448275862069,
       "gt_notes": 116,
-      "pred_notes": 111
+      "pred_notes": 112
     },
     {
       "name": "01_SS1-100-C#_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.9163346613545816,
-      "precision": 0.9102902374670184,
-      "recall": 0.9224598930481284,
+      "f1": 0.928478543563069,
+      "precision": 0.9037974683544304,
+      "recall": 0.9545454545454546,
       "gt_notes": 374,
-      "pred_notes": 379
+      "pred_notes": 395
     },
     {
       "name": "01_SS1-100-C#_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8560311284046692,
-      "precision": 0.8527131782945736,
-      "recall": 0.859375,
+      "f1": 0.8648648648648648,
+      "precision": 0.8549618320610687,
+      "recall": 0.875,
       "gt_notes": 128,
-      "pred_notes": 129
+      "pred_notes": 131
     },
     {
       "name": "01_SS1-68-E_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8008565310492505,
-      "precision": 0.7276264591439688,
-      "recall": 0.8904761904761904,
+      "f1": 0.8065843621399177,
+      "precision": 0.7101449275362319,
+      "recall": 0.9333333333333333,
       "gt_notes": 210,
-      "pred_notes": 257
+      "pred_notes": 276
     },
     {
       "name": "01_SS1-68-E_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7588932806324111,
-      "precision": 0.75,
-      "recall": 0.768,
+      "f1": 0.792156862745098,
+      "precision": 0.7769230769230769,
+      "recall": 0.808,
       "gt_notes": 125,
-      "pred_notes": 128
+      "pred_notes": 130
     },
     {
       "name": "01_SS2-107-Ab_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7622641509433963,
-      "precision": 0.7509293680297398,
-      "recall": 0.7739463601532567,
+      "f1": 0.7665369649805448,
+      "precision": 0.7786561264822134,
+      "recall": 0.7547892720306514,
       "gt_notes": 261,
-      "pred_notes": 269
+      "pred_notes": 253
     },
     {
       "name": "01_SS2-107-Ab_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7350835322195703,
-      "precision": 0.875,
-      "recall": 0.6337448559670782,
+      "f1": 0.7600950118764845,
+      "precision": 0.898876404494382,
+      "recall": 0.6584362139917695,
       "gt_notes": 243,
-      "pred_notes": 176
+      "pred_notes": 178
     },
     {
       "name": "01_SS2-88-F_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8538681948424068,
-      "precision": 0.8254847645429363,
-      "recall": 0.884272997032641,
+      "f1": 0.8599439775910364,
+      "precision": 0.8143236074270557,
+      "recall": 0.9109792284866469,
       "gt_notes": 337,
-      "pred_notes": 361
+      "pred_notes": 377
     },
     {
       "name": "01_SS2-88-F_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8823529411764706,
-      "precision": 0.8881578947368421,
-      "recall": 0.8766233766233766,
+      "f1": 0.8414239482200646,
+      "precision": 0.8387096774193549,
+      "recall": 0.8441558441558441,
       "gt_notes": 154,
-      "pred_notes": 152
+      "pred_notes": 155
     },
     {
       "name": "01_SS3-84-Bb_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8905380333951762,
-      "precision": 0.9195402298850575,
-      "recall": 0.8633093525179856,
+      "f1": 0.9127272727272727,
+      "precision": 0.9227941176470589,
+      "recall": 0.9028776978417267,
       "gt_notes": 278,
-      "pred_notes": 261
+      "pred_notes": 272
     },
     {
       "name": "01_SS3-84-Bb_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8633540372670807,
-      "precision": 0.8742138364779874,
-      "recall": 0.852760736196319,
+      "f1": 0.8703703703703703,
+      "precision": 0.8757763975155279,
+      "recall": 0.8650306748466258,
       "gt_notes": 163,
-      "pred_notes": 159
+      "pred_notes": 161
     },
     {
       "name": "01_SS3-98-C_comp",
       "player": "01",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7502726281352236,
-      "precision": 0.8289156626506025,
-      "recall": 0.6852589641434262,
+      "f1": 0.7818574514038876,
+      "precision": 0.8537735849056604,
+      "recall": 0.7211155378486056,
       "gt_notes": 502,
-      "pred_notes": 415
+      "pred_notes": 424
     },
     {
       "name": "01_SS3-98-C_solo",
       "player": "01",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8363636363636364,
-      "precision": 0.8473684210526315,
-      "recall": 0.8256410256410256,
+      "f1": 0.835820895522388,
+      "precision": 0.8115942028985508,
+      "recall": 0.8615384615384616,
       "gt_notes": 195,
-      "pred_notes": 190
+      "pred_notes": 207
     },
     {
       "name": "02_BN1-129-Eb_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8454258675078865,
-      "precision": 0.8220858895705522,
-      "recall": 0.8701298701298701,
+      "f1": 0.8338557993730407,
+      "precision": 0.806060606060606,
+      "recall": 0.8636363636363636,
       "gt_notes": 154,
-      "pred_notes": 163
+      "pred_notes": 165
     },
     {
       "name": "02_BN1-129-Eb_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8928571428571428,
-      "precision": 0.9090909090909091,
-      "recall": 0.8771929824561403,
+      "f1": 0.8793103448275862,
+      "precision": 0.864406779661017,
+      "recall": 0.8947368421052632,
       "gt_notes": 57,
-      "pred_notes": 55
+      "pred_notes": 59
     },
     {
       "name": "02_BN1-147-Gb_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8337595907928387,
-      "precision": 0.8534031413612565,
-      "recall": 0.815,
+      "f1": 0.7586206896551724,
+      "precision": 0.7475728155339806,
+      "recall": 0.77,
       "gt_notes": 200,
-      "pred_notes": 191
+      "pred_notes": 206
     },
     {
       "name": "02_BN1-147-Gb_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8505747126436781,
-      "precision": 0.8604651162790697,
-      "recall": 0.8409090909090909,
+      "f1": 0.8172043010752688,
+      "precision": 0.7755102040816326,
+      "recall": 0.8636363636363636,
       "gt_notes": 44,
-      "pred_notes": 43
+      "pred_notes": 49
     },
     {
       "name": "02_BN2-131-B_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8411214953271029,
-      "precision": 0.8754863813229572,
-      "recall": 0.8093525179856115,
+      "f1": 0.7955390334572491,
+      "precision": 0.823076923076923,
+      "recall": 0.7697841726618705,
       "gt_notes": 278,
-      "pred_notes": 257
+      "pred_notes": 260
     },
     {
       "name": "02_BN2-131-B_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8307692307692308,
-      "precision": 0.84375,
-      "recall": 0.8181818181818182,
+      "f1": 0.8062015503875969,
+      "precision": 0.8253968253968254,
+      "recall": 0.7878787878787878,
       "gt_notes": 66,
-      "pred_notes": 64
+      "pred_notes": 63
     },
     {
       "name": "02_BN2-166-Ab_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.771830985915493,
-      "precision": 0.8509316770186336,
-      "recall": 0.7061855670103093,
+      "f1": 0.7833333333333333,
+      "precision": 0.8493975903614458,
+      "recall": 0.7268041237113402,
       "gt_notes": 194,
-      "pred_notes": 161
+      "pred_notes": 166
     },
     {
       "name": "02_BN2-166-Ab_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8813559322033898,
-      "precision": 0.8813559322033898,
-      "recall": 0.8813559322033898,
+      "f1": 0.9243697478991596,
+      "precision": 0.9166666666666666,
+      "recall": 0.9322033898305084,
       "gt_notes": 59,
-      "pred_notes": 59
+      "pred_notes": 60
     },
     {
       "name": "02_BN3-119-G_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.7860869565217392,
-      "precision": 0.7713310580204779,
-      "recall": 0.8014184397163121,
+      "f1": 0.8364249578414841,
+      "precision": 0.797427652733119,
+      "recall": 0.8794326241134752,
       "gt_notes": 282,
-      "pred_notes": 293
+      "pred_notes": 311
     },
     {
       "name": "02_BN3-119-G_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8181818181818183,
-      "precision": 0.81,
-      "recall": 0.826530612244898,
+      "f1": 0.8292682926829268,
+      "precision": 0.794392523364486,
+      "recall": 0.8673469387755102,
       "gt_notes": 98,
-      "pred_notes": 100
+      "pred_notes": 107
     },
     {
       "name": "02_BN3-154-E_comp",
       "player": "02",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.787878787878788,
-      "precision": 0.7738095238095238,
-      "recall": 0.8024691358024691,
+      "f1": 0.8097165991902834,
+      "precision": 0.796812749003984,
+      "recall": 0.823045267489712,
       "gt_notes": 243,
-      "pred_notes": 252
+      "pred_notes": 251
     },
     {
       "name": "02_BN3-154-E_solo",
       "player": "02",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.763888888888889,
-      "precision": 0.8461538461538461,
-      "recall": 0.6962025316455697,
+      "f1": 0.7105263157894737,
+      "precision": 0.7397260273972602,
+      "recall": 0.6835443037974683,
       "gt_notes": 79,
-      "pred_notes": 65
+      "pred_notes": 73
     },
     {
       "name": "02_Funk1-114-Ab_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7826086956521738,
-      "precision": 0.8008474576271186,
-      "recall": 0.7651821862348178,
+      "f1": 0.7775467775467775,
+      "precision": 0.7991452991452992,
+      "recall": 0.757085020242915,
       "gt_notes": 247,
-      "pred_notes": 236
+      "pred_notes": 234
     },
     {
       "name": "02_Funk1-114-Ab_solo",
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8682926829268293,
-      "precision": 0.8557692307692307,
+      "f1": 0.8768472906403942,
+      "precision": 0.8725490196078431,
       "recall": 0.8811881188118812,
       "gt_notes": 101,
-      "pred_notes": 104
+      "pred_notes": 102
     },
     {
       "name": "02_Funk1-97-C_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7738693467336684,
-      "precision": 0.7368421052631579,
-      "recall": 0.8148148148148148,
+      "f1": 0.7989949748743719,
+      "precision": 0.7607655502392344,
+      "recall": 0.8412698412698413,
       "gt_notes": 189,
       "pred_notes": 209
     },
@@ -1501,42 +1501,42 @@
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8142857142857144,
-      "precision": 0.8260869565217391,
-      "recall": 0.8028169014084507,
+      "f1": 0.8333333333333333,
+      "precision": 0.821917808219178,
+      "recall": 0.8450704225352113,
       "gt_notes": 71,
-      "pred_notes": 69
+      "pred_notes": 73
     },
     {
       "name": "02_Funk2-108-Eb_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.84251968503937,
-      "precision": 0.8492063492063492,
-      "recall": 0.8359375,
+      "f1": 0.8446215139442231,
+      "precision": 0.8617886178861789,
+      "recall": 0.828125,
       "gt_notes": 256,
-      "pred_notes": 252
+      "pred_notes": 246
     },
     {
       "name": "02_Funk2-108-Eb_solo",
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7422680412371135,
-      "precision": 0.75,
-      "recall": 0.7346938775510204,
+      "f1": 0.7857142857142857,
+      "precision": 0.7857142857142857,
+      "recall": 0.7857142857142857,
       "gt_notes": 98,
-      "pred_notes": 96
+      "pred_notes": 98
     },
     {
       "name": "02_Funk2-119-G_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.755,
-      "precision": 0.7475247524752475,
-      "recall": 0.7626262626262627,
+      "f1": 0.7750000000000001,
+      "precision": 0.7673267326732673,
+      "recall": 0.7828282828282829,
       "gt_notes": 198,
       "pred_notes": 202
     },
@@ -1545,196 +1545,196 @@
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8151658767772513,
-      "precision": 0.8431372549019608,
-      "recall": 0.7889908256880734,
+      "f1": 0.835680751173709,
+      "precision": 0.8557692307692307,
+      "recall": 0.8165137614678899,
       "gt_notes": 109,
-      "pred_notes": 102
+      "pred_notes": 104
     },
     {
       "name": "02_Funk3-112-C#_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8522167487684729,
-      "precision": 0.8398058252427184,
-      "recall": 0.865,
+      "f1": 0.8423529411764705,
+      "precision": 0.7955555555555556,
+      "recall": 0.895,
       "gt_notes": 200,
-      "pred_notes": 206
+      "pred_notes": 225
     },
     {
       "name": "02_Funk3-112-C#_solo",
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8175182481751824,
-      "precision": 0.8296296296296296,
-      "recall": 0.8057553956834532,
+      "f1": 0.8333333333333333,
+      "precision": 0.8394160583941606,
+      "recall": 0.8273381294964028,
       "gt_notes": 139,
-      "pred_notes": 135
+      "pred_notes": 137
     },
     {
       "name": "02_Funk3-98-A_comp",
       "player": "02",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.832,
-      "precision": 0.8666666666666667,
-      "recall": 0.8,
+      "f1": 0.8226415094339623,
+      "precision": 0.8074074074074075,
+      "recall": 0.8384615384615385,
       "gt_notes": 130,
-      "pred_notes": 120
+      "pred_notes": 135
     },
     {
       "name": "02_Funk3-98-A_solo",
       "player": "02",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8930817610062892,
-      "precision": 0.8875,
-      "recall": 0.8987341772151899,
+      "f1": 0.8481012658227848,
+      "precision": 0.8481012658227848,
+      "recall": 0.8481012658227848,
       "gt_notes": 79,
-      "pred_notes": 80
+      "pred_notes": 79
     },
     {
       "name": "02_Jazz1-130-D_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.85995085995086,
-      "precision": 0.8578431372549019,
-      "recall": 0.8620689655172413,
+      "f1": 0.8780487804878048,
+      "precision": 0.8695652173913043,
+      "recall": 0.8866995073891626,
       "gt_notes": 203,
-      "pred_notes": 204
+      "pred_notes": 207
     },
     {
       "name": "02_Jazz1-130-D_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8454545454545455,
-      "precision": 0.8454545454545455,
-      "recall": 0.8454545454545455,
+      "f1": 0.8778280542986425,
+      "precision": 0.8738738738738738,
+      "recall": 0.8818181818181818,
       "gt_notes": 110,
-      "pred_notes": 110
+      "pred_notes": 111
     },
     {
       "name": "02_Jazz1-200-B_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8095238095238094,
-      "precision": 0.8138297872340425,
-      "recall": 0.8052631578947368,
+      "f1": 0.854922279792746,
+      "precision": 0.8418367346938775,
+      "recall": 0.868421052631579,
       "gt_notes": 190,
-      "pred_notes": 188
+      "pred_notes": 196
     },
     {
       "name": "02_Jazz1-200-B_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8915662650602411,
-      "precision": 0.9024390243902439,
-      "recall": 0.8809523809523809,
+      "f1": 0.8181818181818182,
+      "precision": 0.782608695652174,
+      "recall": 0.8571428571428571,
       "gt_notes": 42,
-      "pred_notes": 41
+      "pred_notes": 46
     },
     {
       "name": "02_Jazz2-110-Bb_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7992495309568479,
-      "precision": 0.7859778597785978,
-      "recall": 0.8129770992366412,
+      "f1": 0.8243727598566308,
+      "precision": 0.777027027027027,
+      "recall": 0.8778625954198473,
       "gt_notes": 262,
-      "pred_notes": 271
+      "pred_notes": 296
     },
     {
       "name": "02_Jazz2-110-Bb_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.875,
-      "precision": 0.8448275862068966,
+      "f1": 0.8672566371681415,
+      "precision": 0.8305084745762712,
       "recall": 0.9074074074074074,
       "gt_notes": 54,
-      "pred_notes": 58
+      "pred_notes": 59
     },
     {
       "name": "02_Jazz2-187-F#_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8365019011406843,
-      "precision": 0.8270676691729323,
-      "recall": 0.8461538461538461,
+      "f1": 0.8759124087591241,
+      "precision": 0.8333333333333334,
+      "recall": 0.9230769230769231,
       "gt_notes": 130,
-      "pred_notes": 133
+      "pred_notes": 144
     },
     {
       "name": "02_Jazz2-187-F#_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8214285714285714,
-      "precision": 0.8070175438596491,
-      "recall": 0.8363636363636363,
+      "f1": 0.8067226890756303,
+      "precision": 0.75,
+      "recall": 0.8727272727272727,
       "gt_notes": 55,
-      "pred_notes": 57
+      "pred_notes": 64
     },
     {
       "name": "02_Jazz3-137-Eb_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8350515463917526,
-      "precision": 0.8571428571428571,
-      "recall": 0.8140703517587939,
+      "f1": 0.858611825192802,
+      "precision": 0.8789473684210526,
+      "recall": 0.8391959798994975,
       "gt_notes": 199,
-      "pred_notes": 189
+      "pred_notes": 190
     },
     {
       "name": "02_Jazz3-137-Eb_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8474576271186441,
-      "precision": 0.8426966292134831,
-      "recall": 0.8522727272727273,
+      "f1": 0.8128342245989305,
+      "precision": 0.7676767676767676,
+      "recall": 0.8636363636363636,
       "gt_notes": 88,
-      "pred_notes": 89
+      "pred_notes": 99
     },
     {
       "name": "02_Jazz3-150-C_comp",
       "player": "02",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.825153374233129,
-      "precision": 0.7598870056497176,
-      "recall": 0.9026845637583892,
+      "f1": 0.8430769230769231,
+      "precision": 0.7784090909090909,
+      "recall": 0.9194630872483222,
       "gt_notes": 298,
-      "pred_notes": 354
+      "pred_notes": 352
     },
     {
       "name": "02_Jazz3-150-C_solo",
       "player": "02",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.9324324324324323,
-      "precision": 0.92,
+      "f1": 0.9199999999999999,
+      "precision": 0.8961038961038961,
       "recall": 0.9452054794520548,
       "gt_notes": 73,
-      "pred_notes": 75
+      "pred_notes": 77
     },
     {
       "name": "02_Rock1-130-A_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.843822843822844,
-      "precision": 0.8264840182648402,
-      "recall": 0.861904761904762,
+      "f1": 0.8531468531468531,
+      "precision": 0.8356164383561644,
+      "recall": 0.8714285714285714,
       "gt_notes": 210,
       "pred_notes": 219
     },
@@ -1743,273 +1743,273 @@
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8281250000000001,
-      "precision": 0.8412698412698413,
-      "recall": 0.8153846153846154,
+      "f1": 0.8372093023255814,
+      "precision": 0.84375,
+      "recall": 0.8307692307692308,
       "gt_notes": 65,
-      "pred_notes": 63
+      "pred_notes": 64
     },
     {
       "name": "02_Rock1-90-C#_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7510729613733905,
-      "precision": 0.7322175732217573,
-      "recall": 0.7709251101321586,
+      "f1": 0.7654320987654322,
+      "precision": 0.7181467181467182,
+      "recall": 0.8193832599118943,
       "gt_notes": 227,
-      "pred_notes": 239
+      "pred_notes": 259
     },
     {
       "name": "02_Rock1-90-C#_solo",
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8137931034482759,
-      "precision": 0.8309859154929577,
-      "recall": 0.7972972972972973,
+      "f1": 0.8163265306122449,
+      "precision": 0.821917808219178,
+      "recall": 0.8108108108108109,
       "gt_notes": 74,
-      "pred_notes": 71
+      "pred_notes": 73
     },
     {
       "name": "02_Rock2-142-D_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7863247863247863,
-      "precision": 0.7796610169491526,
-      "recall": 0.7931034482758621,
+      "f1": 0.7814569536423842,
+      "precision": 0.8009049773755657,
+      "recall": 0.7629310344827587,
       "gt_notes": 232,
-      "pred_notes": 236
+      "pred_notes": 221
     },
     {
       "name": "02_Rock2-142-D_solo",
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8682170542635659,
-      "precision": 0.8615384615384616,
-      "recall": 0.875,
+      "f1": 0.8244274809160305,
+      "precision": 0.8059701492537313,
+      "recall": 0.84375,
       "gt_notes": 64,
-      "pred_notes": 65
+      "pred_notes": 67
     },
     {
       "name": "02_Rock2-85-F_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7984790874524715,
-      "precision": 0.8203125,
-      "recall": 0.7777777777777778,
+      "f1": 0.808193668528864,
+      "precision": 0.8127340823970037,
+      "recall": 0.8037037037037037,
       "gt_notes": 270,
-      "pred_notes": 256
+      "pred_notes": 267
     },
     {
       "name": "02_Rock2-85-F_solo",
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8297872340425532,
-      "precision": 0.8863636363636364,
-      "recall": 0.78,
+      "f1": 0.8177339901477833,
+      "precision": 0.8058252427184466,
+      "recall": 0.83,
       "gt_notes": 100,
-      "pred_notes": 88
+      "pred_notes": 103
     },
     {
       "name": "02_Rock3-117-Bb_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.878048780487805,
-      "precision": 0.8796992481203008,
-      "recall": 0.8764044943820225,
+      "f1": 0.8795620437956204,
+      "precision": 0.8576512455516014,
+      "recall": 0.9026217228464419,
       "gt_notes": 267,
-      "pred_notes": 266
+      "pred_notes": 281
     },
     {
       "name": "02_Rock3-117-Bb_solo",
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8762886597938143,
-      "precision": 0.9444444444444444,
-      "recall": 0.8173076923076923,
+      "f1": 0.9038461538461539,
+      "precision": 0.9038461538461539,
+      "recall": 0.9038461538461539,
       "gt_notes": 104,
-      "pred_notes": 90
+      "pred_notes": 104
     },
     {
       "name": "02_Rock3-148-C_comp",
       "player": "02",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7697441601779756,
-      "precision": 0.7456896551724138,
-      "recall": 0.7954022988505747,
+      "f1": 0.8026607538802661,
+      "precision": 0.7751605995717344,
+      "recall": 0.832183908045977,
       "gt_notes": 435,
-      "pred_notes": 464
+      "pred_notes": 467
     },
     {
       "name": "02_Rock3-148-C_solo",
       "player": "02",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.9242424242424243,
-      "precision": 0.9104477611940298,
-      "recall": 0.9384615384615385,
+      "f1": 0.8721804511278195,
+      "precision": 0.8529411764705882,
+      "recall": 0.8923076923076924,
       "gt_notes": 65,
-      "pred_notes": 67
+      "pred_notes": 68
     },
     {
       "name": "02_SS1-100-C#_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7761966364812419,
-      "precision": 0.702576112412178,
+      "f1": 0.7915567282321899,
+      "precision": 0.7281553398058253,
       "recall": 0.8670520231213873,
       "gt_notes": 346,
-      "pred_notes": 427
+      "pred_notes": 412
     },
     {
       "name": "02_SS1-100-C#_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8965517241379309,
-      "precision": 0.9122807017543859,
-      "recall": 0.8813559322033898,
+      "f1": 0.8925619834710744,
+      "precision": 0.8709677419354839,
+      "recall": 0.9152542372881356,
       "gt_notes": 59,
-      "pred_notes": 57
+      "pred_notes": 62
     },
     {
       "name": "02_SS1-68-E_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7769230769230769,
-      "precision": 0.7266187050359713,
-      "recall": 0.8347107438016529,
+      "f1": 0.8125,
+      "precision": 0.7703703703703704,
+      "recall": 0.859504132231405,
       "gt_notes": 121,
-      "pred_notes": 139
+      "pred_notes": 135
     },
     {
       "name": "02_SS1-68-E_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7887323943661971,
-      "precision": 0.7777777777777778,
-      "recall": 0.8,
+      "f1": 0.8356164383561644,
+      "precision": 0.8026315789473685,
+      "recall": 0.8714285714285714,
       "gt_notes": 70,
-      "pred_notes": 72
+      "pred_notes": 76
     },
     {
       "name": "02_SS2-107-Ab_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.799136069114471,
-      "precision": 0.8114035087719298,
-      "recall": 0.7872340425531915,
+      "f1": 0.7923728813559323,
+      "precision": 0.7890295358649789,
+      "recall": 0.7957446808510639,
       "gt_notes": 235,
-      "pred_notes": 228
+      "pred_notes": 237
     },
     {
       "name": "02_SS2-107-Ab_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8732394366197184,
-      "precision": 0.8857142857142857,
-      "recall": 0.8611111111111112,
+      "f1": 0.9041095890410958,
+      "precision": 0.8918918918918919,
+      "recall": 0.9166666666666666,
       "gt_notes": 108,
-      "pred_notes": 105
+      "pred_notes": 111
     },
     {
       "name": "02_SS2-88-F_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8114754098360656,
-      "precision": 0.8016194331983806,
-      "recall": 0.8215767634854771,
+      "f1": 0.810379241516966,
+      "precision": 0.7807692307692308,
+      "recall": 0.8423236514522822,
       "gt_notes": 241,
-      "pred_notes": 247
+      "pred_notes": 260
     },
     {
       "name": "02_SS2-88-F_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8554913294797688,
-      "precision": 0.8314606741573034,
-      "recall": 0.8809523809523809,
+      "f1": 0.853932584269663,
+      "precision": 0.8085106382978723,
+      "recall": 0.9047619047619048,
       "gt_notes": 84,
-      "pred_notes": 89
+      "pred_notes": 94
     },
     {
       "name": "02_SS3-84-Bb_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8481927710843374,
-      "precision": 0.8648648648648649,
-      "recall": 0.8321513002364066,
+      "f1": 0.8558246828143022,
+      "precision": 0.8355855855855856,
+      "recall": 0.8770685579196218,
       "gt_notes": 423,
-      "pred_notes": 407
+      "pred_notes": 444
     },
     {
       "name": "02_SS3-84-Bb_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8250000000000001,
-      "precision": 0.8461538461538461,
-      "recall": 0.8048780487804879,
+      "f1": 0.8650793650793651,
+      "precision": 0.8449612403100775,
+      "recall": 0.8861788617886179,
       "gt_notes": 123,
-      "pred_notes": 117
+      "pred_notes": 129
     },
     {
       "name": "02_SS3-98-C_comp",
       "player": "02",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8190743338008415,
-      "precision": 0.7704485488126649,
-      "recall": 0.874251497005988,
+      "f1": 0.843441466854725,
+      "precision": 0.7973333333333333,
+      "recall": 0.8952095808383234,
       "gt_notes": 334,
-      "pred_notes": 379
+      "pred_notes": 375
     },
     {
       "name": "02_SS3-98-C_solo",
       "player": "02",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8888888888888887,
-      "precision": 0.896,
-      "recall": 0.8818897637795275,
+      "f1": 0.849624060150376,
+      "precision": 0.8129496402877698,
+      "recall": 0.889763779527559,
       "gt_notes": 127,
-      "pred_notes": 125
+      "pred_notes": 139
     },
     {
       "name": "03_BN1-129-Eb_comp",
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9389067524115756,
-      "precision": 0.948051948051948,
-      "recall": 0.9299363057324841,
+      "f1": 0.9363057324840764,
+      "precision": 0.9363057324840764,
+      "recall": 0.9363057324840764,
       "gt_notes": 157,
-      "pred_notes": 154
+      "pred_notes": 157
     },
     {
       "name": "03_BN1-129-Eb_solo",
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8869565217391304,
-      "precision": 0.8947368421052632,
-      "recall": 0.8793103448275862,
+      "f1": 0.9391304347826087,
+      "precision": 0.9473684210526315,
+      "recall": 0.9310344827586207,
       "gt_notes": 58,
       "pred_notes": 57
     },
@@ -2018,53 +2018,53 @@
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9423076923076924,
-      "precision": 0.9363057324840764,
-      "recall": 0.9483870967741935,
+      "f1": 0.9648562300319489,
+      "precision": 0.9556962025316456,
+      "recall": 0.9741935483870968,
       "gt_notes": 155,
-      "pred_notes": 157
+      "pred_notes": 158
     },
     {
       "name": "03_BN1-147-Gb_solo",
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8702290076335878,
-      "precision": 0.8507462686567164,
+      "f1": 0.883720930232558,
+      "precision": 0.8769230769230769,
       "recall": 0.890625,
       "gt_notes": 64,
-      "pred_notes": 67
+      "pred_notes": 65
     },
     {
       "name": "03_BN2-131-B_comp",
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9321663019693655,
-      "precision": 0.9383259911894273,
+      "f1": 0.9342105263157895,
+      "precision": 0.9424778761061947,
       "recall": 0.9260869565217391,
       "gt_notes": 230,
-      "pred_notes": 227
+      "pred_notes": 226
     },
     {
       "name": "03_BN2-131-B_solo",
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8611111111111112,
-      "precision": 0.8611111111111112,
-      "recall": 0.8611111111111112,
+      "f1": 0.847682119205298,
+      "precision": 0.810126582278481,
+      "recall": 0.8888888888888888,
       "gt_notes": 72,
-      "pred_notes": 72
+      "pred_notes": 79
     },
     {
       "name": "03_BN2-166-Ab_comp",
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8676470588235293,
-      "precision": 0.8509615384615384,
-      "recall": 0.885,
+      "f1": 0.838235294117647,
+      "precision": 0.8221153846153846,
+      "recall": 0.855,
       "gt_notes": 200,
       "pred_notes": 208
     },
@@ -2073,9 +2073,9 @@
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8974358974358975,
-      "precision": 0.875,
-      "recall": 0.9210526315789473,
+      "f1": 0.9230769230769231,
+      "precision": 0.9,
+      "recall": 0.9473684210526315,
       "gt_notes": 76,
       "pred_notes": 80
     },
@@ -2084,240 +2084,240 @@
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.916030534351145,
-      "precision": 0.9278350515463918,
-      "recall": 0.9045226130653267,
+      "f1": 0.9353233830845771,
+      "precision": 0.9261083743842364,
+      "recall": 0.9447236180904522,
       "gt_notes": 199,
-      "pred_notes": 194
+      "pred_notes": 203
     },
     {
       "name": "03_BN3-119-G_solo",
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8888888888888888,
-      "precision": 0.8674698795180723,
-      "recall": 0.9113924050632911,
+      "f1": 0.8313253012048193,
+      "precision": 0.7931034482758621,
+      "recall": 0.8734177215189873,
       "gt_notes": 79,
-      "pred_notes": 83
+      "pred_notes": 87
     },
     {
       "name": "03_BN3-154-E_comp",
       "player": "03",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9217877094972067,
-      "precision": 0.9322033898305084,
-      "recall": 0.9116022099447514,
+      "f1": 0.8870523415977962,
+      "precision": 0.8846153846153846,
+      "recall": 0.8895027624309392,
       "gt_notes": 181,
-      "pred_notes": 177
+      "pred_notes": 182
     },
     {
       "name": "03_BN3-154-E_solo",
       "player": "03",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8148148148148148,
-      "precision": 0.7971014492753623,
+      "f1": 0.7857142857142858,
+      "precision": 0.7432432432432432,
       "recall": 0.8333333333333334,
       "gt_notes": 66,
-      "pred_notes": 69
+      "pred_notes": 74
     },
     {
       "name": "03_Funk1-114-Ab_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8343195266272189,
-      "precision": 0.8597560975609756,
-      "recall": 0.8103448275862069,
+      "f1": 0.8656716417910448,
+      "precision": 0.9006211180124224,
+      "recall": 0.8333333333333334,
       "gt_notes": 174,
-      "pred_notes": 164
+      "pred_notes": 161
     },
     {
       "name": "03_Funk1-114-Ab_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8082901554404145,
-      "precision": 0.8041237113402062,
-      "recall": 0.8125,
+      "f1": 0.7661691542288558,
+      "precision": 0.7333333333333333,
+      "recall": 0.8020833333333334,
       "gt_notes": 96,
-      "pred_notes": 97
+      "pred_notes": 105
     },
     {
       "name": "03_Funk1-97-C_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7306122448979592,
-      "precision": 0.7748917748917749,
-      "recall": 0.6911196911196911,
+      "f1": 0.7261410788381742,
+      "precision": 0.7847533632286996,
+      "recall": 0.6756756756756757,
       "gt_notes": 259,
-      "pred_notes": 231
+      "pred_notes": 223
     },
     {
       "name": "03_Funk1-97-C_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7333333333333333,
-      "precision": 0.7333333333333333,
-      "recall": 0.7333333333333333,
+      "f1": 0.7655502392344499,
+      "precision": 0.7692307692307693,
+      "recall": 0.7619047619047619,
       "gt_notes": 105,
-      "pred_notes": 105
+      "pred_notes": 104
     },
     {
       "name": "03_Funk2-108-Eb_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8811881188118812,
-      "precision": 0.8697068403908795,
-      "recall": 0.8929765886287625,
+      "f1": 0.8870703764320785,
+      "precision": 0.8685897435897436,
+      "recall": 0.9063545150501672,
       "gt_notes": 299,
-      "pred_notes": 307
+      "pred_notes": 312
     },
     {
       "name": "03_Funk2-108-Eb_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8313725490196079,
-      "precision": 0.828125,
-      "recall": 0.8346456692913385,
+      "f1": 0.7849056603773584,
+      "precision": 0.7536231884057971,
+      "recall": 0.8188976377952756,
       "gt_notes": 127,
-      "pred_notes": 128
+      "pred_notes": 138
     },
     {
       "name": "03_Funk2-119-G_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.9022869022869022,
-      "precision": 0.8785425101214575,
-      "recall": 0.9273504273504274,
+      "f1": 0.8806941431670281,
+      "precision": 0.8942731277533039,
+      "recall": 0.8675213675213675,
       "gt_notes": 234,
-      "pred_notes": 247
+      "pred_notes": 227
     },
     {
       "name": "03_Funk2-119-G_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8356807511737089,
-      "precision": 0.8317757009345794,
-      "recall": 0.839622641509434,
+      "f1": 0.823529411764706,
+      "precision": 0.7913043478260869,
+      "recall": 0.8584905660377359,
       "gt_notes": 106,
-      "pred_notes": 107
+      "pred_notes": 115
     },
     {
       "name": "03_Funk3-112-C#_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8079800498753118,
-      "precision": 0.8181818181818182,
-      "recall": 0.7980295566502463,
+      "f1": 0.8410757946210269,
+      "precision": 0.8349514563106796,
+      "recall": 0.8472906403940886,
       "gt_notes": 203,
-      "pred_notes": 198
+      "pred_notes": 206
     },
     {
       "name": "03_Funk3-112-C#_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8389830508474576,
-      "precision": 0.8608695652173913,
-      "recall": 0.8181818181818182,
+      "f1": 0.8065843621399177,
+      "precision": 0.8032786885245902,
+      "recall": 0.8099173553719008,
       "gt_notes": 121,
-      "pred_notes": 115
+      "pred_notes": 122
     },
     {
       "name": "03_Funk3-98-A_comp",
       "player": "03",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8026845637583894,
-      "precision": 0.8542857142857143,
+      "f1": 0.8070175438596492,
+      "precision": 0.8641618497109826,
       "recall": 0.7569620253164557,
       "gt_notes": 395,
-      "pred_notes": 350
+      "pred_notes": 346
     },
     {
       "name": "03_Funk3-98-A_solo",
       "player": "03",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7953667953667953,
-      "precision": 0.8306451612903226,
-      "recall": 0.762962962962963,
+      "f1": 0.7675276752767527,
+      "precision": 0.7647058823529411,
+      "recall": 0.7703703703703704,
       "gt_notes": 135,
-      "pred_notes": 124
+      "pred_notes": 136
     },
     {
       "name": "03_Jazz1-130-D_comp",
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8620689655172413,
-      "precision": 0.8928571428571429,
-      "recall": 0.8333333333333334,
+      "f1": 0.9021739130434783,
+      "precision": 0.8829787234042553,
+      "recall": 0.9222222222222223,
       "gt_notes": 90,
-      "pred_notes": 84
+      "pred_notes": 94
     },
     {
       "name": "03_Jazz1-130-D_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8951048951048951,
-      "precision": 0.8767123287671232,
-      "recall": 0.9142857142857143,
+      "f1": 0.88,
+      "precision": 0.825,
+      "recall": 0.9428571428571428,
       "gt_notes": 70,
-      "pred_notes": 73
+      "pred_notes": 80
     },
     {
       "name": "03_Jazz1-200-B_comp",
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8157894736842105,
-      "precision": 0.8857142857142857,
-      "recall": 0.7560975609756098,
+      "f1": 0.8641975308641976,
+      "precision": 0.875,
+      "recall": 0.8536585365853658,
       "gt_notes": 82,
-      "pred_notes": 70
+      "pred_notes": 80
     },
     {
       "name": "03_Jazz1-200-B_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.888888888888889,
-      "precision": 0.851063829787234,
-      "recall": 0.9302325581395349,
+      "f1": 0.8297872340425532,
+      "precision": 0.7647058823529411,
+      "recall": 0.9069767441860465,
       "gt_notes": 43,
-      "pred_notes": 47
+      "pred_notes": 51
     },
     {
       "name": "03_Jazz2-110-Bb_comp",
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8529411764705883,
-      "precision": 0.8285714285714286,
-      "recall": 0.8787878787878788,
+      "f1": 0.8188405797101449,
+      "precision": 0.7847222222222222,
+      "recall": 0.8560606060606061,
       "gt_notes": 132,
-      "pred_notes": 140
+      "pred_notes": 144
     },
     {
       "name": "03_Jazz2-110-Bb_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.9045226130653266,
-      "precision": 0.9,
-      "recall": 0.9090909090909091,
+      "f1": 0.8944723618090452,
+      "precision": 0.89,
+      "recall": 0.898989898989899,
       "gt_notes": 99,
       "pred_notes": 100
     },
@@ -2326,86 +2326,86 @@
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9758454106280193,
-      "precision": 0.9619047619047619,
+      "f1": 0.957345971563981,
+      "precision": 0.926605504587156,
       "recall": 0.9901960784313726,
       "gt_notes": 102,
-      "pred_notes": 105
+      "pred_notes": 109
     },
     {
       "name": "03_Jazz2-187-F#_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8456375838926175,
-      "precision": 0.8181818181818182,
-      "recall": 0.875,
+      "f1": 0.8157894736842106,
+      "precision": 0.775,
+      "recall": 0.8611111111111112,
       "gt_notes": 72,
-      "pred_notes": 77
+      "pred_notes": 80
     },
     {
       "name": "03_Jazz3-137-Eb_comp",
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8940092165898617,
-      "precision": 0.8818181818181818,
-      "recall": 0.9065420560747663,
+      "f1": 0.8675799086757991,
+      "precision": 0.8482142857142857,
+      "recall": 0.8878504672897196,
       "gt_notes": 107,
-      "pred_notes": 110
+      "pred_notes": 112
     },
     {
       "name": "03_Jazz3-137-Eb_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.9340101522842639,
-      "precision": 0.92,
+      "f1": 0.8761904761904761,
+      "precision": 0.8141592920353983,
       "recall": 0.9484536082474226,
       "gt_notes": 97,
-      "pred_notes": 100
+      "pred_notes": 113
     },
     {
       "name": "03_Jazz3-150-C_comp",
       "player": "03",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9300000000000002,
-      "precision": 0.9393939393939394,
-      "recall": 0.9207920792079208,
+      "f1": 0.9009900990099011,
+      "precision": 0.900990099009901,
+      "recall": 0.900990099009901,
       "gt_notes": 101,
-      "pred_notes": 99
+      "pred_notes": 101
     },
     {
       "name": "03_Jazz3-150-C_solo",
       "player": "03",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8875,
-      "precision": 0.8554216867469879,
-      "recall": 0.922077922077922,
+      "f1": 0.8727272727272728,
+      "precision": 0.8181818181818182,
+      "recall": 0.935064935064935,
       "gt_notes": 77,
-      "pred_notes": 83
+      "pred_notes": 88
     },
     {
       "name": "03_Rock1-130-A_comp",
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.7149321266968325,
-      "precision": 0.6869565217391305,
-      "recall": 0.7452830188679245,
+      "f1": 0.7370786516853933,
+      "precision": 0.703862660944206,
+      "recall": 0.7735849056603774,
       "gt_notes": 212,
-      "pred_notes": 230
+      "pred_notes": 233
     },
     {
       "name": "03_Rock1-130-A_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8833333333333333,
-      "precision": 0.8548387096774194,
-      "recall": 0.9137931034482759,
+      "f1": 0.8666666666666666,
+      "precision": 0.8387096774193549,
+      "recall": 0.896551724137931,
       "gt_notes": 58,
       "pred_notes": 62
     },
@@ -2414,275 +2414,275 @@
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8266033254156769,
-      "precision": 0.8018433179723502,
-      "recall": 0.8529411764705882,
+      "f1": 0.8416075650118204,
+      "precision": 0.8127853881278538,
+      "recall": 0.8725490196078431,
       "gt_notes": 204,
-      "pred_notes": 217
+      "pred_notes": 219
     },
     {
       "name": "03_Rock1-90-C#_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8108108108108107,
-      "precision": 0.821917808219178,
-      "recall": 0.8,
+      "f1": 0.7746478873239437,
+      "precision": 0.8208955223880597,
+      "recall": 0.7333333333333333,
       "gt_notes": 75,
-      "pred_notes": 73
+      "pred_notes": 67
     },
     {
       "name": "03_Rock2-142-D_comp",
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8310679611650484,
-      "precision": 0.8359375,
-      "recall": 0.8262548262548263,
+      "f1": 0.823529411764706,
+      "precision": 0.7859649122807018,
+      "recall": 0.8648648648648649,
       "gt_notes": 259,
-      "pred_notes": 256
+      "pred_notes": 285
     },
     {
       "name": "03_Rock2-142-D_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8735632183908046,
-      "precision": 0.8837209302325582,
-      "recall": 0.8636363636363636,
+      "f1": 0.8826815642458101,
+      "precision": 0.8681318681318682,
+      "recall": 0.8977272727272727,
       "gt_notes": 88,
-      "pred_notes": 86
+      "pred_notes": 91
     },
     {
       "name": "03_Rock2-85-F_comp",
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8660550458715596,
-      "precision": 0.8280701754385965,
-      "recall": 0.9076923076923077,
+      "f1": 0.8597122302158274,
+      "precision": 0.8074324324324325,
+      "recall": 0.9192307692307692,
       "gt_notes": 260,
-      "pred_notes": 285
+      "pred_notes": 296
     },
     {
       "name": "03_Rock2-85-F_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8877551020408163,
-      "precision": 0.8787878787878788,
-      "recall": 0.8969072164948454,
+      "f1": 0.8390243902439023,
+      "precision": 0.7962962962962963,
+      "recall": 0.8865979381443299,
       "gt_notes": 97,
-      "pred_notes": 99
+      "pred_notes": 108
     },
     {
       "name": "03_Rock3-117-Bb_comp",
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8163265306122449,
-      "precision": 0.8032128514056225,
-      "recall": 0.8298755186721992,
+      "f1": 0.8176352705410821,
+      "precision": 0.7906976744186046,
+      "recall": 0.8464730290456431,
       "gt_notes": 241,
-      "pred_notes": 249
+      "pred_notes": 258
     },
     {
       "name": "03_Rock3-117-Bb_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8717948717948718,
-      "precision": 0.8415841584158416,
-      "recall": 0.9042553191489362,
+      "f1": 0.8442211055276382,
+      "precision": 0.8,
+      "recall": 0.8936170212765957,
       "gt_notes": 94,
-      "pred_notes": 101
+      "pred_notes": 105
     },
     {
       "name": "03_Rock3-148-C_comp",
       "player": "03",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8218298555377207,
-      "precision": 0.7757575757575758,
-      "recall": 0.8737201365187713,
+      "f1": 0.8490566037735849,
+      "precision": 0.7871720116618076,
+      "recall": 0.9215017064846417,
       "gt_notes": 293,
-      "pred_notes": 330
+      "pred_notes": 343
     },
     {
       "name": "03_Rock3-148-C_solo",
       "player": "03",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8507462686567164,
-      "precision": 0.8382352941176471,
-      "recall": 0.8636363636363636,
+      "f1": 0.7727272727272727,
+      "precision": 0.7727272727272727,
+      "recall": 0.7727272727272727,
       "gt_notes": 66,
-      "pred_notes": 68
+      "pred_notes": 66
     },
     {
       "name": "03_SS1-100-C#_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8756613756613757,
-      "precision": 0.8530927835051546,
-      "recall": 0.8994565217391305,
+      "f1": 0.8929032258064517,
+      "precision": 0.8501228501228502,
+      "recall": 0.9402173913043478,
       "gt_notes": 368,
-      "pred_notes": 388
+      "pred_notes": 407
     },
     {
       "name": "03_SS1-100-C#_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8663594470046083,
-      "precision": 0.8867924528301887,
+      "f1": 0.8468468468468469,
+      "precision": 0.8468468468468469,
       "recall": 0.8468468468468469,
       "gt_notes": 111,
-      "pred_notes": 106
+      "pred_notes": 111
     },
     {
       "name": "03_SS1-68-E_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8217636022514071,
-      "precision": 0.7906137184115524,
-      "recall": 0.85546875,
+      "f1": 0.896551724137931,
+      "precision": 0.8796992481203008,
+      "recall": 0.9140625,
       "gt_notes": 256,
-      "pred_notes": 277
+      "pred_notes": 266
     },
     {
       "name": "03_SS1-68-E_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8066298342541436,
-      "precision": 0.8202247191011236,
-      "recall": 0.7934782608695652,
+      "f1": 0.8108108108108107,
+      "precision": 0.8064516129032258,
+      "recall": 0.8152173913043478,
       "gt_notes": 92,
-      "pred_notes": 89
+      "pred_notes": 93
     },
     {
       "name": "03_SS2-107-Ab_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8599752168525403,
-      "precision": 0.8422330097087378,
-      "recall": 0.8784810126582279,
+      "f1": 0.8609431680773881,
+      "precision": 0.8240740740740741,
+      "recall": 0.9012658227848102,
       "gt_notes": 395,
-      "pred_notes": 412
+      "pred_notes": 432
     },
     {
       "name": "03_SS2-107-Ab_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8834951456310681,
-      "precision": 0.8666666666666667,
-      "recall": 0.900990099009901,
+      "f1": 0.8942307692307692,
+      "precision": 0.8691588785046729,
+      "recall": 0.9207920792079208,
       "gt_notes": 101,
-      "pred_notes": 105
+      "pred_notes": 107
     },
     {
       "name": "03_SS2-88-F_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8351648351648352,
-      "precision": 0.7835051546391752,
-      "recall": 0.8941176470588236,
+      "f1": 0.8326639892904952,
+      "precision": 0.7641277641277642,
+      "recall": 0.9147058823529411,
       "gt_notes": 340,
-      "pred_notes": 388
+      "pred_notes": 407
     },
     {
       "name": "03_SS2-88-F_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.90625,
-      "precision": 0.925531914893617,
-      "recall": 0.8877551020408163,
+      "f1": 0.8989898989898989,
+      "precision": 0.89,
+      "recall": 0.9081632653061225,
       "gt_notes": 98,
-      "pred_notes": 94
+      "pred_notes": 100
     },
     {
       "name": "03_SS3-84-Bb_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8944444444444444,
-      "precision": 0.9252873563218391,
-      "recall": 0.8655913978494624,
+      "f1": 0.8924731182795699,
+      "precision": 0.8924731182795699,
+      "recall": 0.8924731182795699,
       "gt_notes": 186,
-      "pred_notes": 174
+      "pred_notes": 186
     },
     {
       "name": "03_SS3-84-Bb_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8848484848484849,
-      "precision": 0.8795180722891566,
-      "recall": 0.8902439024390244,
+      "f1": 0.8823529411764706,
+      "precision": 0.8522727272727273,
+      "recall": 0.9146341463414634,
       "gt_notes": 82,
-      "pred_notes": 83
+      "pred_notes": 88
     },
     {
       "name": "03_SS3-98-C_comp",
       "player": "03",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8492822966507177,
-      "precision": 0.8294392523364486,
-      "recall": 0.8700980392156863,
+      "f1": 0.8654970760233918,
+      "precision": 0.8277404921700223,
+      "recall": 0.9068627450980392,
       "gt_notes": 408,
-      "pred_notes": 428
+      "pred_notes": 447
     },
     {
       "name": "03_SS3-98-C_solo",
       "player": "03",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8878923766816144,
-      "precision": 0.8839285714285714,
-      "recall": 0.8918918918918919,
+      "f1": 0.8634361233480176,
+      "precision": 0.8448275862068966,
+      "recall": 0.8828828828828829,
       "gt_notes": 111,
-      "pred_notes": 112
+      "pred_notes": 116
     },
     {
       "name": "04_BN1-129-Eb_comp",
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9077490774907748,
-      "precision": 0.8541666666666666,
+      "f1": 0.9389312977099236,
+      "precision": 0.9111111111111111,
       "recall": 0.968503937007874,
       "gt_notes": 127,
-      "pred_notes": 144
+      "pred_notes": 135
     },
     {
       "name": "04_BN1-129-Eb_solo",
       "player": "04",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.9156626506024096,
-      "precision": 0.926829268292683,
-      "recall": 0.9047619047619048,
+      "f1": 0.8470588235294119,
+      "precision": 0.8372093023255814,
+      "recall": 0.8571428571428571,
       "gt_notes": 42,
-      "pred_notes": 41
+      "pred_notes": 43
     },
     {
       "name": "04_BN1-147-Gb_comp",
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9194029850746269,
-      "precision": 0.927710843373494,
-      "recall": 0.9112426035502958,
+      "f1": 0.9618768328445748,
+      "precision": 0.9534883720930233,
+      "recall": 0.9704142011834319,
       "gt_notes": 169,
-      "pred_notes": 166
+      "pred_notes": 172
     },
     {
       "name": "04_BN1-147-Gb_solo",
@@ -2700,1045 +2700,1045 @@
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.913151364764268,
-      "precision": 0.934010152284264,
-      "recall": 0.8932038834951457,
+      "f1": 0.9263657957244654,
+      "precision": 0.9069767441860465,
+      "recall": 0.9466019417475728,
       "gt_notes": 206,
-      "pred_notes": 197
+      "pred_notes": 215
     },
     {
       "name": "04_BN2-131-B_solo",
       "player": "04",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7910447761194029,
-      "precision": 0.7910447761194029,
+      "f1": 0.7681159420289855,
+      "precision": 0.7464788732394366,
       "recall": 0.7910447761194029,
       "gt_notes": 67,
-      "pred_notes": 67
+      "pred_notes": 71
     },
     {
       "name": "04_BN2-166-Ab_comp",
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.8503253796095445,
-      "precision": 0.8099173553719008,
-      "recall": 0.8949771689497716,
+      "f1": 0.8849557522123894,
+      "precision": 0.8583690987124464,
+      "recall": 0.91324200913242,
       "gt_notes": 219,
-      "pred_notes": 242
+      "pred_notes": 233
     },
     {
       "name": "04_BN2-166-Ab_solo",
       "player": "04",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8131868131868132,
-      "precision": 0.8604651162790697,
+      "f1": 0.7708333333333333,
+      "precision": 0.7708333333333334,
       "recall": 0.7708333333333334,
       "gt_notes": 48,
-      "pred_notes": 43
+      "pred_notes": 48
     },
     {
       "name": "04_BN3-119-G_comp",
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9243697478991596,
-      "precision": 0.8918918918918919,
-      "recall": 0.9593023255813954,
+      "f1": 0.935933147632312,
+      "precision": 0.8983957219251337,
+      "recall": 0.9767441860465116,
       "gt_notes": 172,
-      "pred_notes": 185
+      "pred_notes": 187
     },
     {
       "name": "04_BN3-119-G_solo",
       "player": "04",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7969924812030075,
-      "precision": 0.828125,
-      "recall": 0.7681159420289855,
+      "f1": 0.7832167832167832,
+      "precision": 0.7567567567567568,
+      "recall": 0.8115942028985508,
       "gt_notes": 69,
-      "pred_notes": 64
+      "pred_notes": 74
     },
     {
       "name": "04_BN3-154-E_comp",
       "player": "04",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.22413793103448276,
-      "precision": 0.21081081081081082,
-      "recall": 0.2392638036809816,
+      "f1": 0.24,
+      "precision": 0.22459893048128343,
+      "recall": 0.25766871165644173,
       "gt_notes": 163,
-      "pred_notes": 185
+      "pred_notes": 187
     },
     {
       "name": "04_BN3-154-E_solo",
       "player": "04",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7586206896551724,
-      "precision": 0.7333333333333333,
-      "recall": 0.7857142857142857,
+      "f1": 0.7666666666666666,
+      "precision": 0.71875,
+      "recall": 0.8214285714285714,
       "gt_notes": 84,
-      "pred_notes": 90
+      "pred_notes": 96
     },
     {
       "name": "04_Funk1-114-Ab_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7593360995850622,
-      "precision": 0.732,
-      "recall": 0.7887931034482759,
+      "f1": 0.7663934426229508,
+      "precision": 0.73046875,
+      "recall": 0.8060344827586207,
       "gt_notes": 232,
-      "pred_notes": 250
+      "pred_notes": 256
     },
     {
       "name": "04_Funk1-114-Ab_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7677725118483412,
-      "precision": 0.7431192660550459,
-      "recall": 0.7941176470588235,
+      "f1": 0.7342995169082125,
+      "precision": 0.7238095238095238,
+      "recall": 0.7450980392156863,
       "gt_notes": 102,
-      "pred_notes": 109
+      "pred_notes": 105
     },
     {
       "name": "04_Funk1-97-C_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7960199004975124,
-      "precision": 0.7843137254901961,
-      "recall": 0.8080808080808081,
+      "f1": 0.8442211055276383,
+      "precision": 0.84,
+      "recall": 0.8484848484848485,
       "gt_notes": 99,
-      "pred_notes": 102
+      "pred_notes": 100
     },
     {
       "name": "04_Funk1-97-C_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7853881278538812,
-      "precision": 0.7962962962962963,
-      "recall": 0.7747747747747747,
+      "f1": 0.8281938325991189,
+      "precision": 0.8103448275862069,
+      "recall": 0.8468468468468469,
       "gt_notes": 111,
-      "pred_notes": 108
+      "pred_notes": 116
     },
     {
       "name": "04_Funk2-108-Eb_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8323170731707317,
-      "precision": 0.8348623853211009,
+      "f1": 0.8425925925925926,
+      "precision": 0.8557993730407524,
       "recall": 0.8297872340425532,
       "gt_notes": 329,
-      "pred_notes": 327
+      "pred_notes": 319
     },
     {
       "name": "04_Funk2-108-Eb_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8765957446808511,
-      "precision": 0.8879310344827587,
-      "recall": 0.865546218487395,
+      "f1": 0.8640000000000001,
+      "precision": 0.8244274809160306,
+      "recall": 0.907563025210084,
       "gt_notes": 119,
-      "pred_notes": 116
+      "pred_notes": 131
     },
     {
       "name": "04_Funk2-119-G_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7794729542302358,
-      "precision": 0.7615176151761518,
-      "recall": 0.7982954545454546,
+      "f1": 0.8095909732016926,
+      "precision": 0.803921568627451,
+      "recall": 0.8153409090909091,
       "gt_notes": 352,
-      "pred_notes": 369
+      "pred_notes": 357
     },
     {
       "name": "04_Funk2-119-G_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8861788617886179,
-      "precision": 0.8934426229508197,
-      "recall": 0.8790322580645161,
+      "f1": 0.8537549407114624,
+      "precision": 0.8372093023255814,
+      "recall": 0.8709677419354839,
       "gt_notes": 124,
-      "pred_notes": 122
+      "pred_notes": 129
     },
     {
       "name": "04_Funk3-112-C#_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.7959183673469388,
-      "precision": 0.8020565552699229,
-      "recall": 0.789873417721519,
+      "f1": 0.8098958333333334,
+      "precision": 0.8337801608579088,
+      "recall": 0.7873417721518987,
       "gt_notes": 395,
-      "pred_notes": 389
+      "pred_notes": 373
     },
     {
       "name": "04_Funk3-112-C#_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8587570621468928,
-      "precision": 0.8735632183908046,
-      "recall": 0.8444444444444444,
+      "f1": 0.8524590163934426,
+      "precision": 0.8387096774193549,
+      "recall": 0.8666666666666667,
       "gt_notes": 90,
-      "pred_notes": 87
+      "pred_notes": 93
     },
     {
       "name": "04_Funk3-98-A_comp",
       "player": "04",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.788627935723115,
-      "precision": 0.7876543209876543,
-      "recall": 0.7896039603960396,
+      "f1": 0.8164251207729468,
+      "precision": 0.7971698113207547,
+      "recall": 0.8366336633663366,
       "gt_notes": 404,
-      "pred_notes": 405
+      "pred_notes": 424
     },
     {
       "name": "04_Funk3-98-A_solo",
       "player": "04",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7717842323651453,
-      "precision": 0.7380952380952381,
-      "recall": 0.808695652173913,
+      "f1": 0.7755102040816326,
+      "precision": 0.7307692307692307,
+      "recall": 0.8260869565217391,
       "gt_notes": 115,
-      "pred_notes": 126
+      "pred_notes": 130
     },
     {
       "name": "04_Jazz1-130-D_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8746928746928747,
-      "precision": 0.8855721393034826,
+      "f1": 0.8682926829268292,
+      "precision": 0.8725490196078431,
       "recall": 0.8640776699029126,
       "gt_notes": 206,
-      "pred_notes": 201
+      "pred_notes": 204
     },
     {
       "name": "04_Jazz1-130-D_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8037383177570092,
-      "precision": 0.8269230769230769,
-      "recall": 0.7818181818181819,
+      "f1": 0.7826086956521738,
+      "precision": 0.75,
+      "recall": 0.8181818181818182,
       "gt_notes": 55,
-      "pred_notes": 52
+      "pred_notes": 60
     },
     {
       "name": "04_Jazz1-200-B_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.32903225806451614,
-      "precision": 0.32075471698113206,
-      "recall": 0.33774834437086093,
+      "f1": 0.3246753246753246,
+      "precision": 0.3184713375796178,
+      "recall": 0.33112582781456956,
       "gt_notes": 151,
-      "pred_notes": 159
+      "pred_notes": 157
     },
     {
       "name": "04_Jazz1-200-B_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8120300751879699,
-      "precision": 0.7941176470588235,
-      "recall": 0.8307692307692308,
+      "f1": 0.8333333333333334,
+      "precision": 0.8208955223880597,
+      "recall": 0.8461538461538461,
       "gt_notes": 65,
-      "pred_notes": 68
+      "pred_notes": 67
     },
     {
       "name": "04_Jazz2-110-Bb_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7746478873239435,
-      "precision": 0.7284768211920529,
-      "recall": 0.8270676691729323,
+      "f1": 0.7943262411347517,
+      "precision": 0.7516778523489933,
+      "recall": 0.8421052631578947,
       "gt_notes": 133,
-      "pred_notes": 151
+      "pred_notes": 149
     },
     {
       "name": "04_Jazz2-110-Bb_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.7664670658682635,
-      "precision": 0.7191011235955056,
-      "recall": 0.8205128205128205,
+      "f1": 0.7682926829268293,
+      "precision": 0.7325581395348837,
+      "recall": 0.8076923076923077,
       "gt_notes": 78,
-      "pred_notes": 89
+      "pred_notes": 86
     },
     {
       "name": "04_Jazz2-187-F#_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.764367816091954,
-      "precision": 0.751412429378531,
-      "recall": 0.7777777777777778,
+      "f1": 0.7692307692307692,
+      "precision": 0.75,
+      "recall": 0.7894736842105263,
       "gt_notes": 171,
-      "pred_notes": 177
+      "pred_notes": 180
     },
     {
       "name": "04_Jazz2-187-F#_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8527131782945736,
-      "precision": 0.873015873015873,
-      "recall": 0.8333333333333334,
+      "f1": 0.8188976377952757,
+      "precision": 0.8524590163934426,
+      "recall": 0.7878787878787878,
       "gt_notes": 66,
-      "pred_notes": 63
+      "pred_notes": 61
     },
     {
       "name": "04_Jazz3-137-Eb_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.858974358974359,
-      "precision": 0.8410041841004184,
-      "recall": 0.8777292576419214,
+      "f1": 0.8680851063829786,
+      "precision": 0.8464730290456431,
+      "recall": 0.8908296943231441,
       "gt_notes": 229,
-      "pred_notes": 239
+      "pred_notes": 241
     },
     {
       "name": "04_Jazz3-137-Eb_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.7530864197530864,
-      "precision": 0.7349397590361446,
-      "recall": 0.7721518987341772,
+      "f1": 0.7730061349693252,
+      "precision": 0.75,
+      "recall": 0.7974683544303798,
       "gt_notes": 79,
-      "pred_notes": 83
+      "pred_notes": 84
     },
     {
       "name": "04_Jazz3-150-C_comp",
       "player": "04",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7860962566844919,
-      "precision": 0.7577319587628866,
-      "recall": 0.8166666666666667,
+      "f1": 0.7573333333333333,
+      "precision": 0.7282051282051282,
+      "recall": 0.7888888888888889,
       "gt_notes": 180,
-      "pred_notes": 194
+      "pred_notes": 195
     },
     {
       "name": "04_Jazz3-150-C_solo",
       "player": "04",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8333333333333334,
-      "precision": 0.875,
-      "recall": 0.7954545454545454,
+      "f1": 0.8135593220338984,
+      "precision": 0.8089887640449438,
+      "recall": 0.8181818181818182,
       "gt_notes": 88,
-      "pred_notes": 80
+      "pred_notes": 89
     },
     {
       "name": "04_Rock1-130-A_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8691099476439791,
-      "precision": 0.8645833333333334,
-      "recall": 0.8736842105263158,
+      "f1": 0.8578680203045685,
+      "precision": 0.8284313725490197,
+      "recall": 0.8894736842105263,
       "gt_notes": 190,
-      "pred_notes": 192
+      "pred_notes": 204
     },
     {
       "name": "04_Rock1-130-A_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7011494252873564,
-      "precision": 0.7625,
+      "f1": 0.6703296703296703,
+      "precision": 0.6931818181818182,
       "recall": 0.648936170212766,
       "gt_notes": 94,
-      "pred_notes": 80
+      "pred_notes": 88
     },
     {
       "name": "04_Rock1-90-C#_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9146341463414633,
-      "precision": 0.8858267716535433,
-      "recall": 0.9453781512605042,
+      "f1": 0.9076620825147348,
+      "precision": 0.8523985239852399,
+      "recall": 0.9705882352941176,
       "gt_notes": 238,
-      "pred_notes": 254
+      "pred_notes": 271
     },
     {
       "name": "04_Rock1-90-C#_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8767123287671232,
-      "precision": 0.8888888888888888,
-      "recall": 0.8648648648648649,
+      "f1": 0.8461538461538461,
+      "precision": 0.8048780487804879,
+      "recall": 0.8918918918918919,
       "gt_notes": 74,
-      "pred_notes": 72
+      "pred_notes": 82
     },
     {
       "name": "04_Rock2-142-D_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8199737187910643,
-      "precision": 0.7647058823529411,
-      "recall": 0.8838526912181303,
+      "f1": 0.8455696202531646,
+      "precision": 0.7643020594965675,
+      "recall": 0.9461756373937678,
       "gt_notes": 353,
-      "pred_notes": 408
+      "pred_notes": 437
     },
     {
       "name": "04_Rock2-142-D_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8243243243243243,
-      "precision": 0.8026315789473685,
+      "f1": 0.8026315789473685,
+      "precision": 0.7625,
       "recall": 0.8472222222222222,
       "gt_notes": 72,
-      "pred_notes": 76
+      "pred_notes": 80
     },
     {
       "name": "04_Rock2-85-F_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8646616541353382,
-      "precision": 0.8214285714285714,
+      "f1": 0.8070175438596491,
+      "precision": 0.7232704402515723,
       "recall": 0.9126984126984127,
       "gt_notes": 126,
-      "pred_notes": 140
+      "pred_notes": 159
     },
     {
       "name": "04_Rock2-85-F_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8301886792452831,
-      "precision": 0.8712871287128713,
-      "recall": 0.7927927927927928,
+      "f1": 0.7873303167420813,
+      "precision": 0.7909090909090909,
+      "recall": 0.7837837837837838,
       "gt_notes": 111,
-      "pred_notes": 101
+      "pred_notes": 110
     },
     {
       "name": "04_Rock3-117-Bb_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8058877644894203,
-      "precision": 0.7577854671280276,
-      "recall": 0.8605108055009824,
+      "f1": 0.8161434977578477,
+      "precision": 0.7508250825082509,
+      "recall": 0.8939096267190569,
       "gt_notes": 509,
-      "pred_notes": 578
+      "pred_notes": 606
     },
     {
       "name": "04_Rock3-117-Bb_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.7407407407407407,
-      "precision": 0.7339449541284404,
-      "recall": 0.7476635514018691,
+      "f1": 0.7577092511013216,
+      "precision": 0.7166666666666667,
+      "recall": 0.8037383177570093,
       "gt_notes": 107,
-      "pred_notes": 109
+      "pred_notes": 120
     },
     {
       "name": "04_Rock3-148-C_comp",
       "player": "04",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8067226890756303,
-      "precision": 0.8470588235294118,
-      "recall": 0.7700534759358288,
+      "f1": 0.8186813186813188,
+      "precision": 0.8418079096045198,
+      "recall": 0.7967914438502673,
       "gt_notes": 374,
-      "pred_notes": 340
+      "pred_notes": 354
     },
     {
       "name": "04_Rock3-148-C_solo",
       "player": "04",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8391608391608393,
-      "precision": 0.8333333333333334,
-      "recall": 0.8450704225352113,
+      "f1": 0.8169014084507042,
+      "precision": 0.8169014084507042,
+      "recall": 0.8169014084507042,
       "gt_notes": 71,
-      "pred_notes": 72
+      "pred_notes": 71
     },
     {
       "name": "04_SS1-100-C#_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8753623188405798,
-      "precision": 0.825136612021858,
-      "recall": 0.9320987654320988,
+      "f1": 0.9107692307692307,
+      "precision": 0.9079754601226994,
+      "recall": 0.9135802469135802,
       "gt_notes": 162,
-      "pred_notes": 183
+      "pred_notes": 163
     },
     {
       "name": "04_SS1-100-C#_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8428571428571429,
-      "precision": 0.855072463768116,
-      "recall": 0.8309859154929577,
+      "f1": 0.8299319727891157,
+      "precision": 0.8026315789473685,
+      "recall": 0.8591549295774648,
       "gt_notes": 71,
-      "pred_notes": 69
+      "pred_notes": 76
     },
     {
       "name": "04_SS1-68-E_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7964376590330788,
-      "precision": 0.7461263408820024,
-      "recall": 0.8540245566166439,
+      "f1": 0.810615199034982,
+      "precision": 0.7264864864864865,
+      "recall": 0.9167803547066848,
       "gt_notes": 733,
-      "pred_notes": 839
+      "pred_notes": 925
     },
     {
       "name": "04_SS1-68-E_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8622222222222222,
-      "precision": 0.8584070796460177,
-      "recall": 0.8660714285714286,
+      "f1": 0.8225108225108225,
+      "precision": 0.7983193277310925,
+      "recall": 0.8482142857142857,
       "gt_notes": 112,
-      "pred_notes": 113
+      "pred_notes": 119
     },
     {
       "name": "04_SS2-107-Ab_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7663157894736842,
-      "precision": 0.7489711934156379,
-      "recall": 0.7844827586206896,
+      "f1": 0.7317073170731707,
+      "precision": 0.7534246575342466,
+      "recall": 0.7112068965517241,
       "gt_notes": 232,
-      "pred_notes": 243
+      "pred_notes": 219
     },
     {
       "name": "04_SS2-107-Ab_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.9343065693430657,
-      "precision": 0.9142857142857143,
-      "recall": 0.9552238805970149,
+      "f1": 0.9352517985611511,
+      "precision": 0.9027777777777778,
+      "recall": 0.9701492537313433,
       "gt_notes": 67,
-      "pred_notes": 70
+      "pred_notes": 72
     },
     {
       "name": "04_SS2-88-F_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8579234972677595,
-      "precision": 0.8674033149171271,
-      "recall": 0.8486486486486486,
+      "f1": 0.8848167539267016,
+      "precision": 0.8578680203045685,
+      "recall": 0.9135135135135135,
       "gt_notes": 185,
-      "pred_notes": 181
+      "pred_notes": 197
     },
     {
       "name": "04_SS2-88-F_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.9112426035502958,
-      "precision": 0.8953488372093024,
-      "recall": 0.927710843373494,
+      "f1": 0.9101796407185628,
+      "precision": 0.9047619047619048,
+      "recall": 0.9156626506024096,
       "gt_notes": 83,
-      "pred_notes": 86
+      "pred_notes": 84
     },
     {
       "name": "04_SS3-84-Bb_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7785234899328859,
-      "precision": 0.7571801566579635,
-      "recall": 0.8011049723756906,
+      "f1": 0.776500638569604,
+      "precision": 0.7220902612826603,
+      "recall": 0.8397790055248618,
       "gt_notes": 362,
-      "pred_notes": 383
+      "pred_notes": 421
     },
     {
       "name": "04_SS3-84-Bb_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8088235294117646,
-      "precision": 0.8029197080291971,
-      "recall": 0.8148148148148148,
+      "f1": 0.835820895522388,
+      "precision": 0.8421052631578947,
+      "recall": 0.8296296296296296,
       "gt_notes": 135,
-      "pred_notes": 137
+      "pred_notes": 133
     },
     {
       "name": "04_SS3-98-C_comp",
       "player": "04",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.7295081967213114,
-      "precision": 0.8090909090909091,
-      "recall": 0.664179104477612,
+      "f1": 0.7578947368421053,
+      "precision": 0.8695652173913043,
+      "recall": 0.6716417910447762,
       "gt_notes": 268,
-      "pred_notes": 220
+      "pred_notes": 207
     },
     {
       "name": "04_SS3-98-C_solo",
       "player": "04",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.7836734693877551,
-      "precision": 0.7868852459016393,
-      "recall": 0.7804878048780488,
+      "f1": 0.806201550387597,
+      "precision": 0.7703703703703704,
+      "recall": 0.8455284552845529,
       "gt_notes": 123,
-      "pred_notes": 122
+      "pred_notes": 135
     },
     {
       "name": "05_BN1-129-Eb_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9545454545454545,
-      "precision": 0.91875,
+      "f1": 0.9483870967741935,
+      "precision": 0.9074074074074074,
       "recall": 0.9932432432432432,
       "gt_notes": 148,
-      "pred_notes": 160
+      "pred_notes": 162
     },
     {
       "name": "05_BN1-129-Eb_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.9032258064516128,
-      "precision": 0.8571428571428571,
+      "f1": 0.9333333333333332,
+      "precision": 0.9130434782608695,
       "recall": 0.9545454545454546,
       "gt_notes": 44,
-      "pred_notes": 49
+      "pred_notes": 46
     },
     {
       "name": "05_BN1-147-Gb_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9285714285714285,
-      "precision": 0.91,
-      "recall": 0.9479166666666666,
+      "f1": 0.9035532994923858,
+      "precision": 0.8811881188118812,
+      "recall": 0.9270833333333334,
       "gt_notes": 96,
-      "pred_notes": 100
+      "pred_notes": 101
     },
     {
       "name": "05_BN1-147-Gb_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7999999999999999,
-      "precision": 0.8695652173913043,
-      "recall": 0.7407407407407407,
+      "f1": 0.7796610169491525,
+      "precision": 0.71875,
+      "recall": 0.8518518518518519,
       "gt_notes": 27,
-      "pred_notes": 23
+      "pred_notes": 32
     },
     {
       "name": "05_BN2-131-B_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9437652811735942,
-      "precision": 0.9323671497584541,
-      "recall": 0.9554455445544554,
+      "f1": 0.927536231884058,
+      "precision": 0.9056603773584906,
+      "recall": 0.9504950495049505,
       "gt_notes": 202,
-      "pred_notes": 207
+      "pred_notes": 212
     },
     {
       "name": "05_BN2-131-B_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.8085106382978724,
-      "precision": 0.7916666666666666,
-      "recall": 0.8260869565217391,
+      "f1": 0.7310344827586206,
+      "precision": 0.6973684210526315,
+      "recall": 0.7681159420289855,
       "gt_notes": 69,
-      "pred_notes": 72
+      "pred_notes": 76
     },
     {
       "name": "05_BN2-166-Ab_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.92,
-      "precision": 0.9096045197740112,
-      "recall": 0.930635838150289,
+      "f1": 0.9488636363636364,
+      "precision": 0.9329608938547486,
+      "recall": 0.9653179190751445,
       "gt_notes": 173,
-      "pred_notes": 177
+      "pred_notes": 179
     },
     {
       "name": "05_BN2-166-Ab_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.832116788321168,
-      "precision": 0.8142857142857143,
-      "recall": 0.8507462686567164,
+      "f1": 0.8368794326241135,
+      "precision": 0.7972972972972973,
+      "recall": 0.8805970149253731,
       "gt_notes": 67,
-      "pred_notes": 70
+      "pred_notes": 74
     },
     {
       "name": "05_BN3-119-G_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9591280653950954,
-      "precision": 0.9411764705882353,
-      "recall": 0.9777777777777777,
+      "f1": 0.9433962264150944,
+      "precision": 0.9162303664921466,
+      "recall": 0.9722222222222222,
       "gt_notes": 180,
-      "pred_notes": 187
+      "pred_notes": 191
     },
     {
       "name": "05_BN3-119-G_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7619047619047619,
-      "precision": 0.75,
-      "recall": 0.7741935483870968,
+      "f1": 0.883720930232558,
+      "precision": 0.8507462686567164,
+      "recall": 0.9193548387096774,
       "gt_notes": 62,
-      "pred_notes": 64
+      "pred_notes": 67
     },
     {
       "name": "05_BN3-154-E_comp",
       "player": "05",
       "genre": "BN",
       "style": "comp",
-      "f1": 0.9021739130434783,
-      "precision": 0.907103825136612,
-      "recall": 0.8972972972972973,
+      "f1": 0.9027027027027028,
+      "precision": 0.9027027027027027,
+      "recall": 0.9027027027027027,
       "gt_notes": 185,
-      "pred_notes": 183
+      "pred_notes": 185
     },
     {
       "name": "05_BN3-154-E_solo",
       "player": "05",
       "genre": "BN",
       "style": "solo",
-      "f1": 0.7610619469026548,
-      "precision": 0.7543859649122807,
-      "recall": 0.7678571428571429,
+      "f1": 0.7833333333333332,
+      "precision": 0.734375,
+      "recall": 0.8392857142857143,
       "gt_notes": 56,
-      "pred_notes": 57
+      "pred_notes": 64
     },
     {
       "name": "05_Funk1-114-Ab_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8967391304347826,
-      "precision": 0.8823529411764706,
-      "recall": 0.9116022099447514,
+      "f1": 0.8961748633879781,
+      "precision": 0.8864864864864865,
+      "recall": 0.9060773480662984,
       "gt_notes": 181,
-      "pred_notes": 187
+      "pred_notes": 185
     },
     {
       "name": "05_Funk1-114-Ab_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.7863247863247863,
-      "precision": 0.8070175438596491,
+      "f1": 0.7666666666666667,
+      "precision": 0.7666666666666667,
       "recall": 0.7666666666666667,
       "gt_notes": 60,
-      "pred_notes": 57
+      "pred_notes": 60
     },
     {
       "name": "05_Funk1-97-C_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.9075630252100839,
-      "precision": 0.9,
-      "recall": 0.9152542372881356,
+      "f1": 0.9141274238227147,
+      "precision": 0.8967391304347826,
+      "recall": 0.9322033898305084,
       "gt_notes": 177,
-      "pred_notes": 180
+      "pred_notes": 184
     },
     {
       "name": "05_Funk1-97-C_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8620689655172413,
-      "precision": 0.8620689655172413,
-      "recall": 0.8620689655172413,
+      "f1": 0.7889908256880734,
+      "precision": 0.8431372549019608,
+      "recall": 0.7413793103448276,
       "gt_notes": 58,
-      "pred_notes": 58
+      "pred_notes": 51
     },
     {
       "name": "05_Funk2-108-Eb_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8155339805825242,
-      "precision": 0.7777777777777778,
-      "recall": 0.8571428571428571,
+      "f1": 0.8212180746561887,
+      "precision": 0.7916666666666666,
+      "recall": 0.8530612244897959,
       "gt_notes": 245,
-      "pred_notes": 270
+      "pred_notes": 264
     },
     {
       "name": "05_Funk2-108-Eb_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8181818181818182,
-      "precision": 0.9183673469387755,
-      "recall": 0.7377049180327869,
+      "f1": 0.9166666666666666,
+      "precision": 0.9322033898305084,
+      "recall": 0.9016393442622951,
       "gt_notes": 61,
-      "pred_notes": 49
+      "pred_notes": 59
     },
     {
       "name": "05_Funk2-119-G_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.9032258064516129,
-      "precision": 0.8842105263157894,
-      "recall": 0.9230769230769231,
+      "f1": 0.8743169398907105,
+      "precision": 0.8695652173913043,
+      "recall": 0.8791208791208791,
       "gt_notes": 182,
-      "pred_notes": 190
+      "pred_notes": 184
     },
     {
       "name": "05_Funk2-119-G_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.8585858585858586,
-      "precision": 0.8585858585858586,
-      "recall": 0.8585858585858586,
+      "f1": 0.8358208955223881,
+      "precision": 0.8235294117647058,
+      "recall": 0.8484848484848485,
       "gt_notes": 99,
-      "pred_notes": 99
+      "pred_notes": 102
     },
     {
       "name": "05_Funk3-112-C#_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8867924528301887,
-      "precision": 0.8867924528301887,
-      "recall": 0.8867924528301887,
+      "f1": 0.9053117782909931,
+      "precision": 0.8868778280542986,
+      "recall": 0.9245283018867925,
       "gt_notes": 212,
-      "pred_notes": 212
+      "pred_notes": 221
     },
     {
       "name": "05_Funk3-112-C#_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.935251798561151,
-      "precision": 0.9420289855072463,
-      "recall": 0.9285714285714286,
+      "f1": 0.9014084507042254,
+      "precision": 0.8888888888888888,
+      "recall": 0.9142857142857143,
       "gt_notes": 70,
-      "pred_notes": 69
+      "pred_notes": 72
     },
     {
       "name": "05_Funk3-98-A_comp",
       "player": "05",
       "genre": "Funk",
       "style": "comp",
-      "f1": 0.8829787234042554,
-      "precision": 0.8645833333333334,
-      "recall": 0.9021739130434783,
+      "f1": 0.91005291005291,
+      "precision": 0.8865979381443299,
+      "recall": 0.9347826086956522,
       "gt_notes": 184,
-      "pred_notes": 192
+      "pred_notes": 194
     },
     {
       "name": "05_Funk3-98-A_solo",
       "player": "05",
       "genre": "Funk",
       "style": "solo",
-      "f1": 0.9312977099236641,
-      "precision": 0.9242424242424242,
+      "f1": 0.9242424242424243,
+      "precision": 0.9104477611940298,
       "recall": 0.9384615384615385,
       "gt_notes": 65,
-      "pred_notes": 66
+      "pred_notes": 67
     },
     {
       "name": "05_Jazz1-130-D_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9280575539568345,
-      "precision": 0.9416058394160584,
-      "recall": 0.9148936170212766,
+      "f1": 0.8865248226950354,
+      "precision": 0.8865248226950354,
+      "recall": 0.8865248226950354,
       "gt_notes": 141,
-      "pred_notes": 137
+      "pred_notes": 141
     },
     {
       "name": "05_Jazz1-130-D_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8440366972477066,
-      "precision": 0.9019607843137255,
+      "f1": 0.7731092436974789,
+      "precision": 0.7540983606557377,
       "recall": 0.7931034482758621,
       "gt_notes": 58,
-      "pred_notes": 51
+      "pred_notes": 61
     },
     {
       "name": "05_Jazz1-200-B_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8,
-      "precision": 0.7888888888888889,
-      "recall": 0.8114285714285714,
+      "f1": 0.7851002865329514,
+      "precision": 0.7873563218390804,
+      "recall": 0.7828571428571428,
       "gt_notes": 175,
-      "pred_notes": 180
+      "pred_notes": 174
     },
     {
       "name": "05_Jazz1-200-B_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.912621359223301,
-      "precision": 0.8867924528301887,
-      "recall": 0.94,
+      "f1": 0.92,
+      "precision": 0.92,
+      "recall": 0.92,
       "gt_notes": 50,
-      "pred_notes": 53
+      "pred_notes": 50
     },
     {
       "name": "05_Jazz2-110-Bb_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9101796407185628,
-      "precision": 0.9156626506024096,
-      "recall": 0.9047619047619048,
+      "f1": 0.9148514851485149,
+      "precision": 0.9130434782608695,
+      "recall": 0.9166666666666666,
       "gt_notes": 252,
-      "pred_notes": 249
+      "pred_notes": 253
     },
     {
       "name": "05_Jazz2-110-Bb_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.896551724137931,
-      "precision": 0.91,
-      "recall": 0.883495145631068,
+      "f1": 0.903846153846154,
+      "precision": 0.8952380952380953,
+      "recall": 0.912621359223301,
       "gt_notes": 103,
-      "pred_notes": 100
+      "pred_notes": 105
     },
     {
       "name": "05_Jazz2-187-F#_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.8277227722772278,
-      "precision": 0.810077519379845,
+      "f1": 0.824457593688363,
+      "precision": 0.8038461538461539,
       "recall": 0.8461538461538461,
       "gt_notes": 247,
-      "pred_notes": 258
+      "pred_notes": 260
     },
     {
       "name": "05_Jazz2-187-F#_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.9344262295081968,
-      "precision": 0.9344262295081968,
-      "recall": 0.9344262295081968,
+      "f1": 0.9291338582677166,
+      "precision": 0.8939393939393939,
+      "recall": 0.9672131147540983,
       "gt_notes": 61,
-      "pred_notes": 61
+      "pred_notes": 66
     },
     {
       "name": "05_Jazz3-137-Eb_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.9230769230769231,
-      "precision": 0.9024390243902439,
+      "f1": 0.9327731092436974,
+      "precision": 0.921161825726141,
       "recall": 0.9446808510638298,
       "gt_notes": 235,
-      "pred_notes": 246
+      "pred_notes": 241
     },
     {
       "name": "05_Jazz3-137-Eb_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.9548387096774195,
-      "precision": 0.9487179487179487,
+      "f1": 0.9487179487179488,
+      "precision": 0.9367088607594937,
       "recall": 0.961038961038961,
       "gt_notes": 77,
-      "pred_notes": 78
+      "pred_notes": 79
     },
     {
       "name": "05_Jazz3-150-C_comp",
       "player": "05",
       "genre": "Jazz",
       "style": "comp",
-      "f1": 0.7499999999999999,
-      "precision": 0.7746478873239436,
-      "recall": 0.7268722466960352,
+      "f1": 0.7152317880794702,
+      "precision": 0.7168141592920354,
+      "recall": 0.7136563876651982,
       "gt_notes": 227,
-      "pred_notes": 213
+      "pred_notes": 226
     },
     {
       "name": "05_Jazz3-150-C_solo",
       "player": "05",
       "genre": "Jazz",
       "style": "solo",
-      "f1": 0.8571428571428571,
-      "precision": 0.8450704225352113,
-      "recall": 0.8695652173913043,
+      "f1": 0.8732394366197183,
+      "precision": 0.8493150684931506,
+      "recall": 0.8985507246376812,
       "gt_notes": 69,
-      "pred_notes": 71
+      "pred_notes": 73
     },
     {
       "name": "05_Rock1-130-A_comp",
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9345794392523366,
-      "precision": 0.9090909090909091,
-      "recall": 0.9615384615384616,
+      "f1": 0.9368258859784283,
+      "precision": 0.9020771513353115,
+      "recall": 0.9743589743589743,
       "gt_notes": 312,
-      "pred_notes": 330
+      "pred_notes": 337
     },
     {
       "name": "05_Rock1-130-A_solo",
       "player": "05",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.9268292682926829,
-      "precision": 0.9047619047619048,
-      "recall": 0.95,
+      "f1": 0.9523809523809523,
+      "precision": 0.9090909090909091,
+      "recall": 1.0,
       "gt_notes": 60,
-      "pred_notes": 63
+      "pred_notes": 66
     },
     {
       "name": "05_Rock1-90-C#_comp",
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9239543726235742,
-      "precision": 0.9759036144578314,
-      "recall": 0.8772563176895307,
+      "f1": 0.9618874773139745,
+      "precision": 0.9671532846715328,
+      "recall": 0.9566787003610109,
       "gt_notes": 277,
-      "pred_notes": 249
+      "pred_notes": 274
     },
     {
       "name": "05_Rock1-90-C#_solo",
@@ -3756,64 +3756,64 @@
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8200934579439252,
-      "precision": 0.8863636363636364,
-      "recall": 0.7630434782608696,
+      "f1": 0.8376844494892168,
+      "precision": 0.8764845605700713,
+      "recall": 0.8021739130434783,
       "gt_notes": 460,
-      "pred_notes": 396
+      "pred_notes": 421
     },
     {
       "name": "05_Rock2-142-D_solo",
       "player": "05",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8248587570621468,
-      "precision": 0.8021978021978022,
-      "recall": 0.8488372093023255,
+      "f1": 0.8314606741573034,
+      "precision": 0.8043478260869565,
+      "recall": 0.8604651162790697,
       "gt_notes": 86,
-      "pred_notes": 91
+      "pred_notes": 92
     },
     {
       "name": "05_Rock2-85-F_comp",
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8767550702028081,
-      "precision": 0.8892405063291139,
-      "recall": 0.8646153846153846,
+      "f1": 0.8957055214723927,
+      "precision": 0.8929663608562691,
+      "recall": 0.8984615384615384,
       "gt_notes": 325,
-      "pred_notes": 316
+      "pred_notes": 327
     },
     {
       "name": "05_Rock2-85-F_solo",
       "player": "05",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8685258964143426,
-      "precision": 0.8650793650793651,
-      "recall": 0.872,
+      "f1": 0.8976377952755905,
+      "precision": 0.8837209302325582,
+      "recall": 0.912,
       "gt_notes": 125,
-      "pred_notes": 126
+      "pred_notes": 129
     },
     {
       "name": "05_Rock3-117-Bb_comp",
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.8789346246973365,
-      "precision": 0.8481308411214953,
-      "recall": 0.9120603015075377,
+      "f1": 0.8688524590163935,
+      "precision": 0.8135964912280702,
+      "recall": 0.9321608040201005,
       "gt_notes": 398,
-      "pred_notes": 428
+      "pred_notes": 456
     },
     {
       "name": "05_Rock3-117-Bb_solo",
       "player": "05",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.921985815602837,
-      "precision": 0.9154929577464789,
-      "recall": 0.9285714285714286,
+      "f1": 0.9503546099290779,
+      "precision": 0.9436619718309859,
+      "recall": 0.9571428571428572,
       "gt_notes": 70,
       "pred_notes": 71
     },
@@ -3822,154 +3822,154 @@
       "player": "05",
       "genre": "Rock",
       "style": "comp",
-      "f1": 0.9177820267686424,
-      "precision": 0.8759124087591241,
-      "recall": 0.963855421686747,
+      "f1": 0.9224652087475149,
+      "precision": 0.9133858267716536,
+      "recall": 0.9317269076305221,
       "gt_notes": 249,
-      "pred_notes": 274
+      "pred_notes": 254
     },
     {
       "name": "05_Rock3-148-C_solo",
       "player": "05",
       "genre": "Rock",
       "style": "solo",
-      "f1": 0.8813559322033898,
-      "precision": 0.9122807017543859,
-      "recall": 0.8524590163934426,
+      "f1": 0.8549618320610688,
+      "precision": 0.8,
+      "recall": 0.9180327868852459,
       "gt_notes": 61,
-      "pred_notes": 57
+      "pred_notes": 70
     },
     {
       "name": "05_SS1-100-C#_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.9753694581280787,
-      "precision": 0.9801980198019802,
+      "f1": 0.951923076923077,
+      "precision": 0.9339622641509434,
       "recall": 0.9705882352941176,
       "gt_notes": 102,
-      "pred_notes": 101
+      "pred_notes": 106
     },
     {
       "name": "05_SS1-100-C#_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.870967741935484,
-      "precision": 0.84375,
+      "f1": 0.8780487804878048,
+      "precision": 0.8571428571428571,
       "recall": 0.9,
       "gt_notes": 60,
-      "pred_notes": 64
+      "pred_notes": 63
     },
     {
       "name": "05_SS1-68-E_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.9759450171821306,
-      "precision": 0.9594594594594594,
-      "recall": 0.993006993006993,
+      "f1": 0.9694915254237287,
+      "precision": 0.9407894736842105,
+      "recall": 1.0,
       "gt_notes": 143,
-      "pred_notes": 148
+      "pred_notes": 152
     },
     {
       "name": "05_SS1-68-E_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8333333333333334,
-      "precision": 0.8333333333333334,
-      "recall": 0.8333333333333334,
+      "f1": 0.8395061728395062,
+      "precision": 0.8095238095238095,
+      "recall": 0.8717948717948718,
       "gt_notes": 78,
-      "pred_notes": 78
+      "pred_notes": 84
     },
     {
       "name": "05_SS2-107-Ab_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.9395973154362416,
-      "precision": 0.9333333333333333,
-      "recall": 0.9459459459459459,
+      "f1": 0.9401330376940134,
+      "precision": 0.925764192139738,
+      "recall": 0.954954954954955,
       "gt_notes": 222,
-      "pred_notes": 225
+      "pred_notes": 229
     },
     {
       "name": "05_SS2-107-Ab_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.777142857142857,
-      "precision": 0.7727272727272727,
-      "recall": 0.7816091954022989,
+      "f1": 0.7724867724867724,
+      "precision": 0.7156862745098039,
+      "recall": 0.8390804597701149,
       "gt_notes": 87,
-      "pred_notes": 88
+      "pred_notes": 102
     },
     {
       "name": "05_SS2-88-F_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8962025316455696,
-      "precision": 0.8894472361809045,
-      "recall": 0.9030612244897959,
+      "f1": 0.917705735660848,
+      "precision": 0.8975609756097561,
+      "recall": 0.9387755102040817,
       "gt_notes": 196,
-      "pred_notes": 199
+      "pred_notes": 205
     },
     {
       "name": "05_SS2-88-F_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.9417989417989417,
-      "precision": 0.9270833333333334,
-      "recall": 0.956989247311828,
+      "f1": 0.9374999999999999,
+      "precision": 0.9090909090909091,
+      "recall": 0.967741935483871,
       "gt_notes": 93,
-      "pred_notes": 96
+      "pred_notes": 99
     },
     {
       "name": "05_SS3-84-Bb_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.8481012658227848,
-      "precision": 0.7642585551330798,
-      "recall": 0.95260663507109,
+      "f1": 0.8295687885010268,
+      "precision": 0.7318840579710145,
+      "recall": 0.957345971563981,
       "gt_notes": 211,
-      "pred_notes": 263
+      "pred_notes": 276
     },
     {
       "name": "05_SS3-84-Bb_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.8839285714285714,
-      "precision": 0.8761061946902655,
-      "recall": 0.8918918918918919,
+      "f1": 0.9004329004329005,
+      "precision": 0.8666666666666667,
+      "recall": 0.9369369369369369,
       "gt_notes": 111,
-      "pred_notes": 113
+      "pred_notes": 120
     },
     {
       "name": "05_SS3-98-C_comp",
       "player": "05",
       "genre": "SS",
       "style": "comp",
-      "f1": 0.9141414141414141,
-      "precision": 0.9187817258883249,
+      "f1": 0.9329896907216496,
+      "precision": 0.9576719576719577,
       "recall": 0.9095477386934674,
       "gt_notes": 199,
-      "pred_notes": 197
+      "pred_notes": 189
     },
     {
       "name": "05_SS3-98-C_solo",
       "player": "05",
       "genre": "SS",
       "style": "solo",
-      "f1": 0.9347826086956522,
-      "precision": 0.945054945054945,
-      "recall": 0.9247311827956989,
+      "f1": 0.9157894736842105,
+      "precision": 0.8969072164948454,
+      "recall": 0.9354838709677419,
       "gt_notes": 93,
-      "pred_notes": 91
+      "pred_notes": 97
     }
   ]
 }
