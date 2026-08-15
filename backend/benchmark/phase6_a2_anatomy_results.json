@@ -1,0 +1,62 @@
+{
+  "total_a2": 174,
+  "track_a2": {
+    "05_Jazz2-187-F#_comp": 30,
+    "00_SS1-68-E_comp": 48,
+    "03_BN1-147-Gb_comp": 10,
+    "01_Funk1-97-C_comp": 14,
+    "05_Jazz2-187-F#_solo": 5,
+    "00_Rock2-142-D_solo": 16,
+    "04_Rock1-130-A_solo": 12,
+    "05_SS2-88-F_solo": 5,
+    "02_Funk2-119-G_comp": 34
+  },
+  "band_a2": {
+    "Low (E2-E3)": 36,
+    "Mid (E3-B3)": 130,
+    "High (C4+)": 8
+  },
+  "genre_a2": {
+    "Jazz": 35,
+    "SS": 53,
+    "BN": 10,
+    "Funk": 48,
+    "Rock": 28
+  },
+  "harmonic_rel": {
+    "octave_pm12_24": 47,
+    "fifth_pm7_19": 44,
+    "unison_neighbor": 8,
+    "other": 75
+  },
+  "chord_pos": {
+    "single": 53,
+    "highest": 80,
+    "lowest": 29,
+    "middle": 12
+  },
+  "vel_dist": {
+    "<0.15": 0,
+    "0.15-0.20": 0,
+    "0.20-0.30": 0,
+    "0.30-0.50": 46,
+    ">=0.50": 128
+  },
+  "dur_dist": {
+    "<30ms": 0,
+    "30-50ms": 0,
+    "50-80ms": 0,
+    "80-120ms": 8,
+    ">=120ms": 166
+  },
+  "gray_zone": {
+    "vel_under_0_20": 0,
+    "dur_under_50ms": 0,
+    "vel_under_0_25_or_dur_under_60ms": 0
+  },
+  "source": {
+    "bp_only": 55,
+    "moe_only": 0,
+    "fused": 119
+  }
+}

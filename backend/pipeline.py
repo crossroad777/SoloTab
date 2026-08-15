@@ -498,7 +498,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             BP_ONLY_THRESHOLD = 0.10
         else:
             # MoE 信頼性高: 7モデルMoEが検出しなかったBP過剰検出（倍音・残響）を抑制
-            BP_ONLY_THRESHOLD = 0.35
+            BP_ONLY_THRESHOLD = 0.45
             
         report("notes", f"[Ensemble] MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), threshold: {BP_ONLY_THRESHOLD}")
         bp_only_added = 0

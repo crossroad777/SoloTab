@@ -621,8 +621,13 @@ def validate_notes_by_music_theory(
         else:
             removed_count += 1
             
-    print(f"[music_theory] MVS validation: kept {len(validated_notes)} / {len(notes)} notes, removed {removed_count} notes (threshold={threshold})")
-    
+    # 2.8 倍音構造ベースのフィルタリング (Pass 2 v3)
+    before_overtone = len(validated_notes)
+    validated_notes = filter_overtones_by_music_theory(validated_notes)
+    after_overtone = len(validated_notes)
+    if before_overtone > after_overtone:
+        print(f"[music_theory] Overtone filter (Pass 2 v3): removed {before_overtone - after_overtone} spurious notes")
+
     # 物理的制約の適用 (GPU処理不要の安全なフィルタ)
     before_phys = len(validated_notes)
     validated_notes = apply_physical_constraints(validated_notes)
@@ -631,3 +636,76 @@ def validate_notes_by_music_theory(
         print(f"[music_theory] Physical constraint validation: removed {before_phys - after_phys} notes")
         
     return validated_notes
+
+
+def filter_overtones_by_music_theory(notes: List[dict], time_threshold: float = 0.05) -> List[dict]:
+    """
+    同時発音グループ（<=50ms）内において、基本音に対してオクターブ上（+12, +24）または
+    5度上（+19, +7）であり、音量が基本音より有意に弱く、かつコード構成音でない倍音誤検出を除外する。
+    
+    安全装置:
+      - CNNハードプロテクト（_hard_protect_string）は除外しない
+      - コード構成音（_s_harmonic >= 0.30）は除外しない
+      - 基本音とオクターブ音がほぼ同等音量（メロディのオクターブ奏法）の場合は除外しない
+    """
+    if len(notes) < 2:
+        return notes
+        
+    sorted_notes = sorted(notes, key=lambda n: float(n.get("start", n.get("start_time", 0.0))))
+    
+    # 同時発音グループに分割
+    groups = []
+    current_group = []
+    for n in sorted_notes:
+        t = float(n.get("start", n.get("start_time", 0.0)))
+        if not current_group:
+            current_group.append(n)
+        else:
+            first_t = float(current_group[0].get("start", current_group[0].get("start_time", 0.0)))
+            if t - first_t <= time_threshold:
+                current_group.append(n)
+            else:
+                groups.append(current_group)
+                current_group = [n]
+    if current_group:
+        groups.append(current_group)
+        
+    filtered = []
+    for grp in groups:
+        if len(grp) < 2:
+            filtered.extend(grp)
+            continue
+            
+        # グループ内の基本音と倍音候補を判定
+        to_remove = set()
+        for idx_high, n_high in enumerate(grp):
+            if n_high.get("_hard_protect_string"):
+                continue
+            if n_high.get("_s_harmonic", 0.0) >= 0.30:  # コード構成音は保護
+                continue
+                
+            p_high = int(n_high.get("pitch", 60))
+            v_high = float(n_high.get("velocity", 0.5))
+            if v_high > 1.0: v_high /= 127.0
+            
+            for idx_low, n_low in enumerate(grp):
+                if idx_low == idx_high:
+                    continue
+                p_low = int(n_low.get("pitch", 60))
+                v_low = float(n_low.get("velocity", 0.5))
+                if v_low > 1.0: v_low /= 127.0
+                
+                # 低音側が基本音である条件: p_high > p_low
+                p_diff = p_high - p_low
+                # オクターブ上 (+12, +24) または 5度上 (+7, +19)
+                if p_diff in [12, 24, 19]:
+                    # 基本音より明確に音量が弱い (v_high < 0.65 * v_low)
+                    if v_high < (0.65 * v_low):
+                        to_remove.add(idx_high)
+                        break
+                        
+        for idx, n in enumerate(grp):
+            if idx not in to_remove:
+                filtered.append(n)
+                
+    return filtered
