@@ -292,8 +292,13 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                     gap_to_next: int = max(1, min(next_target - target_pos, bar_total - target_pos))
 
                     for i, entry in enumerate(group):
-                        dur = int(entry.get("duration_divs", gap_to_next))
-                        dur = min(dur, gap_to_next, bar_total - target_pos)
+                        is_bass_note = entry.get("is_bass", False) or int(entry.get("pitch", 60)) <= 52 or int(entry.get("string", 1)) >= 4
+                        if is_bass_note:
+                            dur = int(entry.get("duration_divs", bar_total - target_pos))
+                            dur = min(dur, bar_total - target_pos)
+                        else:
+                            dur = int(entry.get("duration_divs", gap_to_next))
+                            dur = min(dur, gap_to_next, bar_total - target_pos)
                         
                         tech = str(entry.get("technique") or "normal")
                         string_num = int(entry.get("string", 1))
@@ -319,10 +324,11 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                         ET.SubElement(note_el, "voice").text = voice
                         ET.SubElement(note_el, "type").text = _duration_to_type(dur, divisions)
 
-                        if entry.get("is_dotted"):
+                        is_dotted = entry.get("is_dotted") or (dur in [9, 18, 36, 54])
+                        if is_dotted:
                             ET.SubElement(note_el, "dot")
                         
-                        is_trip = entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8])
+                        is_trip = not is_bass_note and (entry.get("is_triplet", False) or (is_triplet_mode and dur in [2, 4, 8]))
                         if is_trip:
                             tm = ET.SubElement(note_el, "time-modification")
                             ET.SubElement(tm, "actual-notes").text = "3"
@@ -345,7 +351,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                             ET.SubElement(notations, "tied", type="start")
 
                         # Tuplet brackets across all measures
-                        if is_trip and i == 0:
+                        if is_trip:
                             t_role = entry.get("tuplet_role", "none")
                             if t_role == "start":
                                 ET.SubElement(notations, "tuplet", type="start", bracket="yes")
@@ -354,8 +360,7 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                             elif t_role == "start_stop":
                                 ET.SubElement(notations, "tuplet", type="start", bracket="yes")
                                 ET.SubElement(notations, "tuplet", type="stop")
-                            elif t_role == "none":
-                                # Fallback: beat modulo calculation
+                            elif t_role == "none" and i == 0:
                                 cycle = 12
                                 rem = target_pos % cycle
                                 if rem == 0:

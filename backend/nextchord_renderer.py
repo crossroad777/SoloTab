@@ -1,9 +1,9 @@
 """
 nextchord_renderer.py — NextChord SoloTab テキストフォーマット レンダラー
 ======================================================================
-NextChord SoloTab の独自テキストTAB記譜仕様に準拠したレンダラー。
-Universal Quantizer の量化出力から、コードネーム、拍ごとのフレット配置、
-アルペジオ3連符ブロックを整形して出力する。
+NextChord SoloTab 独自記譜仕様レンダラー。
+Universal Quantizer の量化出力から、コードネーム、3連符ブラケット[3]、
+ベース音持続、ビート単位の縦整列を正確にテキスト描画する。
 """
 
 import sys
@@ -65,7 +65,6 @@ def notes_to_nextchord_text(
         # コード名を出力
         chord_name = bar_chords.get(b)
         if not chord_name:
-            # 構成音から Em / B7 / Am 等を推定
             pitches = [int(n.get("pitch", 60)) for n in b_notes]
             if 64 in pitches or 76 in pitches or 55 in pitches or 40 in pitches:
                 chord_name = "Em"
@@ -78,8 +77,7 @@ def notes_to_nextchord_text(
 
         lines.append(f"{chord_name}")
 
-        # 拍ごとにグループ化
-        # 1拍 = 12 divs
+        # 拍ごとにグループ化 (1拍 = 12 divs)
         beat_map: Dict[int, List[dict]] = {}
         for n in b_notes:
             pos = int(n.get("beat_pos_in_bar", 0))
@@ -90,20 +88,17 @@ def notes_to_nextchord_text(
         for k in beat_map:
             beat_map[k].sort(key=lambda x: (int(x.get("beat_pos_in_bar", 0)), -int(x.get("pitch", 0))))
 
-        # 構造化した行の構築
-        # 1拍目のトップノート/ベース音
+        # 1拍目の縦整列（トップメロディ音 ＋ ベース音）
         beat0 = beat_map.get(0, [])
         beat1 = beat_map.get(1, [])
         beat2 = beat_map.get(2, [])
 
         if beat0:
-            # 1拍目の先頭音
             lines.append(str(beat0[0].get("fret", 0)))
             if len(beat0) > 1:
-                # 1拍目の2番目の音（ベース音など）
                 lines.append(str(beat0[1].get("fret", 0)))
 
-        # 後続の音列（拍1, 拍2のノート群）
+        # 後続の3連符アルペジオ音列
         rest_notes = []
         if len(beat0) > 2:
             rest_notes.extend(beat0[2:])
