@@ -628,17 +628,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                         "time_signature": time_signature, "downbeats": downbeats,
                     }), f, ensure_ascii=False, indent=2)
 
-    # --- Step 2.4: コード検出 ---
+    # --- Step 2.4: コード検出 (RMSエネルギー ＆ ノイズゲート生存ノート連動) ---
     chords = []
     try:
         t0_chords = time.time()
-        from chord_detector import detect_chords  # type: ignore
-        chords = detect_chords(str(transcription_wav), beats=beats, key=detected_key or "C")
-        # ダイアトニックコード理論と検出単音に基づく補正（ノイズゲート生存ノートのみを使用）
-        if chords and notes:
-            from chord_detector import refine_chords_with_notes
-            from gp_renderer import _filter_noise
-            gated_notes = _filter_noise(notes, 0.15)
+        from chord_detector import detect_chords, refine_chords_with_notes  # type: ignore
+        from gp_renderer import _filter_noise
+        gated_notes = _filter_noise(notes, 0.15) if notes else []
+        chords = detect_chords(str(transcription_wav), beats=beats, key=detected_key or "C", notes=gated_notes)
+        # ダイアトニックコード理論と検出単音に基づく補正
+        if chords and gated_notes:
             report("chords", f"単音情報とダイアトニック理論によるコード補正を適用中... (キー: {detected_key or 'C'}, 生存ノート: {len(gated_notes)})")
             chords = refine_chords_with_notes(chords, gated_notes, key=detected_key or "C")
         report("chords", f"コード検出・補正完了: {len(chords)}区間 ({time.time()-t0_chords:.1f}s)")

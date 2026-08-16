@@ -504,15 +504,20 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
 
 
 def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = None,
+                         notes: List[Dict] = None,
                          sr: int = 22050, hop_length: int = 512) -> List[Dict]:
     """Chroma テンプレートマッチングによるコード検出 (フォールバック)"""
     y, sr = librosa.load(wav_path, sr=sr, mono=True)
     
-    # Chroma特徴量
+    # Chroma特徴量とRMSエネルギー (ノイズフロア検出用)
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
+    rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
+    max_rms = float(np.max(rms)) if len(rms) > 0 else 1.0
+    rms_threshold = max(0.001, max_rms * 0.015)  # -36dBFS未満の微弱ノイズを遮断
+    
     times = librosa.frames_to_time(np.arange(chroma.shape[1]), sr=sr, hop_length=hop_length)
     
-    # ビート単位でchromaを平均化
+    # ビート単位でchromaおよびRMSを平均化
     if beats and len(beats) >= 2:
         segments = []
         for i in range(len(beats) - 1):
@@ -521,9 +526,11 @@ def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = No
             mask = (times >= start_t) & (times < end_t)
             if np.any(mask):
                 avg_chroma = np.mean(chroma[:, mask], axis=1)
+                avg_rms = float(np.mean(rms[mask]))
             else:
                 avg_chroma = np.zeros(12)
-            segments.append((start_t, end_t, avg_chroma))
+                avg_rms = 0.0
+            segments.append((start_t, end_t, avg_chroma, avg_rms))
     else:
         interval = 0.5
         duration = len(y) / sr
@@ -533,13 +540,33 @@ def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = No
             mask = (times >= t) & (times < end_t)
             if np.any(mask):
                 avg_chroma = np.mean(chroma[:, mask], axis=1)
+                avg_rms = float(np.mean(rms[mask]))
             else:
                 avg_chroma = np.zeros(12)
-            segments.append((t, end_t, avg_chroma))
+                avg_rms = 0.0
+            segments.append((t, end_t, avg_chroma, avg_rms))
 
     # 各セグメントでテンプレートマッチング
     chords = []
-    for start_t, end_t, seg_chroma in segments:
+    for start_t, end_t, seg_chroma, seg_rms in segments:
+        # RMSエネルギーによる無音・環境ノイズゲーティング
+        if seg_rms < rms_threshold:
+            chords.append({"start": float(start_t), "end": float(end_t),
+                          "chord": "N.C.", "confidence": 0.0})
+            continue
+
+        # ノート列が渡されている場合、該当区間にノートが存在しなければN.C.
+        if notes is not None:
+            has_note = any(
+                start_t <= float(n.get("start", n.get("start_time", 0))) < end_t or 
+                (float(n.get("start", n.get("start_time", 0))) < start_t and float(n.get("end", float(n.get("start", n.get("start_time", 0))) + 0.5)) > start_t + 0.1)
+                for n in notes
+            )
+            if not has_note:
+                chords.append({"start": float(start_t), "end": float(end_t),
+                              "chord": "N.C.", "confidence": 0.0})
+                continue
+
         norm = np.linalg.norm(seg_chroma)
         if norm < 0.01:
             chords.append({"start": float(start_t), "end": float(end_t),
@@ -585,6 +612,7 @@ def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = No
 
 
 def detect_chords(wav_path: str, beats: List[float] = None, key: str = None,
+                  notes: List[Dict] = None,
                   sr: int = 22050, hop_length: int = 512) -> List[Dict]:
     """
     コード検出のメインエントリポイント。
@@ -598,6 +626,8 @@ def detect_chords(wav_path: str, beats: List[float] = None, key: str = None,
         ビート位置(秒)。chroma fallback 時に使用。
     key : str, optional
         キー情報。ダイアトニック判定用。
+    notes : list[dict], optional
+        ノイズゲート後の生存ノート列。無音小節判定用。
 
     Returns
     -------
@@ -607,11 +637,10 @@ def detect_chords(wav_path: str, beats: List[float] = None, key: str = None,
     # 1. BTC を試行
     result = detect_chords_btc(wav_path)
     if result is not None:
-        # BTCでも、もしキーがあれば後でrefine可能（呼び出し側 pipeline.py で一括処理）
         return result
     
-    # 2. フォールバック: chroma テンプレートマッチング
-    return detect_chords_chroma(wav_path, beats=beats, key=key, sr=sr, hop_length=hop_length)
+    # 2. フォールバック: chroma テンプレートマッチング (RMS・ノートゲーティング適用)
+    return detect_chords_chroma(wav_path, beats=beats, key=key, notes=notes, sr=sr, hop_length=hop_length)
 
 
 if __name__ == "__main__":
