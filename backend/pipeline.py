@@ -441,7 +441,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     bp_notes_list = _bp_notes
 
     # --- Beat grid consistency check ---
-    if len(beats) >= 4 and bpm > 0:
+    if is_midi_bypass and notes:
+        max_note_t = max(float(n.get("end", n.get("start", 0.0) + 0.5)) for n in notes)
+        if bpm <= 0:
+            bpm = 88.0
+        beat_interval = 60.0 / bpm
+        num_beats = int(np.ceil(max_note_t / beat_interval)) + 4
+        beats = [i * beat_interval for i in range(num_beats)]
+        downbeats = [beats[i] for i in range(0, len(beats), 3 if time_signature == "3/4" else 4)]
+        report("beats", f"MIDIバイパス用ビート生成: {len(beats)} beats (BPM={bpm})")
+    elif len(beats) >= 4 and bpm > 0:
         expected_interval = 60.0 / bpm
         actual_intervals = [beats[i+1] - beats[i] for i in range(min(20, len(beats)-1))]
         actual_avg = sum(actual_intervals) / len(actual_intervals)
@@ -477,6 +486,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("notes", f"MIDIバイパス採用: {len(notes)} notes (AMTスキップ)")
     elif bp_notes_list and moe_notes_list:
         # 最優先: BPとMoEの融合 (F1=0.89)
+        MATCH_ONSET_TOL = 0.10   # 100ms
+        MATCH_PITCH_TOL = 1      # ±1 semitone
         fused_notes = []
         used_moe = set()
         used_bp = set()
