@@ -440,20 +440,21 @@ def _classify_from_f0(
     #         elif jump_semi < -0.3:
     #             return "p"
 
-    # ── スライド: 線形F0遷移（R²高い）──
-    if ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff:
-        if r2 >= 0.55 and abs_jump >= 0.5:  # 線形かつ移動あり
-            if jump_semi > 0:
-                return "/"
-            elif jump_semi < 0:
-                return "\\"
-
-    # ── グリッサンド: 大フレット移動 ──
-    if ioi <= slide_max and fret_diff >= GLISS_MIN_FRET:
-        if pitch_diff > 0:
-            return "gliss_up"
-        elif pitch_diff < 0:
-            return "gliss_down"
+    # ── スライド: 線形F0遷移（押弦ノート間のみ。開放弦は不可）──
+    p_fret = prev.get("fret", 0)
+    c_fret = curr.get("fret", 0)
+    if p_fret > 0 and c_fret > 0 and ioi <= slide_max:
+        if 1 <= fret_diff <= 4:
+            if r2 >= 0.55 and abs_jump >= 0.5:
+                if jump_semi > 0:
+                    return "/"
+                elif jump_semi < 0:
+                    return "\\"
+        elif 5 <= fret_diff <= 7:
+            if pitch_diff > 0:
+                return "gliss_up"
+            elif pitch_diff < 0:
+                return "gliss_down"
 
     return None  # 判定不能 → ルールベースに委ねる
 
@@ -527,18 +528,15 @@ def _rule_based(
     # if 0 < ioi <= hp_max and 0 < abs_pitch <= 6:
     #     return "h" if pitch_diff > 0 else "p"
 
-    # スライド
-    if 0 < ioi <= slide_max and SLIDE_MIN_FRET <= fret_diff <= SLIDE_MAX_FRET:
-        if fret_diff <= 5:
-            # 通常スライド
+    # スライド（押弦ノート間のみ。開放弦 fret=0 からのスライドは物理的に不可能）
+    if curr_fret > 0 and prev_fret > 0 and 0 < ioi <= slide_max:
+        if 1 <= fret_diff <= 4:
             if pitch_diff > 0:
                 return "/"
             elif pitch_diff < 0:
                 return "\\"
-
-    # グリッサンド
-    if 0 < ioi <= slide_max * 1.2 and fret_diff >= GLISS_MIN_FRET:
-        return "gliss_up" if pitch_diff > 0 else "gliss_down"
+        elif 5 <= fret_diff <= 7:
+            return "gliss_up" if pitch_diff > 0 else "gliss_down"
 
     # ベンド（フレット押弦のみ: fret > 0 が条件）
     # オープン弦（fret=0）はベンド不可能

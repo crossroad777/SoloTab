@@ -680,12 +680,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             'h':          'H',       // ハンマリング・オン
             'p':          'P',       // プリング・オフ
             'tr':         'tr',      // トリル
-            '/':          'S',       // スライドアップ
-            '\\':         'S',       // スライドダウン
-            'slide_up':   'S',
-            'slide_down': 'S',
-            'gliss_up':   'g',       // グリス（1）— 目標あり
-            'gliss_down': 'g',       // グリス（2）— 目標なし
+            // スライド・グリスはAlphaTabのネイティブ斜線スライド表示に一本化（上に文字Sを被せない）
 
             // チョーキング系 (Ex-3〜13)
             'b':          'C',       // 1音チョーキング (Ex-3)
@@ -1348,10 +1343,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                     console.log("[TabView] Technique overlay enabled (showing attack mutes and articulations)");
                                 }
                             } catch (e) { console.warn("[TabView] Overlay check:", e); }
-                            // コードオーバーレイ: 常に表示
-                            try {
-                                buildChordOverlay(api);
-                            } catch (e) { console.warn("[TabView] Chord overlay:", e); }
+                            // コードはAlphaTabが五線譜最上部に美しく1回のみネイティブ描画（二重表示を防止）
                             try {
                                 buildAnchorOverlay(api);
                             } catch (e) { console.warn("[TabView] Anchor overlay:", e); }
