@@ -754,25 +754,28 @@ def _detect_percussive_techniques(
             else:
                 voiced_ratio = 1.0
 
-            # 2. スペクトル特徴
+            # 2. スペクトル特徴（アタック音・打音・ミュート解析）
             s = max(0, int(note["start"] * sr))
             e = min(len(audio), int((note["start"] + min(dur, 0.15)) * sr))
             seg = audio[s:e]
             if len(seg) < 256:
                 continue
             
-            is_unvoiced = voiced_ratio < 0.50
-            is_flat = flatness > 0.25
+            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr).mean())
+            flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
+            
+            is_unvoiced = voiced_ratio < 0.55
+            is_flat = flatness > 0.18
 
-            if is_unvoiced and is_flat:
-                if centroid < 250.0:
+            if is_unvoiced or is_flat:
+                if centroid < 350.0 and is_unvoiced:
                     # 空洞共振による極低域のみの打音 -> ボディヒット (bh)
                     note["technique"] = "bh"
-                elif centroid > 2600.0 and flatness > 0.35:
-                    # 高周波ノイズによるアタック音 -> ネイルアタック (na)
-                    note["technique"] = "na"
+                elif centroid > 2200.0 and flatness > 0.25:
+                    # 高周波ノイズによる鋭いアタック音 -> ネイルアタック / アタックミュート (x)
+                    note["technique"] = "x"
                 else:
-                    # 一般的なデッドノート/ブラッシング (x)
+                    # 一般的なデッドノート/ブラッシング/パームアタック (x)
                     note["technique"] = "x"
 
     except Exception as e:
