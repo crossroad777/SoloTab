@@ -224,7 +224,10 @@ def _detect_tapping_events(
     hp_max: float = 0.25
 ) -> None:
     """
-    ピッキングオンセットを伴わないレガート跳躍、または高音フレットへの高速打鍵をタッピング(tap)として検出。
+    純粋な音響・運動学特徴量のみによるタッピング検出 (GTパススルー完全無効化)。
+    判定条件:
+    1. 同一弦でのハイフレット跳躍レガート (fret >= 9, fret_diff >= 4, IOI <= hp_max)
+    2. 音声信号における高速過渡とアタック無しのF0連続遷移
     """
     if len(notes) < 2:
         return
@@ -233,23 +236,14 @@ def _detect_tapping_events(
         curr = notes[i]
         prev = notes[i - 1]
 
-        # 既に付与済みなら尊重
-        if curr.get("technique") in ("tap", "t", "th"):
-            continue
-
         ioi = curr["start"] - prev["start"]
         fret_diff = curr.get("fret", 0) - prev.get("fret", 0)
         curr_fret = curr.get("fret", 0)
 
-        # 1. 同一弦でのハイフレット跳躍レガート (fret >= 12 への高速跳躍)
+        # 音響・運動学判定: 同一弦でのハイフレット跳躍レガート (fret >= 9 への高速跳躍)
         if curr.get("string") == prev.get("string") and 0 < ioi <= hp_max:
             if fret_diff >= 4 and curr_fret >= 9:
                 curr["technique"] = "tap"
-                continue
-
-        # 2. タッピングフラグが存在する場合
-        if str(curr.get("technique", "")).lower() in ("tap", "t"):
-            curr["technique"] = "tap"
 
 
 
@@ -633,8 +627,20 @@ def _detect_all_harmonics(
             if fret in NH_FRETS:
                 expected_harmonic_pitch = HARMONIC_FRETS[fret]
                 if pitch == open_pitch + expected_harmonic_pitch:
-                    note["technique"] = "harmonic"
-                    continue
+                    # 音響境界検証: flatness < 0.026 かつ peak_ratio >= 4.80
+                    s = max(0, int(note["start"] * sr))
+                    e = min(len(audio), int((note["start"] + 0.15) * sr))
+                    seg = audio[s:e]
+                    if len(seg) >= 256:
+                        flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
+                        fft_mag = np.abs(np.fft.rfft(seg))
+                        peak_ratio = float(np.max(fft_mag) / (np.mean(fft_mag) + 1e-6))
+                        if flatness < 0.026 and peak_ratio >= 4.80:
+                            note["technique"] = "harmonic"
+                            continue
+                    else:
+                        note["technique"] = "harmonic"
+                        continue
             
             # 2. 人工 / タッピングハーモニクス (ah / th)
             # 押弦状態で、検出ピッチが理論上のピッチ(open+fret)より12, 19, 24半音高い場合
@@ -755,13 +761,10 @@ def _detect_percussive_techniques(
             if len(seg) < 256:
                 continue
             
-            flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
-            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr).mean())
+            is_unvoiced = voiced_ratio < 0.50
+            is_flat = flatness > 0.25
 
-            is_unvoiced = voiced_ratio < 0.28
-            is_very_short = dur < 0.08
-
-            if is_unvoiced or (voiced_ratio < 0.40 and flatness > 0.35):
+            if is_unvoiced and is_flat:
                 if centroid < 250.0:
                     # 空洞共振による極低域のみの打音 -> ボディヒット (bh)
                     note["technique"] = "bh"
