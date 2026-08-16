@@ -1,11 +1,23 @@
-# SoloTab Legacy Experiments Archive & Metadata Registry
+# SoloTab Legacy Archive & Metadata Registry
 
-本ディレクトリ（`_archive/legacy_experiments/`）は、SoloTab v2 の研究開発過程（論文 `solotab_v2_sota_paper_ja.md` §8〜§20）において実施された実験スクリプト、モデル学習コード、および検証ツールのアーカイブです。
-プロダクション・クリティカルパス（聖域）から安全に隔離され、将来の再検証やデータセット再構築のために永続保存されています。
+本ディレクトリ（`_archive/`）は、SoloTab v2 の研究開発過程（論文 `solotab_v2_sota_paper_ja.md` §1〜§20）において蓄積された過去の実験コード、旧アーカイブ、検証ログ、試行錯誤スクリプト群を安全に隔離・保管したアーカイブです。
 
 ---
 
-## ■ 実験スクリプト vs 論文セクション対応メタデータ
+## ■ アーカイブ構成
+
+```
+_archive/
+├── legacy_experiments/   # 論文Step対応のモデル学習・最適化スクリプト (29件)
+├── legacy_logs/          # 実験・学習・ベンチマークの実行ログ (51件)
+├── legacy_outputs/       # 過去の検証用GP5 / MIDI 出力ファイル群
+├── legacy_archive/       # 初期開発フェーズ（Phase 1-2）の旧アーカイブ (10.7 GB)
+└── scratch/              # 過去の試行錯誤・検証用スクリプト (267件)
+```
+
+---
+
+## ■ legacy_experiments 実験スクリプト対応表
 
 | ファイル名 | 関連論文セクション | 実験目的・概要 | 結論・採否 |
 |---|---|---|---|
