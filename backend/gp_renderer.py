@@ -324,34 +324,13 @@ def notes_to_gp5(notes: List[dict], *,
                 return False
             return int(n.get("pitch", 60)) <= split_pitch
 
-        # --- Pre-pass: ベース音(Voice 2)の後処理 ---
+        # --- 論文§6準拠: 低音弦ノートの全音符完全保護 (間引き・ワープの完全撤廃) ---
         bars_data = []
         for bar_num in range(total_bars):
             bar_notes = [e for e in entries_to_use if e["bar"] == bar_num]
-            melody = [n for n in bar_notes if not _is_bass(n)]
-            bass = [n for n in bar_notes if _is_bass(n)]
-            bars_data.append({"melody": melody, "bass": bass})
+            # 全ノートをそのまま時系列順で保持
+            bars_data.append({"melody": bar_notes, "bass": []})
 
-        # ベース音スナップ＋補完
-        last_bass_template = None
-        for bar_num in range(total_bars):
-            bd = bars_data[bar_num]
-            if bd["bass"]:
-                seen_pitches = set()
-                snapped = []
-                for b in sorted(bd["bass"], key=lambda x: float(x.get("beat_pos", 0))):
-                    p = int(b.get("pitch", 60))
-                    if p not in seen_pitches:
-                        seen_pitches.add(p)
-                        snap = dict(b)
-                        if float(snap.get("beat_pos", 0)) < 12:
-                            snap["beat_pos"] = 0
-                        snapped.append(snap)
-                bd["bass"] = snapped
-                last_bass_template = snapped
-            else:
-                if last_bass_template and bd["melody"]:
-                    bd["bass"] = [dict(t) for t in last_bass_template]
 
         for bar_num in range(total_bars):
             m = track.measures[bar_num]
