@@ -634,7 +634,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             tuning_suggestion = detect_tuning_from_audio(str(transcription_wav), detected_key=detected_key)
             if tuning_suggestion["confidence"] >= 0.40 and tuning_suggestion["tuning"] != tuning_name:
                 tuning_name = tuning_suggestion["tuning"]
-                from solotab_utils import TUNINGS
                 tuning_notes = TUNINGS.get(tuning_name, [40, 45, 50, 55, 59, 64])
                 report("tuning_detect", f"動的チューニング適応: {tuning_suggestion.get('label', tuning_name)} (確信度: {tuning_suggestion['confidence']:.2f})")
             else:
