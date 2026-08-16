@@ -412,14 +412,24 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         }
 
         const notes = notesDataRef.current;
-        const bpm = api.score.tempo || 120;
+        // AlphaTabのtempoプロパティを安全に数値として取得
+        let rawTempo = api.score.tempo;
+        let bpm = 120;
+        if (typeof rawTempo === 'number' && rawTempo > 0) {
+            bpm = rawTempo;
+        } else if (typeof rawTempo === 'object' && rawTempo !== null && typeof rawTempo.value === 'number') {
+            bpm = rawTempo.value;
+        } else if (typeof api.score.tempoValue === 'number') {
+            bpm = api.score.tempoValue;
+        }
+
         const ticksPerBeat = 960;
         const beatsArr = beatsDataRef.current; // beats.json実時刻(秒)
 
         // ===================================================================
         // Strategy 1: tick-based mapping using AlphaTab beat model
         // Each boundsLookup beat has .beat → absolutePlaybackStart (ticks)
-        // Convert ticks to audio seconds: sec = ticks * 60 / (bpm * ticksPerBeat)
+        // Convert ticks directly to beatIdx: beatIdx = ticks / 960
         // ===================================================================
         const tickEntries = [];
         for (const system of systems) {
@@ -427,7 +437,6 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             if (!sgBars) continue;
             const sysVb = system.visualBounds;
             for (const sgBar of sgBars) {
-                // MasterBarBounds → .bars[] (BarBounds) → .beats[] (BeatBounds)
                 const innerBars = sgBar.bars || [];
                 for (const barBounds of innerBars) {
                     for (const beatBounds of (barBounds.beats || [])) {
@@ -435,9 +444,10 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         if (!bvb || bvb.x == null) continue;
                         const beat = beatBounds.beat;
                         const ticks = beat?.absolutePlaybackStart ?? beat?.playbackStart ?? null;
-                        if (ticks != null) {
+                        if (ticks != null && !isNaN(ticks)) {
                             tickEntries.push({
-                                timeMs: ticks * 60000 / (bpm * ticksPerBeat),
+                                ticks: ticks,
+                                timeMs: (ticks / ticksPerBeat) * (60000 / bpm),
                                 isRest: beat.isRest || beat.isEmpty || false,
                                 vb: {
                                     x: bvb.x,
@@ -453,27 +463,25 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         }
 
         if (tickEntries.length > 0) {
-            tickEntries.sort((a, b) => a.timeMs - b.timeMs);
+            tickEntries.sort((a, b) => a.ticks - b.ticks);
 
             // =====================================================
             // Piecewise calibration using beats.json
             // Each GP5 beat (fixed BPM tick) maps to a real audio
             // time from beats.json, handling rubato/tempo variation.
             // =====================================================
-            const tickToRealMs = (tickMs) => {
+            const tickToRealMs = (ticks) => {
                 if (beatsArr.length < 2) {
-                    // Fallback: linear from notes
-                    return tickMs;
+                    // Fallback: linear from tempo
+                    return (ticks / ticksPerBeat) * (60000 / bpm);
                 }
-                // tickMs → which beat index in GP5 (fixed tempo)
-                const beatDurMs = 60000 / bpm; // ms per beat at fixed tempo
-                const beatIdx = tickMs / beatDurMs; // fractional beat index
+                // ticks → which beat index in GP5 (960 ticks = 1 beat)
+                const beatIdx = ticks / ticksPerBeat;
                 const lo = Math.floor(beatIdx);
                 const frac = beatIdx - lo;
 
                 // Clamp to available beats
                 if (lo >= beatsArr.length - 1) {
-                    // Past last beat: extrapolate from last interval
                     const lastIdx = beatsArr.length - 1;
                     const lastInterval = (beatsArr[lastIdx] - beatsArr[Math.max(0, lastIdx - 1)]) * 1000;
                     return beatsArr[lastIdx] * 1000 + (beatIdx - lastIdx) * lastInterval;
@@ -491,9 +499,11 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             let offsetMs = 0;
             let linearScale = 1;
             if (!useBeats && notes.length > 0) {
-                const sorted = [...notes].sort((a, b) => a.start - b.start);
-                const firstNoteMs = sorted[0].start * 1000;
-                const lastNoteMs = sorted[sorted.length - 1].start * 1000;
+                const sorted = [...notes].sort((a, b) => (a.start ?? a.start_time ?? 0) - (b.start ?? b.start_time ?? 0));
+                const firstStart = sorted[0].start ?? sorted[0].start_time ?? 0;
+                const lastStart = sorted[sorted.length - 1].start ?? sorted[sorted.length - 1].start_time ?? 0;
+                const firstNoteMs = firstStart * 1000;
+                const lastNoteMs = lastStart * 1000;
                 const nonRests = tickEntries.filter(e => !e.isRest);
                 if (nonRests.length >= 2) {
                     const firstTickMs = nonRests[0].timeMs;
@@ -510,11 +520,11 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             const map = [];
             for (let i = 0; i < tickEntries.length; i++) {
                 const startMs = useBeats
-                    ? tickToRealMs(tickEntries[i].timeMs)
+                    ? tickToRealMs(tickEntries[i].ticks)
                     : tickEntries[i].timeMs * linearScale + offsetMs;
                 const endMs = i + 1 < tickEntries.length
                     ? (useBeats
-                        ? tickToRealMs(tickEntries[i + 1].timeMs)
+                        ? tickToRealMs(tickEntries[i + 1].ticks)
                         : tickEntries[i + 1].timeMs * linearScale + offsetMs)
                     : startMs + 1000;
                 map.push({ startMs, endMs, vb: tickEntries[i].vb });
@@ -835,7 +845,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             const x  = (xS + xE) / 2;
 
             // YG準拠 Y: TABスタッフ上端直上
-            const y = getTabY(beatS.vb.y, beatS.vb.h);
+            const y = getTabY(api, beatS.vb.y, beatS.vb.h);
 
             const el = document.createElement('span');
             el.textContent = LABELS[note.technique];
