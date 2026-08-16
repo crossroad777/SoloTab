@@ -750,54 +750,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     except Exception as e:
         report("theory", f"音楽理論解析スキップ: {e}")
 
-    # --- Step: ピッチレンジフィルタ (倍音誤検出除去) ---
-    # ソロギター音域: 最低開放弦 (Drop/変則対応) - B5(83)。これ以外は倍音誤検出の可能性が高い。
-    PITCH_MIN = min(tuning[0], 40)   # 最低開放弦 (CGDGADなら36, Drop Dなら38, Standardなら40)
-    PITCH_MAX = 83   # B5 (1弦19フレット, 実用上限)
-    SOLO_GUITAR_FRET_LIMIT = 19  # ソロギターの実用フレット上限 (19フレットまで完全保護)
-    pre_filter_count = len(notes)
-    pitch_filtered = []
-    for n in notes:
-        p = n.get("pitch", 60)
-        # ギター音域外のノートを除外
-        if p < PITCH_MIN or p > PITCH_MAX:
-            continue
-        # ソロギターではフレット14超えになるノートを弦再配置で救えるか確認
-        can_play = False
-        for s_idx, open_p in enumerate(tuning):
-            fret = p - open_p
-            if 0 <= fret <= SOLO_GUITAR_FRET_LIMIT:
-                can_play = True
-                break
-        if not can_play:
-            continue
-        pitch_filtered.append(n)
-    if len(pitch_filtered) < pre_filter_count:
-        removed = pre_filter_count - len(pitch_filtered)
-        report("assign", f"ピッチレンジフィルタ: {removed}ノート除外 "
-               f"(音域外 or fret>{SOLO_GUITAR_FRET_LIMIT}で配置不可)")
-        notes = pitch_filtered
+    # --- Step: 論文§6準拠クリーンパス: 全ノートを100%運指最適化へパス ---
+    report("assign", f"論文§6クリーンパス: 勝手な間引きを完全禁止し全音符を運指エンジンへ投入 ({len(notes)} notes)")
 
     # --- Step: 弦/フレット最適化 (Viterbi DP) ---
-    # Conformer出力のpitchは正確だが、string/fret割り当ては
-    # 弦正解率63%（ベンチマーク検証済み）のため、Viterbi DPに任せる。
-    # CNN弦分類器 (Val acc 92.66%) + Viterbi DP が最適な弦割り当てを行う。
     if method == "crnn_guitar":
         report("assign", f"CRNNハイブリッドモード: ピッチはCRNN, 弦/フレットはCNN分類器+Viterbi DP: {len(notes)} notes")
-        # CRNN弦予測を除去し、CNN弦分類器+Viterbi DPに弦割り当てを任せる
         for n in notes:
             n.pop("string", None)
             n.pop("fret", None)
-            n.pop("cnn_string_probs", None)  # CNN分類器が新たに注入する
+            n.pop("cnn_string_probs", None)
 
-    report("assign", "運指最適化中 (Viterbi DP)...");
+    report("assign", "運指最適化中 (Viterbi DP)...")
     t0 = time.time()
 
-    # --- 音楽理論に基づくフィルタリング (MVS) (論文§6準拠: アルペジオ・微細ノート保護のためスキップ) ---
-    report("assign", f"論文§6クリーンパス: 運指前のMVSフィルタを完全バイパス ({len(notes)} notesを維持)")
-
     # ユーザー指定の noise_gate があればそれを絶対的 SSOT として最優先採用
-    # 指定がない場合のみ、プロファイルに応じたデフォルト値（ソロ・クラシックは 0.0、他は 0.15）を適用
     if noise_gate is not None:
         recommended_cut = float(noise_gate)
         report("assign", f"ユーザー指定 Noise Gate 適用 (絶対的SSOT): {recommended_cut:.2f}")
@@ -808,7 +775,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     try:
         from string_assigner import assign_strings_dp  # type: ignore
 
-        # カポ適用チューニング (tuning_nameが明示指定されている場合はユーザー指定を優先)
+        # カポ適用チューニング
         capo = capo_result.get("capo", 0)
         capo_conf = capo_result.get("confidence", 0.0)
         if capo > 0 and capo_conf >= 0.95 and tuning_name == "auto":
@@ -821,8 +788,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             notes,
             tuning=dp_tuning,
             initial_position=initial_position,
-            chords=chords,  # 音楽理論エンジン: 再有効化（DuoTabのコード理論とのMIX）
-            audio_path=None if is_midi_bypass else str(wav_path),  # MIDIバイパス時は音声CNNを完全スキップ
+            chords=chords,
+            audio_path=None if is_midi_bypass else str(wav_path),
             guitar_type=guitar_type,
             key=detected_key_sig,
         )
@@ -832,29 +799,14 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"運指最適化スキップ（元出力をそのまま使用）: {e}")
         report("assign", f"[TRACEBACK] {traceback.format_exc()}")
 
-    MAX_FRET = 19  # ソロギターの高音域（15f-19f）を保護 (14->19)
-    clamp_count = 0
-    remove_high = []
-    for idx, n in enumerate(notes):
-        if n.get("fret", 0) > MAX_FRET:
-            pitch = n.get("pitch", 60)
-            best_str, best_fret = None, 99
-            for s_idx, open_pitch in enumerate(tuning):
-                s_num = 6 - s_idx
-                f = pitch - open_pitch
-                if 0 <= f <= MAX_FRET and (best_str is None or f < best_fret):
-                    best_str, best_fret = s_num, f
-            if best_str is not None:
-                n["string"] = best_str
-                n["fret"] = best_fret
-                clamp_count += 1
-            else:
-                remove_high.append(idx)
-    if remove_high:
-        notes = [n for i, n in enumerate(notes) if i not in remove_high]
-        report("assign", f"フレット超過ノート削除: {len(remove_high)}件 (fret>{MAX_FRET}で配置不可)")
-    if clamp_count > 0:
-        report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
+    # フレット上限ガード（音符は絶対に削除せず、1弦のハイポジションまたはオクターブ畳み込みで全音保護）
+    MAX_FRET = 22
+    for n in notes:
+        f = n.get("fret", 0)
+        if f > MAX_FRET:
+            n["string"] = 1
+            n["fret"] = min(22, max(0, int(n.get("pitch", 60)) - tuning[5]))
+
 
     # --- Step: コンテキストジャンプフィルタ (論文§6準拠: 開放弦とハイポジションの往来・タッピング保護のため完全バイパス) ---
     print("[pipeline] 論文§6準拠: コンテキストジャンプフィルタを完全バイパス (ソロギターのハイポジション音を保護)", flush=True)

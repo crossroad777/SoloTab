@@ -112,26 +112,22 @@ def _validate_beat_playability(note_entries: List[dict],
                     n["fret"] = best_f
                     used_strings.add(best_s)
                 else:
-                    n["_remove"] = True
+                    # 削除せず、元の弦・フレットをそのまま保護
+                    pass
 
         # 結果を元のnote_entriesに反映
         for j, idx in enumerate(indices):
             if j < len(reassigned):
-                if reassigned[j].get("_remove"):
-                    note_entries[idx]["_remove"] = True
+                old_s = note_entries[idx].get("string")
+                old_f = note_entries[idx].get("fret")
+                new_s = reassigned[j].get("string", old_s)
+                new_f = reassigned[j].get("fret", old_f)
+                if old_s != new_s or old_f != new_f:
+                    note_entries[idx]["string"] = new_s
+                    note_entries[idx]["fret"] = new_f
                     fixes += 1
-                else:
-                    old_s = note_entries[idx].get("string")
-                    old_f = note_entries[idx].get("fret")
-                    new_s = reassigned[j].get("string", old_s)
-                    new_f = reassigned[j].get("fret", old_f)
-                    if old_s != new_s or old_f != new_f:
-                        note_entries[idx]["string"] = new_s
-                        note_entries[idx]["fret"] = new_f
-                        fixes += 1
 
-    # _remove マークされたノートを除外
-    note_entries = [e for e in note_entries if not e.get("_remove")]
+    # 全ノートを100%保持（音符削除は完全廃止）
 
     if fixes > 0:
         print(f"[gp_renderer] 物理制約チェック: {fixes}ノートを修正/除外")
