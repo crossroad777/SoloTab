@@ -651,25 +651,27 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     tuning_suggestion = {"tuning": tuning_name, "confidence": 0}
     try:
         from tuning_detector import detect_tuning, detect_tuning_from_audio  # type: ignore
-        if str(tuning_name).lower() in ("auto", "standard", ""):
-            # 音声スペクトル（ドローン）から自動推定
+        if str(tuning_name).lower() in ("auto", ""):
+            # ユーザーが "auto" を指定した場合のみ音声スペクトルから自動推定 (高確信度 0.70+ のみ採用)
             tuning_suggestion = detect_tuning_from_audio(str(transcription_wav), detected_key=detected_key)
             detected_cand = tuning_suggestion.get("tuning", "standard")
-            if detected_cand and detected_cand != "standard":
+            conf = tuning_suggestion.get("confidence", 0.0)
+            if detected_cand and detected_cand != "standard" and conf >= 0.70:
                 tuning_name = detected_cand
                 tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
                 tuning_pitches = _get_open_string_pitches(tuning)
-                report("tuning_detect", f"動的チューニング適応: {tuning_suggestion.get('label', tuning_name)} (確信度: {tuning_suggestion['confidence']:.2f})")
+                report("tuning_detect", f"動的チューニング適応: {tuning_suggestion.get('label', tuning_name)} (確信度: {conf:.2f})")
             else:
                 tuning_name = "standard"
                 tuning = STANDARD_TUNING
                 tuning_pitches = _get_open_string_pitches(tuning)
-                report("tuning_detect", f"チューニング確認: standard")
+                report("tuning_detect", f"チューニング維持: standard (auto確信度不足: {conf:.2f})")
         else:
+            # ユーザー明示指定（standard等）を絶対的SSOTとして採用（AI誤認を完全遮断）
             tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
             tuning_pitches = _get_open_string_pitches(tuning)
-            tuning_suggestion = detect_tuning(notes, detected_key=detected_key)
-            report("tuning_detect", f"指定チューニング適用: {tuning_name}")
+            tuning_suggestion = {"tuning": tuning_name, "confidence": 1.0}
+            report("tuning_detect", f"ユーザー指定チューニング適用 (絶対的SSOT): {tuning_name}")
     except Exception as e:
         report("tuning_detect", f"チューニング推定スキップ: {e}")
 
