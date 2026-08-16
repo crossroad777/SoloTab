@@ -1835,6 +1835,144 @@ async def get_sessions():
     return history
 
 
+@app.post("/api/transcribe_midi")
+async def api_transcribe_midi(
+    file: UploadFile = File(...),
+    tuning: str = Form("standard"),
+    style_profile: str = Form("classic"),
+    background_tasks: BackgroundTasks = None
+):
+    """
+    [TASK-904] MIDIファイルを直接入力とし、SYMBOLIC_MIDI_BYPASS (Transformer V3)
+    を用いてTAB譜 (GP5) を生成する。
+    """
+    if not file.filename.lower().endswith(('.mid', '.midi')):
+        raise HTTPException(status_code=400, detail="Only .mid and .midi files are accepted for MIDI bypass.")
+
+    session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    session_dir = UPLOAD_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    midi_path = session_dir / file.filename
+    with open(midi_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # ダミーWAV作成
+    dummy_wav = session_dir / "converted.wav"
+    sr = 22050
+    t_arr = np.linspace(0, 3.0, int(sr * 3.0), endpoint=False)
+    dummy_sig = 0.1 * np.sin(2 * np.pi * 220.0 * t_arr)
+    import soundfile as sf
+    sf.write(str(dummy_wav), dummy_sig, sr)
+
+    sessions[session_id] = {
+        "session_id": session_id,
+        "session_dir": str(session_dir),
+        "filename": file.filename,
+        "mode": "SYMBOLIC_MIDI_BYPASS",
+        "status": "processing",
+        "progress": 0.1,
+        "step": "midi_bypass_init",
+        "tuning": tuning,
+        "created_at": time.time()
+    }
+
+    def _process():
+        try:
+            from pipeline import run_pipeline
+            run_pipeline(
+                session_id, session_dir, dummy_wav,
+                tuning_name=tuning,
+                transcription_profile=style_profile,
+                midi_path=midi_path
+            )
+            sessions[session_id]["status"] = "complete"
+            sessions[session_id]["progress"] = 1.0
+            sessions[session_id]["step"] = "done"
+            sessions[session_id]["gp5_url"] = f"/files/{session_id}/tab.gp5"
+        except Exception as e:
+            sessions[session_id]["status"] = "error"
+            sessions[session_id]["error"] = str(e)
+
+    if background_tasks:
+        background_tasks.add_task(_process)
+    else:
+        _process()
+
+    return {
+        "session_id": session_id,
+        "mode": "SYMBOLIC_MIDI_BYPASS",
+        "status": "processing",
+        "filename": file.filename
+    }
+
+
+@app.post("/api/refinger")
+async def api_refinger(
+    file: UploadFile = File(...),
+    tuning: str = Form("standard")
+):
+    """
+    [TASK-904] GP5 / MusicXML ファイルを直接入力とし、Voiceとアーティキュレーションを
+    100%保持したまま Transformer V3 による運指最適化を実行する。
+    """
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ('.gp5', '.gp', '.gpx', '.xml', '.musicxml'):
+        raise HTTPException(status_code=400, detail="Only .gp5, .gp, and .musicxml files are accepted for refingering.")
+
+    session_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-refinger-" + uuid.uuid4().hex[:6]
+    session_dir = UPLOAD_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    input_path = session_dir / file.filename
+    with open(input_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    output_gp5_name = f"{Path(file.filename).stem}_refingered.gp5"
+    output_path = session_dir / output_gp5_name
+
+    try:
+        from refingering_engine import refinger_gp5
+        refinger_res = refinger_gp5(str(input_path), str(output_path))
+        
+        orig_mov = refinger_res["original_ergonomic_cost"]["total_movement_frets"]
+        opt_mov = refinger_res["optimized_ergonomic_cost"]["total_movement_frets"]
+        red_ratio = round((orig_mov - opt_mov) / max(1.0, orig_mov) * 100.0, 1) if opt_mov < orig_mov else 0.0
+
+        sessions[session_id] = {
+            "session_id": session_id,
+            "session_dir": str(session_dir),
+            "filename": file.filename,
+            "mode": "NATIVE_GP5_REFINGERING",
+            "status": "complete",
+            "progress": 1.0,
+            "refinger_metrics": refinger_res,
+            "reduction_percent": red_ratio,
+            "gp5_url": f"/files/{session_id}/{output_gp5_name}"
+        }
+
+        return {
+            "session_id": session_id,
+            "status": "complete",
+            "filename": file.filename,
+            "output_filename": output_gp5_name,
+            "download_url": f"/files/{session_id}/{output_gp5_name}",
+            "ergonomic_metrics": {
+                "original_movement_frets": orig_mov,
+                "optimized_movement_frets": opt_mov,
+                "movement_reduction_percent": f"-{red_ratio}%" if red_ratio > 0 else f"{red_ratio}%",
+                "exact_matches_with_original": refinger_res["exact_matches_with_original_gp5"],
+                "match_rate": f"{refinger_res['string_fret_match_rate']:.1%}",
+                "refingered_notes_count": refinger_res["refingered_notes_count"],
+                "preserved_voices_count": refinger_res["preserved_voices_count"]
+            }
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Refingering failed: {str(e)}")
+
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "app": "NextChord SoloTab", "version": "0.1.0"}

@@ -60,6 +60,8 @@ export default function SoloTabApp() {
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
   const [syncOffset, setSyncOffset] = useState(0);
   const [tempoMultiplier, setTempoMultiplier] = useState(1.0);
+  const [inputMode, setInputMode] = useState("audio"); // "audio" | "midi" | "refinger"
+  const [refingerResult, setRefingerResult] = useState(null);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -346,7 +348,6 @@ export default function SoloTabApp() {
     formData.append("fast_moe", "true");
     formData.append("guitar_type", guitarType);
     formData.append("transcription_profile", transProfile);
-    formData.append("enable_technique_gp5", techGp5);
     formData.append("enable_technique_overlay", techOverlay);
     formData.append("enable_technique_fingers", techFingers);
     try {
@@ -364,6 +365,53 @@ export default function SoloTabApp() {
       setProgressMsg(err.message || "アップロードに失敗しました");
     } finally {
       uploadLockRef.current = false;
+    }
+  };
+
+  // MIDI Upload (SYMBOLIC_MIDI_BYPASS)
+  const handleMidiUpload = async (file) => {
+    if (!file) return;
+    setStatus(STATUS.PROCESSING);
+    setStepsDone(1);
+    setProgressMsg("MIDIピッチ解析中 (Transformer V3 記号モデル)...");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("tuning", "standard");
+    formData.append("style_profile", transProfile);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/transcribe_midi`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error("MIDI解析リクエストに失敗しました");
+      const data = await res.json();
+      setSession({ id: data.session_id, fileName: file.name });
+      localStorage.setItem('solotab-processing-session', data.session_id);
+      startStatusStream(data.session_id);
+    } catch (err) {
+      setStatus(STATUS.FAILED);
+      setProgressMsg(err.message || "MIDI解析に失敗しました");
+    }
+  };
+
+  // GP5 / MusicXML Refingering (NATIVE_GP5_REFINGERING)
+  const handleRefingerUpload = async (file) => {
+    if (!file) return;
+    setStatus(STATUS.PROCESSING);
+    setStepsDone(2);
+    setProgressMsg("GP5運指最適化中 (Transformer V3 + 人間工学探索)...");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("tuning", "standard");
+
+    try {
+      const res = await fetch(`${API_BASE}/api/refinger`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Refingering処理に失敗しました");
+      const data = await res.json();
+      setRefingerResult(data);
+      setStatus(STATUS.COMPLETED);
+      setToast({ type: 'success', message: `運指最適化完了！ 移動距離 ${data.ergonomic_metrics.movement_reduction_percent} 削減` });
+    } catch (err) {
+      setStatus(STATUS.FAILED);
+      setProgressMsg(err.message || "Refingering処理に失敗しました");
     }
   };
 
@@ -411,7 +459,15 @@ export default function SoloTabApp() {
     }
     // Check for files
     if (dt.files?.[0]) {
-      handleUpload(dt.files[0]);
+      const file = dt.files[0];
+      const ext = file.name.toLowerCase();
+      if (ext.endsWith('.mid') || ext.endsWith('.midi')) {
+        handleMidiUpload(file);
+      } else if (ext.endsWith('.gp5') || ext.endsWith('.gp') || ext.endsWith('.musicxml') || ext.endsWith('.xml')) {
+        handleRefingerUpload(file);
+      } else {
+        handleUpload(file);
+      }
       return;
     }
   };
@@ -779,17 +835,121 @@ export default function SoloTabApp() {
               <span className="sub-line">ノート検出・弦推定・TAB譜生成</span>
             </p>
 
+            {/* Mode Switcher Tabs */}
+            <div style={{
+              display: 'flex', gap: 8, marginBottom: 20, padding: '4px',
+              borderRadius: 16, background: 'var(--st-surface)', border: '1px solid var(--st-border)',
+              width: '100%', maxWidth: 448
+            }}>
+              <button
+                onClick={() => setInputMode("audio")}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 12, border: 'none',
+                  background: inputMode === 'audio' ? 'var(--st-gradient-brand)' : 'transparent',
+                  color: inputMode === 'audio' ? '#fff' : 'var(--st-text-dim)',
+                  fontWeight: inputMode === 'audio' ? 700 : 500, fontSize: '0.8rem',
+                  cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                🎵 音声 (WAV/MP3)
+              </button>
+              <button
+                onClick={() => setInputMode("midi")}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 12, border: 'none',
+                  background: inputMode === 'midi' ? 'var(--st-gradient-brand)' : 'transparent',
+                  color: inputMode === 'midi' ? '#fff' : 'var(--st-text-dim)',
+                  fontWeight: inputMode === 'midi' ? 700 : 500, fontSize: '0.8rem',
+                  cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                🎹 MIDI to Tab
+              </button>
+              <button
+                onClick={() => setInputMode("refinger")}
+                style={{
+                  flex: 1, padding: '8px 12px', borderRadius: 12, border: 'none',
+                  background: inputMode === 'refinger' ? 'var(--st-gradient-brand)' : 'transparent',
+                  color: inputMode === 'refinger' ? '#fff' : 'var(--st-text-dim)',
+                  fontWeight: inputMode === 'refinger' ? 700 : 500, fontSize: '0.8rem',
+                  cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                ✨ Refingering
+              </button>
+            </div>
+
+            {/* Hidden inputs for each mode */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              accept={inputMode === 'audio' ? "audio/*,.wav,.mp3,.m4a,.flac" : inputMode === 'midi' ? ".mid,.midi" : ".gp5,.gp,.gpx,.xml,.musicxml"}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (inputMode === 'midi') handleMidiUpload(file);
+                else if (inputMode === 'refinger') handleRefingerUpload(file);
+                else handleUpload(file);
+                e.target.value = '';
+              }}
+            />
+
             {/* Upload Card */}
             <div className="upload-card" onClick={() => fileInputRef.current?.click()}>
               <div className="icon-wrapper">
                 <UploadCloud size={40} />
               </div>
-              <h4>音源をドラッグ＆ドロップ</h4>
-              <p>MP3, WAV, M4A, FLAC</p>
+              <h4>
+                {inputMode === 'audio' && "音源をドラッグ＆ドロップ"}
+                {inputMode === 'midi' && "MIDIファイルをドラッグ＆ドロップ"}
+                {inputMode === 'refinger' && "GP5/MusicXMLをドラッグ＆ドロップ"}
+              </h4>
+              <p>
+                {inputMode === 'audio' && "MP3, WAV, M4A, FLAC (AMT自動解析)"}
+                {inputMode === 'midi' && "MIDI (.mid, .midi) — Transformer V3 記号変換"}
+                {inputMode === 'refinger' && "GP5, GPX, MusicXML — 人間工学運指最適化"}
+              </p>
               <button className="select-btn" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
-                ファイルを選択
+                {inputMode === 'audio' ? "音声ファイルを選択" : inputMode === 'midi' ? "MIDIファイルを選択" : "GP5ファイルを選択"}
               </button>
             </div>
+
+            {/* Refingering Completed Result Card */}
+            {refingerResult && (
+              <div style={{
+                width: '100%', maxWidth: 448, marginTop: 20, padding: 16,
+                borderRadius: 16, background: 'var(--st-surface-2)', border: '1px solid var(--st-border)',
+                display: 'flex', flexDirection: 'column', gap: 12
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--st-text)' }}>✨ 運指最適化レポート</span>
+                  <span style={{
+                    padding: '2px 8px', borderRadius: 10, background: 'rgba(34,197,94,0.15)',
+                    color: '#22c55e', fontSize: '0.75rem', fontWeight: 700
+                  }}>
+                    移動距離 {refingerResult.ergonomic_metrics.movement_reduction_percent}
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: '0.75rem', color: 'var(--st-text-dim)' }}>
+                  <div>元移動距離: <strong style={{ color: 'var(--st-text)' }}>{refingerResult.ergonomic_metrics.original_movement_frets}f</strong></div>
+                  <div>最適化後: <strong style={{ color: '#22c55e' }}>{refingerResult.ergonomic_metrics.optimized_movement_frets}f</strong></div>
+                  <div>元TAB一致率: <strong style={{ color: 'var(--st-text)' }}>{refingerResult.ergonomic_metrics.match_rate}</strong></div>
+                  <div>保持声部数: <strong style={{ color: 'var(--st-text)' }}>{refingerResult.ergonomic_metrics.preserved_voices_count}</strong></div>
+                </div>
+                <a
+                  href={`${API_BASE}${refingerResult.download_url}`}
+                  download={refingerResult.output_filename}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '10px 16px', borderRadius: 12, background: 'var(--st-gradient-brand)',
+                    color: '#fff', textDecoration: 'none', fontWeight: 700, fontSize: '0.85rem'
+                  }}
+                >
+                  <Download size={16} /> 最適化GP5をダウンロード
+                </a>
+              </div>
+            )}
 
             {/* Options Section */}
             <div style={{ width: '100%', maxWidth: 448, marginTop: 24 }}>
