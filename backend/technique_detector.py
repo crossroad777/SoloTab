@@ -729,57 +729,80 @@ def _detect_percussive_techniques(
     global_voiced: np.ndarray = None,
 ) -> None:
     """
-    ピッチ感、スペクトル平坦度、スペクトル重心から、ブラッシング(x)、ネイルna、ボディ叩きbhを精密分類
+    ソロギター・フィンガースタイル向け高精度アタックミュート検出エンジン。
+    ネイルアタック、パームアタック、チョップ、スラップ、ブラッシング(x)を
+    急峻な過渡応答（ZCR、高域過渡エネルギー、スペクトル平坦度、アタック持続長）から精密検出。
     """
     try:
         import librosa
-        fps = sr / HOP_LENGTH
+        fps = sr / HOP_LENGTH if HOP_LENGTH > 0 else 100.0
 
         for note in notes:
-            if note.get("technique") and note["technique"] not in ("normal", ""):
+            dur = float(note.get("end", note.get("start", 0) + 0.1)) - float(note.get("start", 0))
+            if dur < 0.01:
                 continue
 
-            dur = note["end"] - note["start"]
-            if dur < 0.02:
+            t_start = float(note.get("start", note.get("start_time", 0.0)))
+            s = max(0, int(t_start * sr))
+            e = min(len(audio), int((t_start + min(max(dur, 0.04), 0.08)) * sr))
+            seg = audio[s:e]
+            if len(seg) < 128:
                 continue
 
-            # 1. voiced_ratio（ピッチ有無）
+            # 1. ゼロ交差率 (ZCR): 弦打音・ノイズ成分の密度
+            zcr = float(librosa.feature.zero_crossing_rate(seg).mean())
+
+            # 2. スペクトル平坦度 (Spectral Flatness)
+            n_fft_seg = min(512, len(seg))
+            flatness = float(librosa.feature.spectral_flatness(y=seg, n_fft=n_fft_seg).mean())
+
+            # 3. スペクトル重心 (Spectral Centroid)
+            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr, n_fft=n_fft_seg).mean())
+
+            # 4. 高域過渡エネルギー比率 (> 3000 Hz)
+            fft = np.abs(np.fft.rfft(seg))
+            freqs = np.fft.rfftfreq(len(seg), 1.0 / sr)
+            high_energy_ratio = float(np.sum(fft[freqs > 3000]**2) / (np.sum(fft**2) + 1e-9))
+
+            # 5. ピッチ感 (voiced ratio)
             if global_voiced is not None:
-                start_frame = max(0, int(note["start"] * fps))
-                end_frame = min(len(global_voiced), int((note["start"] + min(dur, 0.15)) * fps))
-                if end_frame > start_frame:
-                    voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame]))
-                else:
-                    voiced_ratio = 1.0
+                start_frame = max(0, int(t_start * fps))
+                end_frame = min(len(global_voiced), int((t_start + min(dur, 0.10)) * fps))
+                voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame])) if end_frame > start_frame else 1.0
             else:
                 voiced_ratio = 1.0
 
-            # 2. スペクトル特徴（アタック音・打音・ミュート解析）
-            s = max(0, int(note["start"] * sr))
-            e = min(len(audio), int((note["start"] + min(dur, 0.15)) * sr))
-            seg = audio[s:e]
-            if len(seg) < 256:
-                continue
-            
-            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr).mean())
-            flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
-            
-            is_unvoiced = voiced_ratio < 0.55
-            is_flat = flatness > 0.18
+            # 総合アタックミュート判定条件
+            is_attack_mute = (
+                zcr > 0.095 or
+                high_energy_ratio > 0.10 or
+                flatness > 0.055 or
+                (dur < 0.13 and centroid > 1750.0 and (zcr > 0.07 or high_energy_ratio > 0.06)) or
+                (voiced_ratio < 0.45 and (zcr > 0.06 or flatness > 0.03))
+            )
 
-            if is_unvoiced or is_flat:
-                if centroid < 350.0 and is_unvoiced:
-                    # 空洞共振による極低域のみの打音 -> ボディヒット (bh)
-                    note["technique"] = "bh"
-                elif centroid > 2200.0 and flatness > 0.25:
-                    # 高周波ノイズによる鋭いアタック音 -> ネイルアタック / アタックミュート (x)
-                    note["technique"] = "x"
+            if is_attack_mute:
+                if centroid < 300.0 and voiced_ratio < 0.40:
+                    note["technique"] = "bh"  # ボディヒット (低音打音)
                 else:
-                    # 一般的なデッドノート/ブラッシング/パームアタック (x)
-                    note["technique"] = "x"
+                    note["technique"] = "x"   # ネイルアタック / アタックミュート / デッドノート
+
+        # 和音伝播: 同一アタック（15ms以内）で1音以上が x なら、同時打弦の他の音も x に統一
+        time_clusters = {}
+        for note in notes:
+            t = round(float(note.get("start", note.get("start_time", 0.0))), 2)
+            time_clusters.setdefault(t, []).append(note)
+
+        for t, cluster in time_clusters.items():
+            if any(n.get("technique") in ("x", "na", "dead_note") for n in cluster):
+                for n in cluster:
+                    # 既存のチョーキングやスライドでない限り、アタックミュートに設定
+                    if n.get("technique") not in ("b", "slide_up", "slide_down", "/"):
+                        n["technique"] = "x"
 
     except Exception as e:
         print(f"[TechDet] Percussive detection error: {e}")
+
 
 
 # =============================================================================
