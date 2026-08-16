@@ -1026,6 +1026,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
             notes, beats=beats, bpm=bpm, title=title,
             tuning=tuning, time_signature=time_sig,
             rhythm_info=rhythm_info, noise_gate=gate,
+            include_techniques=True,
             return_entries=True,
         )
         with open(session_dir / "tab.gp5", "wb") as f:

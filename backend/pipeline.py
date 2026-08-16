@@ -161,9 +161,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  bp_only_threshold: float = 0.05,
                  guitar_type: str = "auto",
                  transcription_profile: str = "standard",
-                 enable_technique_gp5: bool = False,
-                 enable_technique_overlay: bool = False,
-                 enable_technique_fingers: bool = False,
+                 enable_technique_gp5: bool = True,
+                 enable_technique_overlay: bool = True,
+                 enable_technique_fingers: bool = True,
                  noise_gate: Optional[float] = None,
                  midi_path: Optional[Path] = None):
     def report(step: str, msg: str):
