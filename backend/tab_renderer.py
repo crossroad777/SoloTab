@@ -466,12 +466,13 @@ def _assign_to_bars(notes: List[dict], beats: List[float], beats_per_bar: int, b
     except Exception as e:
         import traceback
         traceback.print_exc()
+        import numpy as np
         # フォールバック処理
         divisions = 12
         beats_arr = np.array(beats)
         entries = []
         for note in notes:
-            t = float(note["start"])
+            t = float(note.get("start", note.get("start_time", 0.0)))
             idx = int(np.searchsorted(beats_arr, t, side='right')) - 1
             idx = max(0, min(idx, len(beats_arr) - 1))
             bar = idx // beats_per_bar

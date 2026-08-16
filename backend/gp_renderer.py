@@ -179,6 +179,17 @@ def notes_to_gp5(notes: List[dict], *,
     beats_per_bar, beat_type = _parse_time_sig(time_signature)
     is_triplet = (rhythm_info or {}).get("subdivision") == "triplet"
 
+    # Normalize start/end keys
+    for n in notes:
+        if "start" not in n and "start_time" in n:
+            n["start"] = n["start_time"]
+        if "end" not in n and "end_time" in n:
+            n["end"] = n["end_time"]
+        if "start_time" not in n and "start" in n:
+            n["start_time"] = n["start"]
+        if "end_time" not in n and "end" in n:
+            n["end_time"] = n["end"]
+
     # Noise gate filter
     filtered_melody = _filter_noise(notes, noise_gate)
     is_2tracks = backing_notes is not None
@@ -378,6 +389,38 @@ def notes_to_gp5(notes: List[dict], *,
             for v in m.voices:
                 if not v.beats:
                     v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
+
+    # --- Measure-by-measure Tempo Map (Rubato / Audio Timeline Sync) ---
+    if beats:
+        for bar_num in range(total_bars):
+            m = track1.measures[bar_num]
+            if not m.voices or not m.voices[0].beats:
+                continue
+            
+            beat_start_idx = bar_num * beats_per_bar
+            beat_end_idx = (bar_num + 1) * beats_per_bar
+            
+            if beat_start_idx < len(beats):
+                t_start = beats[beat_start_idx]
+                if beat_end_idx < len(beats):
+                    t_end = beats[beat_end_idx]
+                    bar_dur = t_end - t_start
+                elif beat_start_idx + 1 < len(beats):
+                    avg_beat_dur = (beats[-1] - t_start) / max(1, len(beats) - 1 - beat_start_idx)
+                    bar_dur = avg_beat_dur * beats_per_bar
+                else:
+                    bar_dur = beats_per_bar * (60.0 / bpm)
+                
+                if bar_dur > 0.05:
+                    bar_bpm = (beats_per_bar * 60.0) / bar_dur
+                    bar_bpm = max(30, min(300, int(round(bar_bpm))))
+                    
+                    first_beat = m.voices[0].beats[0]
+                    if not first_beat.effect:
+                        first_beat.effect = gp.BeatEffect()
+                    if not first_beat.effect.mixTableChange:
+                        first_beat.effect.mixTableChange = gp.MixTableChange()
+                    first_beat.effect.mixTableChange.tempo = gp.MixTableItem(bar_bpm)
 
     # --- Write to bytes ---
     import io
