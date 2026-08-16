@@ -58,7 +58,9 @@ export default function SoloTabApp() {
   });
 
   const [metronomeEnabled, setMetronomeEnabled] = useState(false);
-  const [syncOffset, setSyncOffset] = useState(0);
+  const [syncOffset, setSyncOffset] = useState(() => {
+    try { return Number(localStorage.getItem('solotab-sync-offset')) || 0; } catch { return 0; }
+  });
   const [tempoMultiplier, setTempoMultiplier] = useState(1.0);
   const [inputMode, setInputMode] = useState("audio"); // "audio" | "midi" | "refinger"
   const [refingerResult, setRefingerResult] = useState(null);
@@ -1443,17 +1445,30 @@ export default function SoloTabApp() {
               <div className="ribbon-divider" />
 
               {/* ⭐ Sync Offset */}
-              <div className="ribbon-item" title="音源と譜面（クリック）のタイミング微調整 (ミリ秒)">
+              <div className="ribbon-item" title="音源と譜面カーソルのタイミング微調整 (ミリ秒)。クリックで0msにリセット">
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
                   <input
-                    type="range" min="-500" max="500" step="10"
+                    type="range" min="-300" max="300" step="10"
                     value={syncOffset}
-                    onChange={(e) => setSyncOffset(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSyncOffset(val);
+                      try { localStorage.setItem('solotab-sync-offset', String(val)); } catch (e) {}
+                    }}
                     style={{ width: 64, accentColor: 'var(--st-brand)', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: 11, minWidth: 28, textAlign: 'right' }}>{syncOffset > 0 ? '+' : ''}{syncOffset}</span>
+                  <span 
+                    onClick={() => {
+                      setSyncOffset(0);
+                      try { localStorage.setItem('solotab-sync-offset', '0'); } catch (e) {}
+                    }}
+                    style={{ fontSize: 11, minWidth: 32, textAlign: 'right', cursor: 'pointer' }}
+                    title="0msにリセット"
+                  >
+                    {syncOffset > 0 ? '+' : ''}{syncOffset}ms
+                  </span>
                 </div>
-                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>同期補正(ms)</span>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>同期オフセット</span>
               </div>
 
               <div className="ribbon-divider" />
