@@ -203,6 +203,27 @@ def notes_to_gp5(notes: List[dict], *,
 
         # Validate playability
         entries = _validate_beat_playability(entries, tuning)
+        
+        # === [TASK-900-E: ピッチ整合性不変条件の強制] ===
+        gp_pitch_violations = 0
+        for entry in entries:
+            s = int(entry.get("string", 1))
+            f = int(entry.get("fret", 0))
+            target_p = int(entry.get("pitch", 60))
+            computed_p = tuning[6 - s] + f
+            if computed_p != target_p:
+                gp_pitch_violations += 1
+                from string_assigner import get_possible_positions
+                valid_positions = get_possible_positions(target_p, tuning, 14)
+                if valid_positions:
+                    entry["string"] = valid_positions[0][0]
+                    entry["fret"] = valid_positions[0][1]
+                else:
+                    entry["string"] = 1
+                    entry["fret"] = min(max(0, target_p - tuning[5]), 14)
+        if gp_pitch_violations > 0:
+            print(f"[gp_renderer] [INVARIANT] ピッチ不変条件違反: {gp_pitch_violations}ノートを修復")
+
         return entries
 
     melody_entries = _quantize_track(filtered_melody)

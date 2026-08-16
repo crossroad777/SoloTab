@@ -2441,6 +2441,29 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # v19.0: 動的右手運指（PIMA）アサインモデルの適用
     result = _assign_right_hand_fingers(result)
 
+    # === [TASK-900-E: ピッチ整合性不変条件の強制] ===
+    # ∀ note: tuning[6 - string] + fret == pitch
+    pitch_violations = 0
+    for note in result:
+        s = int(note.get("string", 1))
+        f = int(note.get("fret", 0))
+        target_p = int(note.get("pitch", 60))
+        computed_p = tuning[6 - s] + f
+        if computed_p != target_p:
+            pitch_violations += 1
+            # 違反時は物理的に有効な候補へ即時自己修復
+            valid_positions = get_possible_positions(target_p, tuning, max_fret)
+            if valid_positions:
+                note["string"] = valid_positions[0][0]
+                note["fret"] = valid_positions[0][1]
+            else:
+                fallback_s = 1
+                fallback_f = min(max(0, target_p - tuning[5]), max_fret)
+                note["string"] = fallback_s
+                note["fret"] = fallback_f
+    if pitch_violations > 0:
+        print(f"[string_assigner] [INVARIANT] ピッチ不変条件違反: {pitch_violations}ノートを修復")
+
     return result
 
 

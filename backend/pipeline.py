@@ -682,49 +682,52 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             if midi_key != detected_key:
                 print(f"[theory] キー競合: audio={detected_key}(conf={key_confidence:.2f}) vs midi={midi_key} → audio採用")
 
-        # --- フェーズ3: Heuristic Pitch Correction ---
-        try:
-            from heuristic_pitch_correction import heuristic_pitch_correction
-            
-            # Extract genre from filename (e.g. 05_Jazz2-187-F#_comp.wav -> jazz)
-            import re
-            wav_filename = Path(transcription_wav).name
-            genre_match = re.search(r'^\d+_([A-Za-z]+)', wav_filename)
-            track_genre = genre_match.group(1).lower() if genre_match else "unknown"
-            
-            notes_before_hpc = len(notes)
-            notes_hpc, logs = heuristic_pitch_correction(
-                notes, 
-                chords=chords, 
-                key=detected_key_sig, 
-                genre=track_genre, 
-                dry_run=False, # PROD MODE
-                verbose=True
-            )
-            # PROD MODE: overwrite notes
-            notes = notes_hpc 
-            report("theory", f"[Prod] Heuristic Pitch Correction: {len(logs)} changes proposed for {track_genre}")
-            
-            # Save logs for reporting
-            for l in logs:
-                print(f"[Heuristic] Track={wav_filename}, Pass={l['pass']}, Reason={l['reason']}")
+        # --- フェーズ3: Heuristic Pitch Correction & MVS Filter (TASK-900-E: AMT専用に隔離、MIDIバイパス時は無効化) ---
+        if not is_midi_bypass:
+            try:
+                from heuristic_pitch_correction import heuristic_pitch_correction
                 
-        except Exception as e:
-            report("theory", f"Heuristic Pitch Correctionエラー: {e}")
+                # Extract genre from filename (e.g. 05_Jazz2-187-F#_comp.wav -> jazz)
+                import re
+                wav_filename = Path(transcription_wav).name
+                genre_match = re.search(r'^\d+_([A-Za-z]+)', wav_filename)
+                track_genre = genre_match.group(1).lower() if genre_match else "unknown"
+                
+                notes_before_hpc = len(notes)
+                notes_hpc, logs = heuristic_pitch_correction(
+                    notes, 
+                    chords=chords, 
+                    key=detected_key_sig, 
+                    genre=track_genre, 
+                    dry_run=False, # PROD MODE
+                    verbose=True
+                )
+                # PROD MODE: overwrite notes
+                notes = notes_hpc 
+                report("theory", f"[Prod] Heuristic Pitch Correction: {len(logs)} changes proposed for {track_genre}")
+                
+                # Save logs for reporting
+                for l in logs:
+                    print(f"[Heuristic] Track={wav_filename}, Pass={l['pass']}, Reason={l['reason']}")
+                    
+            except Exception as e:
+                report("theory", f"Heuristic Pitch Correctionエラー: {e}")
 
-        # 音楽理論に基づく妥当性検証＆フィルタリング (MVS) をリズム検出の前に実行
-        before_validation = len(notes)
-        try:
-            notes = validate_notes_by_music_theory(
-                notes,
-                beats=beats,
-                chords=chords,
-                key=detected_key_sig,
-                threshold=0.50
-            )
-            report("theory", f"MVSフィルタ適用 (リズム検出前): {before_validation} → {len(notes)} notes")
-        except Exception as e:
-            report("theory", f"MVSフィルタ前倒し実行エラー: {e}")
+            # 音楽理論に基づく妥当性検証＆フィルタリング (MVS) をリズム検出の前に実行
+            before_validation = len(notes)
+            try:
+                notes = validate_notes_by_music_theory(
+                    notes,
+                    beats=beats,
+                    chords=chords,
+                    key=detected_key_sig,
+                    threshold=0.50
+                )
+                report("theory", f"MVSフィルタ適用 (リズム検出前): {before_validation} → {len(notes)} notes")
+            except Exception as e:
+                report("theory", f"MVSフィルタ前倒し実行エラー: {e}")
+        else:
+            report("theory", f"MIDIバイパスモード: 破壊的ヒューリスティック(Octave Folding/MVS)を完全スキップ ({len(notes)} notes維持)")
 
         # クリーンになった音符データに対してリズムパターン検出を実行
         rhythm_info = detect_rhythm_pattern(notes, beats)
@@ -896,35 +899,35 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
 
-    # --- Step: コンテキストジャンプフィルタ ---
-    # 前後のノートから7フレット以上離れたノートは倍音誤検出の可能性が高い
-    context_removed = []
-    if len(notes) > 2:
-        for idx in range(len(notes)):
-            curr_fret = notes[idx].get("fret", 0)
-            curr_t = notes[idx].get("start", 0)
-            if curr_fret <= 5:  # ローポジションは安全
-                continue
-            # 前後3ノートのフレットを収集
-            neighbors = []
-            for offset in [-3, -2, -1, 1, 2, 3]:
-                ni = idx + offset
-                if 0 <= ni < len(notes):
-                    nt = notes[ni].get("start", 0)
-                    if abs(nt - curr_t) < 1.0:  # 1秒以内のノート
-                        f_val = notes[ni].get("fret", 0)
-                        if f_val > 0:  # 開放弦は周辺フレット平均の計算から除外する（ソロギターのハイポジ音を保護）
-                            neighbors.append(f_val)
-            if not neighbors:
-                continue
-            avg_neighbor = sum(neighbors) / len(neighbors)
-            # 周辺ノートの平均から8フレット以上離れていたら除外
-            if abs(curr_fret - avg_neighbor) >= 8:
-                context_removed.append(idx)
-        if context_removed:
-            notes = [n for i, n in enumerate(notes) if i not in context_removed]
-            report("assign", f"コンテキストジャンプフィルタ: {len(context_removed)}ノート除外 "
-                   f"(周辺ノートから8f+離れた異常値)")
+    # --- Step: コンテキストジャンプフィルタ (TASK-900-E: AMT専用に隔離、MIDIバイパス時は無効化) ---
+    if not is_midi_bypass:
+        context_removed = []
+        if len(notes) > 2:
+            for idx in range(len(notes)):
+                curr_fret = notes[idx].get("fret", 0)
+                curr_t = notes[idx].get("start", 0)
+                if curr_fret <= 5:  # ローポジションは安全
+                    continue
+                # 前後3ノートのフレットを収集
+                neighbors = []
+                for offset in [-3, -2, -1, 1, 2, 3]:
+                    ni = idx + offset
+                    if 0 <= ni < len(notes):
+                        nt = notes[ni].get("start", 0)
+                        if abs(nt - curr_t) < 1.0:  # 1秒以内のノート
+                            f_val = notes[ni].get("fret", 0)
+                            if f_val > 0:  # 開放弦は周辺フレット平均の計算から除外する（ソロギターのハイポジ音を保護）
+                                neighbors.append(f_val)
+                if not neighbors:
+                    continue
+                avg_neighbor = sum(neighbors) / len(neighbors)
+                # 周辺ノートの平均から8フレット以上離れていたら除外
+                if abs(curr_fret - avg_neighbor) >= 8:
+                    context_removed.append(idx)
+            if context_removed:
+                notes = [n for i, n in enumerate(notes) if i not in context_removed]
+                report("assign", f"コンテキストジャンプフィルタ: {len(context_removed)}ノート除外 "
+                       f"(周辺ノートから8f+離れた異常値)")
 
     # --- Step: 左手指番号割り当て (finger_assigner.py) ---
     try:
