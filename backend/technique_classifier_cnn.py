@@ -238,6 +238,10 @@ def annotate_techniques_cnn(
         confidence = float(all_probs[i].max())
         label = label_names[pred_class]
 
+        # 既にアタックミュート・パーカッシブが付与されているノートは絶対に上書きしない
+        if note.get("technique") in ("x", "na", "bh", "dead_note"):
+            continue
+
         # Only assign if confidence exceeds threshold AND not "normal"
         if label != "normal" and confidence >= confidence_threshold:
             technique = _CNN_TO_TECHNIQUE.get(label, label)
