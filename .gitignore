@@ -99,3 +99,9 @@ backend/gp5_training/data/*.jsonl
 backend/gp5_training/*.db
 backend/*.pth.bak*
 .vercel
+
+# SoloTab-26K Audit Artifacts
+backend/benchmark/output/
+outputs/
+backend/benchmark/run_audit*.py
+backend/benchmark/run_refinger_eval.py
