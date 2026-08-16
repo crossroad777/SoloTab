@@ -427,12 +427,14 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
 
     for group_idx, group in enumerate(groups):
         raw_pos = int(float(group[0]["beat_pos"]))
-        # グリッドにスナップ
+        # グリッドにスナップ（密集時はより細かなスロットへ適応）
         target_pos = min(snap_grid, key=lambda x: abs(x - raw_pos))
+        target_pos = max(current_pos, min(target_pos, bar_total_divs - 1))
 
-        # 小節末に達していたら残りグループをスキップ
-        if current_pos >= bar_total_divs or target_pos >= bar_total_divs:
-            break
+        # 小節末でもブレークせず、最後のスロットに必ず収容
+        if current_pos >= bar_total_divs:
+            target_pos = bar_total_divs - 1
+            current_pos = bar_total_divs - 1
 
         # Rest gap before this group
         gap = target_pos - current_pos
@@ -440,51 +442,46 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
             rest_beats = _divs_to_gp_beats_rest(gap, voice, is_triplet)
             gp_beats.extend(rest_beats)
             current_pos = target_pos
-        elif gap < 0:
-            # スナップで前のノートと重なった場合はスキップしない
-            target_pos = current_pos
 
-        # Note duration
-        min_dur = DIVISIONS // 3 if is_triplet else 3  # triplet eighth or sixteenth
+        # Note duration (密集時は最小1 divまで適応して小節内に100%収容)
+        remaining_slots = len(groups) - group_idx
+        available_space = bar_total_divs - target_pos
+        min_dur = max(1, min(3 if not is_triplet else 4, available_space // remaining_slots)) if remaining_slots > 0 else 1
+
         if group_idx + 1 < len(groups):
-            next_raw = int(float(groups[group_idx + 1][0]["beat_pos"]))
+            next_raw = int(float(groups[group_idx + 1][0].get("beat_pos_in_bar", groups[group_idx + 1][0].get("beat_pos", 0))))
             next_target = min(snap_grid, key=lambda x: abs(x - next_raw))
-            next_target = max(next_target, target_pos + min_dur)
+            next_target = max(target_pos + min_dur, min(next_target, bar_total_divs))
         else:
             next_target = bar_total_divs
-        gap_to_next = max(1, min(next_target - target_pos,
-                                 bar_total_divs - target_pos))
 
-        # Duration: ギターTABではレガート（次のノートまで持続）が自然
-        # 短い音価+休符の「ダダッ」パターンを防止
+        gap_to_next = max(1, min(next_target - target_pos, bar_total_divs - target_pos))
+
+        # Duration
         if force_legato:
-            # ベース音などは次のノートまで音価を伸ばす（小節境界でキャップ）
-            dur_divs = min(gap_to_next, bar_total_divs - target_pos)
-            dur_divs = max(1, dur_divs)
+            dur_divs = max(1, min(gap_to_next, bar_total_divs - target_pos))
         else:
             quantized_dur = int(group[0].get("duration_divs", gap_to_next))
-            # 量子化音価が隙間の70%未満 → 短すぎる → gap_to_nextに伸ばす
             if quantized_dur < gap_to_next * 0.7:
                 dur_divs = gap_to_next
             else:
                 dur_divs = quantized_dur
-            dur_divs = min(dur_divs, gap_to_next, bar_total_divs - target_pos)
-            dur_divs = max(1, dur_divs)
+            dur_divs = max(1, min(dur_divs, gap_to_next, bar_total_divs - target_pos))
             
         if not is_triplet:
-            normal_durs = [48, 36, 24, 18, 12, 9, 6, 3]  # 32nd/64th排除
+            normal_durs = [48, 36, 24, 18, 12, 9, 6, 3, 2, 1]
             dur_divs = min(normal_durs, key=lambda x: abs(x - dur_divs))
         else:
-            triplet_durs = [48, 36, 24, 18, 12, 8, 4, 3]  # 32nd/64th排除
+            triplet_durs = [48, 36, 24, 18, 12, 8, 4, 3, 2, 1]
             dur_divs = min(triplet_durs, key=lambda x: abs(x - dur_divs))
 
-        # Post-snap cap: スナップで上方向に丸められた場合、小節からはみ出さないようキャップ
+        # Post-snap cap: 小節からはみ出さないよう切り下げ
         remaining_in_bar = bar_total_divs - target_pos
         if dur_divs > remaining_in_bar:
-            # はみ出すので、remaining以下の最大VALID値に切り下げ
             valid = normal_durs if not is_triplet else triplet_durs
             candidates = [d for d in valid if d <= remaining_in_bar]
             dur_divs = max(candidates) if candidates else 1
+
 
         # Create beat with all notes in this chord group
         beat = gp.Beat(voice, status=gp.BeatStatus.normal)
