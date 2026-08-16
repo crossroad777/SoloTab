@@ -110,12 +110,7 @@ def detect_techniques(
         except Exception as e:
             print(f"[TechDet] Audio load failed: {e}, falling back to rule-based")
 
-    # --- 1. パーカッシブテクニックの検出 (x, na, bh) を最優先で実行 ---
-    # ネイルアタック、パームアタック、チョップ、打弦音がスライドやハンマリングに誤判定されるのを防ぐ
-    if audio is not None:
-        notes = _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
-
-    # --- 2. 弦ごとに分離してレガート・スライド・ベンド処理 ---
+    # --- 1. 弦ごとに分離してレガート(h, p)、スライド(/, \\)、ベンド(b)、ビブラート(~)を厳密検出 ---
     string_groups: Dict[int, List[int]] = {}
     for i, note in enumerate(notes):
         s = note.get("string")
@@ -129,10 +124,6 @@ def detect_techniques(
             curr_idx = indices_sorted[pos]
             curr     = notes[curr_idx]
 
-            # 既にアタックミュート等が付与済みならスキップ
-            if curr.get("technique") and curr["technique"] != "normal":
-                continue
-
             if pos == 0:
                 # --- ビブラート（単独ノート内F0解析）---
                 if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR and curr.get("fret", 0) > 0:
@@ -144,14 +135,6 @@ def detect_techniques(
             prev_idx = indices_sorted[pos - 1]
             prev     = notes[prev_idx]
 
-            # 既に付与済みならスキップ
-            if prev.get("technique") and prev["technique"] != "normal":
-                if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR and curr.get("fret", 0) > 0:
-                    tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
-                    if tech:
-                        curr["technique"] = tech
-                continue
-
             ioi        = curr["start"] - prev["start"]
             if ioi <= 0:
                 continue
@@ -161,7 +144,7 @@ def detect_techniques(
             fret_diff  = abs(curr.get("fret", 0) - prev.get("fret", 0))
 
             # ── F0軌跡解析（音声がある場合は優先） ──
-            if global_f0 is not None and ioi <= max(slide_max, hp_max):
+            if global_f0 is not None and ioi <= max(slide_max, hp_max) and fret_diff > 0:
                 tech = _classify_from_f0(
                     prev, curr, audio, audio_sr,
                     pitch_diff, fret_diff, hp_max, slide_max, bend_max,
@@ -171,22 +154,28 @@ def detect_techniques(
                     prev["technique"] = tech
                     continue
 
-            # ── ルールベースフォールバック ──
-            tech = _rule_based(
-                ioi, pitch_diff, abs_pitch, fret_diff,
-                hp_max, slide_max, bend_max,
-                curr_fret=curr.get("fret", 0),
-                prev_fret=prev.get("fret", 0)
-            )
-            if tech:
-                prev["technique"] = tech
-                continue
+            # ── ルールベース（H/P/スライド/ベンド） ──
+            if fret_diff > 0:
+                tech = _rule_based(
+                    ioi, pitch_diff, abs_pitch, fret_diff,
+                    hp_max, slide_max, bend_max,
+                    curr_fret=curr.get("fret", 0),
+                    prev_fret=prev.get("fret", 0)
+                )
+                if tech:
+                    prev["technique"] = tech
+                    continue
 
             # ── ビブラート（単独ノート）──
             if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR and curr.get("fret", 0) > 0:
                 tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
                 if tech:
                     curr["technique"] = tech
+
+    # --- 2. パーカッシブテクニック・アタックミュートの検出 (x, na, bh) ---
+    # スライド・レガートが付与されていないノート、および独立した弦打音にアタックミュート(x)を付与
+    if audio is not None:
+        notes = _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
 
     # --- ハーモニクス全般の検出 (nh, ah, th) ---
     if audio is not None:
@@ -751,7 +740,9 @@ def _detect_percussive_techniques(
 
         print(f"[TechDet] Detected {len(onset_times)} clean percussive transient onsets")
 
-        # 3. 既存ノートとの照合 & アタックミュート(x)付与（最優先）
+        # 3. 既存ノートとの照合 & アタックミュート(x)付与
+        # 既存のスライド(/, \)、ハンマリング(h)、プリング(p)、ベンド(b)、ビブラート(~)は絶対に上書き保護
+        PROTECTED_TECHS = {"h", "p", "/", "\\", "slide_up", "slide_down", "gliss_up", "gliss_down", "b", "~", "vibrato", "harmonic", "tap"}
         MATCH_WINDOW = 0.045  # 45ms
         matched_onsets = set()
 
@@ -759,9 +750,12 @@ def _detect_percussive_techniques(
             t = float(note.get("start", note.get("start_time", 0.0)))
             close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
             if close_onsets:
-                note["technique"] = "x"
                 for o in close_onsets:
                     matched_onsets.add(round(float(o), 2))
+                # 既存テクニックがない場合のみ x を付与
+                current_tech = note.get("technique")
+                if not current_tech or current_tech == "normal":
+                    note["technique"] = "x"
 
         # 4. 音符の全くない隙間で鳴った単独の打音のみ、1つのクリーンなデッドノートとして注入
         new_injected = []
