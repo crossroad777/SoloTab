@@ -75,8 +75,13 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
     candidates = []
     has_low_bass = (lowest_avg < 52.0)  # E3未満の低音が存在するか
     
+    # 6弦-5弦間隔の解析 (最低2音のピッチ差)
+    low_pitches = sorted(set(int(p) for p in pitches if p <= 55))
+    string_6_5_interval = (low_pitches[1] - low_pitches[0]) if len(low_pitches) >= 2 else 5
+    
     for name, tuning_notes in TUNINGS.items():
         lowest_open = tuning_notes[0]
+        expected_6_5_interval = tuning_notes[1] - tuning_notes[0]
         
         # a. Nashville ガード: 低音域が存在する場合、Nashville(高音弦のみ)を禁止
         if name == "nashville" and has_low_bass:
@@ -96,16 +101,21 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
         else:
             score -= lowest_diff * 0.5  # 遠いほどペナルティ
             
+        # 2. 6弦-5弦間隔のマッチング (Drop系=7半音 vs Standard=5半音)
+        if expected_6_5_interval == string_6_5_interval:
+            score += 2.5
+        elif abs(expected_6_5_interval - string_6_5_interval) >= 2:
+            score -= 1.5
+            
         # b. Down系絶対ピッチ識別 (A4=440Hz基準 ±25セント)
         if name in ("half_down", "full_down"):
-            # ピッチの小数部分からセント偏差を算出
             cents_dev = (lowest_avg - lowest_open) * 100.0
             if abs(cents_dev) <= 25.0:
                 score += 2.0
             else:
                 score -= abs(cents_dev) * 0.02
         
-        # 2. 開放弦ピッチの出現率
+        # 3. 開放弦ピッチの出現率
         open_hits = 0
         for open_pitch in tuning_notes:
             count = sum(1 for p in pitches if p % 12 == open_pitch % 12)
@@ -113,11 +123,11 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
                 open_hits += min(count / len(pitches) * 10, 1.0)
         score += open_hits * 0.5
         
-        # 3. スタンダードチューニングのバイアス (最も一般的)
+        # 4. スタンダードチューニングのバイアス
         if name == "standard":
-            score += 1.0
+            score += 0.5
         
-        # 4. キーとの親和性
+        # 5. キーとの親和性
         if detected_key:
             key_tuning_affinity = _key_tuning_affinity(detected_key, name)
             score += key_tuning_affinity

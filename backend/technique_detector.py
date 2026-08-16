@@ -202,6 +202,9 @@ def detect_techniques(
     if audio is not None and global_f0 is not None:
         _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
 
+    # --- タッピング検出 (TASK-892-D) ---
+    _detect_tapping_events(notes, audio, audio_sr, hp_max)
+
     # --- トレモロピッキング検出 ---
     _detect_tremolo_picking(notes)
 
@@ -212,6 +215,41 @@ def detect_techniques(
     _estimate_picking_directions(notes)
 
     return notes
+
+
+def _detect_tapping_events(
+    notes: List[dict],
+    audio: Optional[np.ndarray] = None,
+    sr: Optional[int] = None,
+    hp_max: float = 0.25
+) -> None:
+    """
+    ピッキングオンセットを伴わないレガート跳躍、または高音フレットへの高速打鍵をタッピング(tap)として検出。
+    """
+    if len(notes) < 2:
+        return
+
+    for i in range(1, len(notes)):
+        curr = notes[i]
+        prev = notes[i - 1]
+
+        # 既に付与済みなら尊重
+        if curr.get("technique") in ("tap", "t", "th"):
+            continue
+
+        ioi = curr["start"] - prev["start"]
+        fret_diff = curr.get("fret", 0) - prev.get("fret", 0)
+        curr_fret = curr.get("fret", 0)
+
+        # 1. 同一弦でのハイフレット跳躍レガート (fret >= 12 への高速跳躍)
+        if curr.get("string") == prev.get("string") and 0 < ioi <= hp_max:
+            if fret_diff >= 4 and curr_fret >= 9:
+                curr["technique"] = "tap"
+                continue
+
+        # 2. タッピングフラグが存在する場合
+        if str(curr.get("technique", "")).lower() in ("tap", "t"):
+            curr["technique"] = "tap"
 
 
 
