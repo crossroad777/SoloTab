@@ -728,18 +728,18 @@ def _detect_percussive_techniques(
         # 1. HPSS (調波・パーカッシブ分離)
         harmonic, percussive = librosa.effects.hpss(audio)
 
-        # 2. パーカッシブ打音オンセット検出（1小節目から全編の「かちゃっ」という打音を適正感度で検出）
+        # 2. パーカッシブ打音オンセット検出（演奏内の全てのアタックミュート打音を漏れなく抽出）
         onset_env = librosa.onset.onset_strength(y=percussive, sr=sr, aggregate=np.median)
         onset_frames = librosa.onset.onset_detect(
             onset_envelope=onset_env, sr=sr,
-            backtrack=True, pre_max=4, post_max=4, pre_avg=4, post_avg=4, delta=0.16, wait=10
+            backtrack=True, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delta=0.07, wait=4
         )
         onset_times = librosa.frames_to_time(onset_frames, sr=sr)
 
-        print(f"[TechDet] Detected {len(onset_times)} true percussive attack onsets")
+        print(f"[TechDet] Detected {len(onset_times)} percussive attack onsets")
 
-        # 3. 既存ノートとの照合 & 真のアタックミュート(x)のみ付与
-        MATCH_WINDOW = 0.035  # 35ms
+        # 3. 既存ノートとの照合 & アタックミュート(x)付与（全打音を漏れなく付与）
+        MATCH_WINDOW = 0.045  # 45ms
 
         for note in notes:
             current_tech = note.get("technique")
@@ -749,15 +749,7 @@ def _detect_percussive_techniques(
             t = float(note.get("start", note.get("start_time", 0.0)))
             close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
             if close_onsets:
-                # 局所的な打音比率（percussive vs harmonic）の検証
-                s_frame = max(0, int(t * sr))
-                e_frame = min(len(audio), int((t + 0.04) * sr))
-                if e_frame - s_frame >= 256:
-                    rms_perc = np.sqrt(np.mean(percussive[s_frame:e_frame]**2))
-                    rms_harm = np.sqrt(np.mean(harmonic[s_frame:e_frame]**2)) + 1e-6
-                    # 打音成分がしっかり出ている場合のみアタックミュートとする
-                    if rms_perc / rms_harm >= 0.88:
-                        note["technique"] = "x"
+                note["technique"] = "x"
 
         return notes
 
