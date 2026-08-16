@@ -661,7 +661,13 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     const buildChordOverlay = (api) => {
-        // コードはAlphaTabが五線譜最上部に美しくネイティブ描画するため、重複HTMLオーバーレイは廃止
+        if (!wrapperRef.current) return;
+        const parent = wrapperRef.current.parentElement;
+        if (!parent) return;
+
+        const old = parent.querySelector('.solotab-chords-overlay');
+        if (old) old.remove();
+        // AlphaTab ネイティブのコードネーム描画に一本化（重複・衝突・ズレを完全防止）
         return;
     };
 
@@ -885,7 +891,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             s.words = '';
                             s.music = '';
                         }
-                        // 曲頭の邪魔な四角いコードダイアグラム表を完全非表示にし、五線譜上のコードネーム文字のみ残す
+                        // コードダイアグラム表を消去し、五線譜の上の単一コードネーム文字のみを表示
                         if (s && s.tracks) {
                             for (const t of s.tracks) {
                                 if (t.staves) {
@@ -896,6 +902,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                                                     for (const b of v.beats) {
                                                         if (b.chord) {
                                                             b.chord.showDiagram = false;
+                                                            b.chord.showName = true;
+                                                            b.chord.showFingering = false;
                                                         }
                                                     }
                                                 }
@@ -933,10 +941,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         boundsReadyRef.current = ok;
                         if (ok) {
                             console.log("[TabView] BeatMap ready");
-                            // ドレミ出版標準: 五線譜の上およびTAB数字の上にスッキリと「×」を配置
                             try {
-                                buildTechniqueOverlay(api);
-                            } catch (e) { console.warn("[TabView] Attack overlay:", e); }
+                                buildChordOverlay(api);
+                            } catch (e) { console.warn("[TabView] Chord overlay:", e); }
                             try {
                                 buildAnchorOverlay(api);
                             } catch (e) { console.warn("[TabView] Anchor overlay:", e); }

@@ -378,7 +378,6 @@ def notes_to_gp5(notes: List[dict], *,
             beat_t = bar_start_t
             for b in voice.beats:
                 dur_val = b.duration.value
-                # GP Duration: whole=1, half=2, quarter=4, eighth=8, sixteenth=16
                 quarters = 4.0 / max(1, dur_val)
                 if b.duration.isDotted:
                     quarters *= 1.5
@@ -393,7 +392,6 @@ def notes_to_gp5(notes: List[dict], *,
                 ]
                 if matching:
                     c_name = str(matching[0].get("chord", "")).strip()
-                    # 前のコードと異なる場合、または小節頭の最初のビートの場合にコードネームを設定
                     if c_name and c_name not in ("N", "None", ""):
                         if c_name != last_chord_name or b == voice.beats[0]:
                             try:
