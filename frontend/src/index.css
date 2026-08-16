@@ -1156,3 +1156,13 @@ h6 {
   fill-opacity: 1 !important;
   stroke-opacity: 1 !important;
 }
+
+/* 五線譜上の不要な指番号（1,2,3,4）を完全非表示 */
+.tab-print-container .at-fingering,
+.tab-print-container .at-finger,
+.tab-print-container [data-element="fingering"],
+.tab-print-container .alphaTab-fingering {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}

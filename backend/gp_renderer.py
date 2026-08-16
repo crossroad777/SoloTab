@@ -654,14 +654,6 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 beat.effect.slapEffect = gp.SlapEffect.tapping
                 note.effect.hammer = True  # 叩くのでhammer
 
-            # 左手指番号
-            finger = entry.get("finger")
-            if finger is not None and finger >= 1:
-                try:
-                    note.effect.leftHandFinger = gp.Fingering(finger)
-                except Exception:
-                    pass
-
             beat.notes.append(note)
 
 

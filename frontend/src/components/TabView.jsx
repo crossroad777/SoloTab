@@ -1253,13 +1253,15 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 settings.notation.rhythmMode = 0;
                 settings.notation.fingeringMode = 0;
 
-                // === タイトル非表示（GP5のLatin-1エンコードで文字化けするため） ===
+                // === タイトル・指番号非表示（五線譜上の数字や文字化けを防止） ===
                 const NE = window.alphaTab.NotationElement;
                 if (NE) {
                     settings.notation.elements.set(NE.ScoreTitle, false);
                     settings.notation.elements.set(NE.ScoreSubTitle, false);
                     settings.notation.elements.set(NE.ScoreArtist, false);
                     settings.notation.elements.set(NE.ScoreWordsAndMusic, false);
+                    if (NE.Fingering !== undefined) settings.notation.elements.set(NE.Fingering, false);
+                    if (NE.LeftHandTap !== undefined) settings.notation.elements.set(NE.LeftHandTap, false);
                 }
 
                 if (settings.display.resources) {
