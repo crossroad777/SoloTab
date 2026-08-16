@@ -653,13 +653,20 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         if str(tuning_name).lower() in ("auto", "standard", ""):
             # 音声スペクトル（ドローン）から自動推定
             tuning_suggestion = detect_tuning_from_audio(str(transcription_wav), detected_key=detected_key)
-            if tuning_suggestion["confidence"] >= 0.40 and tuning_suggestion["tuning"] != tuning_name:
-                tuning_name = tuning_suggestion["tuning"]
-                tuning_notes = TUNINGS.get(tuning_name, [40, 45, 50, 55, 59, 64])
+            detected_cand = tuning_suggestion.get("tuning", "standard")
+            if detected_cand and detected_cand != "standard":
+                tuning_name = detected_cand
+                tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
+                tuning_pitches = _get_open_string_pitches(tuning)
                 report("tuning_detect", f"動的チューニング適応: {tuning_suggestion.get('label', tuning_name)} (確信度: {tuning_suggestion['confidence']:.2f})")
             else:
-                report("tuning_detect", f"チューニング確認: {tuning_name}")
+                tuning_name = "standard"
+                tuning = STANDARD_TUNING
+                tuning_pitches = _get_open_string_pitches(tuning)
+                report("tuning_detect", f"チューニング確認: standard")
         else:
+            tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
+            tuning_pitches = _get_open_string_pitches(tuning)
             tuning_suggestion = detect_tuning(notes, detected_key=detected_key)
             report("tuning_detect", f"指定チューニング適用: {tuning_name}")
     except Exception as e:
@@ -774,8 +781,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("theory", f"音楽理論解析スキップ: {e}")
 
     # --- Step: ピッチレンジフィルタ (倍音誤検出除去) ---
-    # ソロギター音域: E2(40) - B5(83)。これ以外は倍音誤検出の可能性が高い。
-    PITCH_MIN = 40   # E2 (6弦開放)
+    # ソロギター音域: 最低開放弦 (Drop/変則対応) - B5(83)。これ以外は倍音誤検出の可能性が高い。
+    PITCH_MIN = min(tuning[0], 40)   # 最低開放弦 (CGDGADなら36, Drop Dなら38, Standardなら40)
     PITCH_MAX = 83   # B5 (1弦19フレット, 実用上限)
     SOLO_GUITAR_FRET_LIMIT = 14  # ソロギターの実用フレット上限
     pre_filter_count = len(notes)
