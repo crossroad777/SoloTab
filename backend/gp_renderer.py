@@ -598,12 +598,8 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 note.effect.palmMute = True
 
             elif tech in ("x", "dead_note", "mute", "brushing", "bh", "na"):
-                # 単独の打音ノイズのみデッドノートとし、音程を持つメロディ/伴奏音符は通常の美しい符頭を維持
-                if entry.get("_injected_percussive") or entry.get("pitch", 0) == 0:
-                    note.type = gp.NoteType.dead
-                else:
-                    # ピッチを持つ音符は五線譜上で通常の丸い符頭（#や.との衝突を防止）
-                    note.type = gp.NoteType.normal
+                # TAB譜上に確実にアタックミュート「x」を表示（ドレミ楽譜出版社標準）
+                note.type = gp.NoteType.dead
 
             # ── 7. その他 ─────────────────────────────────────────────
             elif tech in ("let_ring", "let ring"):
