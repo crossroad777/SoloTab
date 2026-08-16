@@ -1018,12 +1018,12 @@ def _regenerate_musicxml(session_id: str, notes: list,
         title = _re.sub(r'[^\x20-\x7E]', '', title_clean).strip() or session_id
     gate = float(noise_gate) if noise_gate is not None else float(s.get("noise_gate", 0.0))
 
-    # --- GP5再生成 ---
+    # --- GP5再生成（1本の完全なソロギタートラックとして全音符を出力） ---
     final_note_entries = None
     try:
         from gp_renderer import notes_to_gp5
         gp5_bytes, final_note_entries = notes_to_gp5(
-            melody_notes, backing_notes=backing_notes, beats=beats, bpm=bpm, title=title,
+            notes, beats=beats, bpm=bpm, title=title,
             tuning=tuning, time_signature=time_sig,
             rhythm_info=rhythm_info, noise_gate=gate,
             return_entries=True,
@@ -1250,8 +1250,18 @@ async def retune(session_id: str, request: RetuneRequest):
     # Update session
     s["tuning"] = tuning_name
     s["capo"] = capo
-    from gp_renderer import _filter_noise
-    filtered_count = len(_filter_noise(notes, effective_gate))
+    # 実際にGP5 / notes_assigned.json に書き込まれた正確なノート数を反映
+    if (session_dir / "notes_assigned.json").exists():
+        try:
+            with open(session_dir / "notes_assigned.json", "r", encoding="utf-8") as f:
+                final_assigned = json.load(f)
+            filtered_count = len(final_assigned)
+        except Exception:
+            from gp_renderer import _filter_noise
+            filtered_count = len(_filter_noise(notes, effective_gate))
+    else:
+        from gp_renderer import _filter_noise
+        filtered_count = len(_filter_noise(notes, effective_gate))
     s["total_notes"] = filtered_count
     s["noise_gate"] = effective_gate
     save_session(session_id)
