@@ -87,12 +87,7 @@ def detect_chords_btc(wav_path: str) -> List[Dict]:
                 '_source': 'btc',
             })
         
-        # N.C. を前のコードで埋める
-        for i in range(1, len(chords)):
-            if chords[i]['chord'] == 'N.C.':
-                chords[i]['chord'] = chords[i - 1]['chord']
-        
-        # 連続同一コードをマージ
+        # 連続同一コードをマージ (N.C.のフォワードフィルは廃止し無音区間を尊重)
         merged = [chords[0]] if chords else []
         for c in chords[1:]:
             if merged and merged[-1]['chord'] == c['chord']:
@@ -378,7 +373,10 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
         ]
         
         if not segment_notes:
-            refined_chords.append(c)
+            c_nc = dict(c)
+            c_nc['chord'] = 'N.C.'
+            c_nc['confidence'] = 0.0
+            refined_chords.append(c_nc)
             continue
             
         # ピッチクラスごとの重み付け（velocityと長さを考慮）
@@ -402,8 +400,11 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
                 highest_pitch = pitch
                 
         total_weight = np.sum(pc_weights)
-        if total_weight < 0.01:
-            refined_chords.append(c)
+        if total_weight < 0.05:
+            c_nc = dict(c)
+            c_nc['chord'] = 'N.C.'
+            c_nc['confidence'] = 0.0
+            refined_chords.append(c_nc)
             continue
             
         pc_probs = pc_weights / total_weight
@@ -571,7 +572,7 @@ def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = No
             "confidence": float(best_score),
         })
 
-    # 連続する同一コードをマージ
+    # 連続する同一コードをマージ (N.C.を尊重)
     merged = []
     for c in chords:
         if merged and merged[-1]["chord"] == c["chord"]:
@@ -579,21 +580,8 @@ def detect_chords_chroma(wav_path: str, beats: List[float] = None, key: str = No
         else:
             merged.append(dict(c))
 
-    # 低確信度のN.C.を前のコードで埋める
-    for i in range(1, len(merged)):
-        if merged[i]["chord"] == "N.C." and merged[i]["confidence"] < 0.3:
-            merged[i]["chord"] = merged[i - 1]["chord"]
-
-    # 再度マージ
-    final = [merged[0]] if merged else []
-    for c in merged[1:]:
-        if final and final[-1]["chord"] == c["chord"]:
-            final[-1]["end"] = c["end"]
-        else:
-            final.append(c)
-
-    print(f"[chord_detector] Chroma fallback: {len(final)} chord regions")
-    return final
+    print(f"[chord_detector] Chroma fallback: {len(merged)} chord regions")
+    return merged
 
 
 def detect_chords(wav_path: str, beats: List[float] = None, key: str = None,
