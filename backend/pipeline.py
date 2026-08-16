@@ -692,52 +692,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             if midi_key != detected_key:
                 print(f"[theory] キー競合: audio={detected_key}(conf={key_confidence:.2f}) vs midi={midi_key} → audio採用")
 
-        # --- フェーズ3: Heuristic Pitch Correction & MVS Filter (TASK-900-E: AMT専用に隔離、MIDIバイパス時は無効化) ---
-        if not is_midi_bypass:
-            try:
-                from heuristic_pitch_correction import heuristic_pitch_correction
-                
-                # Extract genre from filename (e.g. 05_Jazz2-187-F#_comp.wav -> jazz)
-                import re
-                wav_filename = Path(transcription_wav).name
-                genre_match = re.search(r'^\d+_([A-Za-z]+)', wav_filename)
-                track_genre = genre_match.group(1).lower() if genre_match else "unknown"
-                
-                notes_before_hpc = len(notes)
-                notes_hpc, logs = heuristic_pitch_correction(
-                    notes, 
-                    chords=chords, 
-                    key=detected_key_sig, 
-                    genre=track_genre, 
-                    dry_run=False, # PROD MODE
-                    verbose=True
-                )
-                # PROD MODE: overwrite notes
-                notes = notes_hpc 
-                report("theory", f"[Prod] Heuristic Pitch Correction: {len(logs)} changes proposed for {track_genre}")
-                
-                # Save logs for reporting
-                for l in logs:
-                    print(f"[Heuristic] Track={wav_filename}, Pass={l['pass']}, Reason={l['reason']}")
-                    
-            except Exception as e:
-                report("theory", f"Heuristic Pitch Correctionエラー: {e}")
-
-            # 音楽理論に基づく妥当性検証＆フィルタリング (MVS) をリズム検出の前に実行
-            before_validation = len(notes)
-            try:
-                notes = validate_notes_by_music_theory(
-                    notes,
-                    beats=beats,
-                    chords=chords,
-                    key=detected_key_sig,
-                    threshold=0.50
-                )
-                report("theory", f"MVSフィルタ適用 (リズム検出前): {before_validation} → {len(notes)} notes")
-            except Exception as e:
-                report("theory", f"MVSフィルタ前倒し実行エラー: {e}")
-        else:
-            report("theory", f"MIDIバイパスモード: 破壊的ヒューリスティック(Octave Folding/MVS)を完全スキップ ({len(notes)} notes維持)")
+        # --- フェーズ3: 論文§6準拠クリーンパス (後処理・ヒューリスティクスの完全廃止によるアルペジオ保護) ---
+        # 論文§6: "後処理（ノイズフィルタ、過度な量子化、倍音間引き等）は微細なアルペジオを破壊するため廃止し、AMTの出力を直接弦割り当てへ流す"
+        report("theory", f"論文§6クリーンパス適用: 破壊的ヒューリスティック(HPC/MVS倍音フィルタ)を完全スキップ ({len(notes)} notesを100%保護)")
 
         # クリーンになった音符データに対してリズムパターン検出を実行
         rhythm_info = detect_rhythm_pattern(notes, beats)
@@ -826,22 +783,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     report("assign", "運指最適化中 (Viterbi DP)...");
     t0 = time.time()
 
-    # --- 音楽理論に基づく妥当性検証＆フィルタリング (MVS) (TASK-900-F: MIDIバイパス時はスキップ) ---
-    if not is_midi_bypass:
-        before_validation = len(notes)
-        try:
-            from music_theory import validate_notes_by_music_theory
-            notes = validate_notes_by_music_theory(
-                notes,
-                beats=beats,
-                chords=chords,
-                key=detected_key_sig,
-                threshold=0.50
-            )
-            report("assign", f"音楽理論フィルタ適用後: {before_validation} → {len(notes)} notes")
-        except Exception as e:
-            report("assign", f"音楽理論フィルタエラー (元音符リストを維持): {e}")
-            import traceback; traceback.print_exc()
+    # --- 音楽理論に基づくフィルタリング (MVS) (論文§6準拠: アルペジオ・微細ノート保護のためスキップ) ---
+    report("assign", f"論文§6クリーンパス: 運指前のMVSフィルタを完全バイパス ({len(notes)} notesを維持)")
 
     # レンダラーおよび保存用 recommended_cut は安全なデフォルト（0.15）に固定
     recommended_cut = 0.15
@@ -1080,51 +1023,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"ノート重複除去: {dedup_count}ノート統合")
 
     # --- 後処理1.5: 共鳴音(sympathetic resonance)フィルタ ---
-    # ギターの開放弦は他の弦を弾いた時に共鳴で鳴ることがある。
-    # 判定基準: 開放弦pitchのノートが、前後のノートより有意にvelocityが低い場合は共鳴音。
-    OPEN_PITCHES = set(tuning)  # 有効チューニングの開放弦ピッチ群を動的に導出
-    SYMPA_VEL_RATIO = 0.45  # 緩和: 0.6→0.45 (正当な開放弦音を保護)
-    SYMPA_WINDOW = 0.3      # 前後0.3秒のノートを参照
+    # --- 後処理1.5: 共鳴音(sympathetic resonance)フィルタ (論文§6準拠: 開放弦・アルペジオ保護のため無効化) ---
+    # ギターソロのアルペジオや開放弦ドローンを誤削除しないよう、AMTの出力を100%維持
     sympa_removed = 0
-    if len(notes) > 10:
-        sympa_keep = []
-        for ni, n in enumerate(notes):
-            pitch = int(n.get('pitch', 0))
-            vel = float(n.get('velocity', 0.5))
-            if vel > 1.0:
-                vel /= 127.0
-            t = float(n.get('start', 0))
-
-            if pitch not in OPEN_PITCHES:
-                sympa_keep.append(n)
-                continue
-
-            # 周囲のノートのvelocity平均を計算
-            neighbors = []
-            for nj in range(max(0, ni - 5), min(len(notes), ni + 6)):
-                if nj == ni:
-                    continue
-                nt = float(notes[nj].get('start', 0))
-                if abs(nt - t) <= SYMPA_WINDOW:
-                    nv = float(notes[nj].get('velocity', 0.5))
-                    if nv > 1.0:
-                        nv /= 127.0
-                    neighbors.append(nv)
-
-            if not neighbors:
-                sympa_keep.append(n)
-                continue
-
-            avg_vel = sum(neighbors) / len(neighbors)
-            if vel < avg_vel * SYMPA_VEL_RATIO:
-                # 共鳴音と判定 → 除去
-                sympa_removed += 1
-            else:
-                sympa_keep.append(n)
-
-        if sympa_removed > 0:
-            notes = sympa_keep
-            report("assign", f"共鳴音フィルタ: {sympa_removed}ノート除去")
+    print("[pipeline] 論文§6準拠: 共鳴音フィルタを完全バイパス (開放弦サステインを保護)", flush=True)
 
     # --- 後処理2: キー制約フィルタ ---
     # 無効化: キー制約フィルタはピッチ検出結果を破壊する可能性があるため無効化
