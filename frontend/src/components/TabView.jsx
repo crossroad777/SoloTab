@@ -873,7 +873,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     onApiReady(api);
                 }
 
-                // タイトル上書き: 描画前にGP5の文字化けタイトルを消す
+                // タイトル上書き & コードダイアグラム表の非表示（小節上のコードネーム文字のみ表示）
                 api.scoreLoaded.on((score) => {
                     try {
                         const s = score?.score || score;
@@ -885,8 +885,28 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             s.words = '';
                             s.music = '';
                         }
+                        // 曲頭の邪魔な四角いコードダイアグラム表を完全非表示にし、五線譜上のコードネーム文字のみ残す
+                        if (s && s.tracks) {
+                            for (const t of s.tracks) {
+                                if (t.staves) {
+                                    for (const st of t.staves) {
+                                        if (st.bars) {
+                                            for (const bar of st.bars) {
+                                                for (const v of bar.voices) {
+                                                    for (const b of v.beats) {
+                                                        if (b.chord) {
+                                                            b.chord.showDiagram = false;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     } catch (e) {
-                        console.warn('[TabView] scoreLoaded title override failed:', e);
+                        console.warn('[TabView] scoreLoaded title/chord override failed:', e);
                     }
                 });
 
