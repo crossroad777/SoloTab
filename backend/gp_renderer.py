@@ -598,8 +598,9 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 note.effect.palmMute = True
 
             elif tech in ("x", "dead_note", "mute", "brushing", "bh", "na"):
-                # TAB譜上に確実にアタックミュート「x」を表示（ドレミ楽譜出版社標準）
-                note.type = gp.NoteType.dead
+                # ドレミ出版標準: 五線譜の符頭自体は通常の丸（●）のまま、音符の上にアタック記号を付与
+                note.type = gp.NoteType.normal
+                note.effect.accentuatedNote = True
 
             # ── 7. その他 ─────────────────────────────────────────────
             elif tech in ("let_ring", "let ring"):
