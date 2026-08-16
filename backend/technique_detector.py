@@ -726,60 +726,38 @@ def _detect_percussive_techniques(
             tuning = [40, 45, 50, 55, 59, 64]  # Standard tuning (6th -> 1st)
 
         # 1. HPSS (調波・パーカッシブ分離)
-        _, percussive = librosa.effects.hpss(audio)
+        harmonic, percussive = librosa.effects.hpss(audio)
 
-        # 2. パーカッシブ打音オンセット検出
+        # 2. パーカッシブ打音オンセット検出（1小節目から全編の「かちゃっ」という打音を適正感度で検出）
         onset_env = librosa.onset.onset_strength(y=percussive, sr=sr, aggregate=np.median)
         onset_frames = librosa.onset.onset_detect(
             onset_envelope=onset_env, sr=sr,
-            backtrack=True, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delta=0.06, wait=4
+            backtrack=True, pre_max=4, post_max=4, pre_avg=4, post_avg=4, delta=0.16, wait=10
         )
         onset_times = librosa.frames_to_time(onset_frames, sr=sr)
 
-        print(f"[TechDet] Detected {len(onset_times)} clean percussive transient onsets")
+        print(f"[TechDet] Detected {len(onset_times)} true percussive attack onsets")
 
-        # 3. 既存ノートとの照合 & アタックミュート(x)付与
-        # 既存のスライド(/, \)、ハンマリング(h)、プリング(p)、ベンド(b)、ビブラート(~)は絶対に上書き保護
-        PROTECTED_TECHS = {"h", "p", "/", "\\", "slide_up", "slide_down", "gliss_up", "gliss_down", "b", "~", "vibrato", "harmonic", "tap"}
-        MATCH_WINDOW = 0.045  # 45ms
-        matched_onsets = set()
+        # 3. 既存ノートとの照合 & 真のアタックミュート(x)のみ付与
+        MATCH_WINDOW = 0.035  # 35ms
 
         for note in notes:
+            current_tech = note.get("technique")
+            if current_tech and current_tech != "normal":
+                continue
+
             t = float(note.get("start", note.get("start_time", 0.0)))
             close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
             if close_onsets:
-                for o in close_onsets:
-                    matched_onsets.add(round(float(o), 2))
-                # 既存テクニックがない場合のみ x を付与
-                current_tech = note.get("technique")
-                if not current_tech or current_tech == "normal":
-                    note["technique"] = "x"
-
-        # 4. 音符の全くない隙間で鳴った単独の打音のみ、1つのクリーンなデッドノートとして注入
-        new_injected = []
-        existing_starts = [float(n.get("start", 0)) for n in notes]
-
-        for o_time in onset_times:
-            o_val = float(o_time)
-            # 周囲 70ms に音符が全く存在しない場合のみ注入
-            if not any(abs(es - o_val) < 0.070 for es in existing_starts):
-                injected_note = {
-                    "start": o_val,
-                    "end": o_val + 0.05,
-                    "pitch": tuning[2],  # 4弦開放 (D音デッドノート)
-                    "string": 4,
-                    "fret": 0,
-                    "velocity": 0.60,
-                    "technique": "x",
-                    "_injected_percussive": True
-                }
-                new_injected.append(injected_note)
-                existing_starts.append(o_val)
-
-        if new_injected:
-            print(f"[TechDet] Injected {len(new_injected)} standalone clean attack mute notes")
-            notes.extend(new_injected)
-            notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
+                # 局所的な打音比率（percussive vs harmonic）の検証
+                s_frame = max(0, int(t * sr))
+                e_frame = min(len(audio), int((t + 0.04) * sr))
+                if e_frame - s_frame >= 256:
+                    rms_perc = np.sqrt(np.mean(percussive[s_frame:e_frame]**2))
+                    rms_harm = np.sqrt(np.mean(harmonic[s_frame:e_frame]**2)) + 1e-6
+                    # 打音成分がしっかり出ている場合のみアタックミュートとする
+                    if rms_perc / rms_harm >= 0.88:
+                        note["technique"] = "x"
 
         return notes
 

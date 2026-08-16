@@ -656,81 +656,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     const buildTechniqueOverlay = (api) => {
-        if (!wrapperRef.current) return;
-        const parent = wrapperRef.current.parentElement;
-        if (!parent) return;
-
-        const old = parent.querySelector('.doremi-attack-overlay');
-        if (old) old.remove();
-
-        const notes = notesDataRef.current;
-        const beatMap = beatMapRef.current;
-        if (!notes || !notes.length || !beatMap || !beatMap.length) return;
-
-        const bl = api?.renderer?.boundsLookup;
-        if (!bl) return;
-
-        const overlay = document.createElement('div');
-        overlay.className = 'doremi-attack-overlay';
-        overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:12;';
-
-        const muteNotes = notes.filter(n => ['x', 'dead_note', 'mute', 'bh', 'na'].includes(n.technique));
-        const renderedBeats = new Set();
-
-        for (const note of muteNotes) {
-            const noteMs = (note.start ?? note.start_time ?? 0) * 1000;
-            const beat = findBeat(noteMs);
-            if (!beat) continue;
-
-            // 同一ビートでの重複描画ガード
-            const beatKey = `${Math.round(beat.vb.x)}_${Math.round(beat.vb.y)}`;
-            if (renderedBeats.has(beatKey)) continue;
-            renderedBeats.add(beatKey);
-
-            // 1. 五線譜の上の「×」
-            const scoreX = beat.vb.x + (beat.vb.w ? beat.vb.w / 2 : 4);
-            const scoreY = beat.vb.y - 10; // 五線の真上
-
-            const elScore = document.createElement('span');
-            elScore.textContent = '×';
-            elScore.style.cssText = [
-                'position:absolute',
-                `left:${scoreX}px`,
-                `top:${scoreY}px`,
-                'transform:translateX(-50%)',
-                'font-size:12px',
-                'font-weight:bold',
-                'color:#111111',
-                'font-family:Arial,Helvetica,sans-serif',
-                'line-height:1',
-                'pointer-events:none',
-                'user-select:none',
-            ].join(';');
-            overlay.appendChild(elScore);
-
-            // 2. TAB譜の数字の上の「×」
-            // TABスタッフの位置（通常はスコアスタッフから約45px〜50px下）
-            const tabY = beat.vb.y + 42;
-
-            const elTab = document.createElement('span');
-            elTab.textContent = '×';
-            elTab.style.cssText = [
-                'position:absolute',
-                `left:${scoreX}px`,
-                `top:${tabY}px`,
-                'transform:translateX(-50%)',
-                'font-size:12px',
-                'font-weight:bold',
-                'color:#111111',
-                'font-family:Arial,Helvetica,sans-serif',
-                'line-height:1',
-                'pointer-events:none',
-                'user-select:none',
-            ].join(';');
-            overlay.appendChild(elTab);
-        }
-
-        parent.appendChild(overlay);
+        // 浮遊HTML文字は完全撤廃し、TAB譜の線上のネイティブ「x」表示に一本化
+        return;
     };
 
     const buildChordOverlay = (api) => {

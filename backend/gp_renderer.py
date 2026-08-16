@@ -598,8 +598,8 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 note.effect.palmMute = True
 
             elif tech in ("x", "dead_note", "mute", "brushing", "bh", "na"):
-                # ドレミ出版標準: フレット数字・符頭はそのまま残し、真上に「×」マークを表示
-                note.type = gp.NoteType.normal
+                # TAB譜の線上に直接「x」を表示する前の美しい仕様に復元
+                note.type = gp.NoteType.dead
 
             # ── 7. その他 ─────────────────────────────────────────────
             elif tech in ("let_ring", "let ring"):
