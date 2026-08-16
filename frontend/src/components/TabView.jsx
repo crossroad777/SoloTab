@@ -1084,8 +1084,8 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     const findBeat = (audioMs) => {
         const map = beatMapRef.current;
         if (!map || !map.length) return null;
-        if (audioMs < map[0].startMs) return map[0];
-        if (audioMs >= map[map.length - 1].startMs) return map[map.length - 1];
+        if (audioMs < map[0].startMs - 50) return null; // 曲開始前の無音区間はカーソル非表示
+        if (audioMs > map[map.length - 1].endMs + 1500) return null; // 曲終了後は非表示
         let lo = 0, hi = map.length - 1;
         while (lo <= hi) {
             const mid = (lo + hi) >> 1;
@@ -1093,7 +1093,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             if (audioMs < map[mid].startMs) hi = mid - 1;
             else lo = mid + 1;
         }
-        return lo > 0 ? map[lo - 1] : map[0];
+        return lo > 0 && lo < map.length ? map[lo - 1] : map[0];
     };
 
     // ============================================================

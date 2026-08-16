@@ -138,21 +138,18 @@ def quantize_notes_universal(
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
 
-        # --- 要件4: ゴースト数字の除去 ---
-        # 1ビート内に4つ以上のクラスタ（独立音）がある場合、グリッド誤差が大きくvelocityが低いクラスタを剪定
-        if is_triplet_beat and len(time_clusters) > 3:
-            # 3連符グリッド(0, 4, 8)に対して各クラスタのスコアを計算
-            def cluster_quality(c):
-                sub = c["frac"] * DIVISIONS
-                dist = min(abs(sub - g) for g in GRID_TRIPLET_8TH)
-                max_vel = max(it["velocity"] for it in c["items"])
-                # 誤差が小さくvelocityが高いほど優先
-                return max_vel - dist * 0.3
-            time_clusters.sort(key=cluster_quality, reverse=True)
-            # 上位3つを残す
-            time_clusters = sorted(time_clusters[:3], key=lambda c: c["time"])
+        # 1拍内に4つ以上の音符がある場合: 16分3連符(6連符)または16分音符グリッドに昇格し、音符を一切間引かず100%保護
+        if len(time_clusters) >= 4:
+            if err_triplet_16th <= err_straight:
+                selected_grid = GRID_TRIPLET_16TH
+                is_triplet_beat = True
+                is_sextuplet = True
+            else:
+                selected_grid = GRID_STRAIGHT_16TH
+                is_triplet_beat = False
+                is_sextuplet = False
 
-        # スナップ実行
+        # スナップ実行（1音も間引かずに全音符を配置）
         for c in time_clusters:
             sub = c["frac"] * DIVISIONS
             best_snap = min(selected_grid, key=lambda g: abs(g - sub))
