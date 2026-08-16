@@ -1504,14 +1504,34 @@ export default function SoloTabApp() {
                       handleRetune(null, null, noiseGate);
                     }}
                     style={{
-                      padding: '2px 6px', borderRadius: 4, border: 'none',
+                      padding: '2px 8px', borderRadius: 4, border: 'none',
                       background: noiseGate > 0 ? '#4da6ff' : '#334155',
                       color: 'white', fontSize: 10, fontWeight: 700,
                       cursor: 'pointer', whiteSpace: 'nowrap',
                     }}
                   >適用</button>
+                  {session?.totalNotes !== undefined && session?.totalNotes !== null && (
+                    <span 
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: '#4da6ff',
+                        background: 'rgba(77, 166, 255, 0.12)',
+                        border: '1px solid rgba(77, 166, 255, 0.3)',
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        minWidth: 48,
+                        textAlign: 'center',
+                      }}
+                      title="現在の楽譜上の総音符数"
+                    >
+                      {session.totalNotes}音
+                    </span>
+                  )}
                 </div>
-                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>ノイズ除去 (CUT: {Math.round(noiseGate * 100)}%)</span>
+                <span style={{ fontSize: 9, color: 'var(--st-text-dim)', fontWeight: 'bold' }}>
+                  ノイズ除去 (CUT: {Math.round(noiseGate * 100)}%)
+                </span>
               </div>
 
               {/* ⑦ Writes / Exports (Aligned Right) */}
