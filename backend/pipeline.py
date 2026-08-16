@@ -320,16 +320,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             adaptive_onset = 0.50
             adaptive_min_len = 58.0
             adaptive_frame_th = 0.30
+        elif is_solo_guitar:
+            style = "SOLO_GUITAR"
+            adaptive_onset = 0.55
+            adaptive_min_len = 70.0
+            adaptive_frame_th = 0.25
         elif pick_ratio > 0.6:
             style = "STROKE"
             adaptive_onset = 0.85
             adaptive_min_len = 120.0
         elif finger_ratio > 0.6:
             style = "FINGER"
-            adaptive_onset = 0.70
+            adaptive_onset = 0.65
             adaptive_min_len = 80.0
             
-        report("notes", f"[Style Profile] Profile: {transcription_profile}, Style: {style} (onset={adaptive_onset}, min_len={adaptive_min_len}ms, frame_th={adaptive_frame_th})")
+        report("notes", f"[Style Profile §4.1] Profile: {transcription_profile}, Style: {style} (onset={adaptive_onset}, min_len={adaptive_min_len}ms, frame_th={adaptive_frame_th})")
 
         # CRNN (fallback — MoE失敗時のみ)
         if not _moe_notes:
@@ -526,17 +531,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         else:
             moe_coverage = 1.0
             
-        if is_classic_profile:
-            # クラシック・アルペジオ: 繊細な音を拾うため閾値を 0.20 に設定
-            BP_ONLY_THRESHOLD = 0.20
-        elif moe_coverage < 0.50:
-            # MoE 信頼性低: BP の判定を優先
+        # 論文§13.8「MoE信頼性（moe_coverage）に基づく動的閾値設定」
+        if is_classic_profile or is_solo_guitar:
+            # ソロギター・クラシック: 繊細なアルペジオ・弱音を拾うため 0.10 を適用
             BP_ONLY_THRESHOLD = 0.10
+        elif moe_coverage < 0.40:
+            # MoE信頼性極低 (超繊細な音源): BP出力をほぼ全採用
+            BP_ONLY_THRESHOLD = 0.05
+        elif moe_coverage < 0.70:
+            # MoE信頼性中 (ソロギター/アルペジオ領域): BP弱音を積極救済
+            BP_ONLY_THRESHOLD = 0.15
         else:
-            # MoE 信頼性高: A1見逃しとA2過剰検出の最適バランス点 (Phase 6.5)
-            BP_ONLY_THRESHOLD = 0.40
+            # MoE信頼性高 (通常バンド/明瞭音源): 過剰検出を抑制
+            BP_ONLY_THRESHOLD = 0.50
             
-        report("notes", f"[Ensemble] Profile: {transcription_profile}, MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), BP_ONLY threshold: {BP_ONLY_THRESHOLD}")
+        report("notes", f"[Ensemble §13.8] Profile: {transcription_profile}, MoE coverage: {moe_coverage:.2%} ({moe_matched_count}/{bp_count}), Dynamic BP_ONLY threshold: {BP_ONLY_THRESHOLD}")
         bp_only_added = 0
         for i, bp_n in enumerate(bp_notes_list):
             if i not in used_bp:
@@ -744,7 +753,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # ソロギター音域: 最低開放弦 (Drop/変則対応) - B5(83)。これ以外は倍音誤検出の可能性が高い。
     PITCH_MIN = min(tuning[0], 40)   # 最低開放弦 (CGDGADなら36, Drop Dなら38, Standardなら40)
     PITCH_MAX = 83   # B5 (1弦19フレット, 実用上限)
-    SOLO_GUITAR_FRET_LIMIT = 14  # ソロギターの実用フレット上限
+    SOLO_GUITAR_FRET_LIMIT = 19  # ソロギターの実用フレット上限 (19フレットまで完全保護)
     pre_filter_count = len(notes)
     pitch_filtered = []
     for n in notes:
@@ -786,8 +795,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- 音楽理論に基づくフィルタリング (MVS) (論文§6準拠: アルペジオ・微細ノート保護のためスキップ) ---
     report("assign", f"論文§6クリーンパス: 運指前のMVSフィルタを完全バイパス ({len(notes)} notesを維持)")
 
-    # レンダラーおよび保存用 recommended_cut は安全なデフォルト（0.15）に固定
-    recommended_cut = 0.15
+    # レンダラーおよび保存用 recommended_cut は微小なアルペジオ音も保護する 0.05 に設定
+    recommended_cut = 0.05 if is_solo_guitar else 0.15
 
     try:
         from string_assigner import assign_strings_dp  # type: ignore

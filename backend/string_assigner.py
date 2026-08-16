@@ -730,7 +730,7 @@ def guess_tuning(notes: list, top_n: int = 3) -> list:
     results.sort(key=lambda x: -x[1])
     return results[:top_n]
 
-MAX_FRET = 14  # v2.2: 19→14 ソロギターの実用フレット上限
+MAX_FRET = 19  # ソロギターの実用フレット上限 (19フレットまで完全保護)
 
 
 # =============================================================================
