@@ -362,37 +362,8 @@ def notes_to_gp5(notes: List[dict], *,
                 if not v.beats:
                     v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
 
-    # --- Measure-by-measure Tempo Map (Rubato / Audio Timeline Sync) ---
-    if beats:
-        for bar_num in range(total_bars):
-            m = track1.measures[bar_num]
-            if not m.voices or not m.voices[0].beats:
-                continue
-            
-            beat_start_idx = bar_num * beats_per_bar
-            beat_end_idx = (bar_num + 1) * beats_per_bar
-            
-            if beat_start_idx < len(beats):
-                t_start = beats[beat_start_idx]
-                if beat_end_idx < len(beats):
-                    t_end = beats[beat_end_idx]
-                    bar_dur = t_end - t_start
-                elif beat_start_idx + 1 < len(beats):
-                    avg_beat_dur = (beats[-1] - t_start) / max(1, len(beats) - 1 - beat_start_idx)
-                    bar_dur = avg_beat_dur * beats_per_bar
-                else:
-                    bar_dur = beats_per_bar * (60.0 / bpm)
-                
-                if bar_dur > 0.05:
-                    bar_bpm = (beats_per_bar * 60.0) / bar_dur
-                    bar_bpm = max(30, min(300, int(round(bar_bpm))))
-                    
-                    first_beat = m.voices[0].beats[0]
-                    if not first_beat.effect:
-                        first_beat.effect = gp.BeatEffect()
-                    if not first_beat.effect.mixTableChange:
-                        first_beat.effect.mixTableChange = gp.MixTableChange()
-                    first_beat.effect.mixTableChange.tempo = gp.MixTableItem(bar_bpm)
+    # --- Song Tempo Header (曲頭に1回のみ標準設定。毎小節の重複出力を防止) ---
+    song.tempo = int(round(bpm))
 
     # --- Write to bytes ---
     import io
@@ -605,11 +576,9 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 )
 
             # ── 4. ビブラート系 ───────────────────────────────────────
-            elif tech in ("~", "vibrato"):
-                # ビブラート note-level: 波線表示
-                note.effect.vibrato = True
-            # ※ beat-level vibrato は beat.effect.vibrato = True で設定
-            # ※ arm vibrato は後処理で設定
+            elif tech in ("~", "vibrato", "wide_vibrato"):
+                # アコギ・ソロギター出版譜に合わせ、視覚ノイズとなる浮遊波線記号は出力しない
+                pass
 
             # ── 5. ハーモニクス系 ─────────────────────────────────────
             elif tech in ("harmonic", "n.h", "nh", "natural_harmonic", "ah", "artificial_harmonic"):
