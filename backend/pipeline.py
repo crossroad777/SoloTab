@@ -163,7 +163,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  transcription_profile: str = "standard",
                  enable_technique_gp5: bool = False,
                  enable_technique_overlay: bool = False,
-                 enable_technique_fingers: bool = False):
+                 enable_technique_fingers: bool = False,
+                 midi_path: Optional[Path] = None):
     def report(step: str, msg: str):
         if progress_cb:
             progress_cb(step, msg)
@@ -175,6 +176,14 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     tuning = TUNINGS.get(tuning_name, STANDARD_TUNING)
     tuning_pitches = _get_open_string_pitches(tuning)
     is_classic_profile = transcription_profile.lower() in ("classic", "arpeggio")
+
+    # --- MIDI BYPASS: 外部MIDI入力時はAMTをスキップして直接パース ---
+    is_midi_bypass = False
+    if midi_path is not None and Path(midi_path).exists():
+        from amt_basic_pitch import parse_midi_to_notes
+        report("notes", f"MIDIバイパス有効: {Path(midi_path).name} からノートを直接取得")
+        notes = parse_midi_to_notes(midi_path)
+        is_midi_bypass = True
 
     # --- PARALLEL PHASE: Beat/Key + Note Detection ---
     # Beat detection and note detection are independent.
@@ -402,10 +411,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         fut_beats = executor.submit(_do_beats_and_key)
-        fut_notes = executor.submit(_do_note_detection, transcription_wav)
+        tasks = [fut_beats]
+        if not is_midi_bypass:
+            fut_notes = executor.submit(_do_note_detection, transcription_wav)
+            tasks.append(fut_notes)
 
         # Wait for both to complete
-        for fut in as_completed([fut_beats, fut_notes]):
+        for fut in as_completed(tasks):
             try:
                 fut.result()  # raise any exceptions
             except Exception as e:
@@ -457,15 +469,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     method = "none"
     model_stats = {}
 
-
-    # --- 3c: 融合 (優先順位: MoE融合 > MoE単独 > CRNN > BasicPitch) ---
-    # MoE+BP融合 F1=0.8916 (GuitarSet TEST 36曲で検証済み)
-    # CRNN F1=0.726 (同条件)
-    # 数値優先: ベンチマーク検証済みの精度を信頼する
-    MATCH_ONSET_TOL = 0.10   # 100ms (緩和: 速い曲で取りこぼし防止)
-    MATCH_PITCH_TOL = 1      # ±1 semitone
-
-    if bp_notes_list and moe_notes_list:
+    if is_midi_bypass:
+        from amt_basic_pitch import parse_midi_to_notes
+        notes = parse_midi_to_notes(midi_path)
+        method = "midi_bypass"
+        model_stats = {"midi_notes": len(notes)}
+        report("notes", f"MIDIバイパス採用: {len(notes)} notes (AMTスキップ)")
+    elif bp_notes_list and moe_notes_list:
         # 最優先: BPとMoEの融合 (F1=0.89)
         fused_notes = []
         used_moe = set()
@@ -667,7 +677,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             
             # Extract genre from filename (e.g. 05_Jazz2-187-F#_comp.wav -> jazz)
             import re
-            from pathlib import Path
             wav_filename = Path(transcription_wav).name
             genre_match = re.search(r'^\d+_([A-Za-z]+)', wav_filename)
             track_genre = genre_match.group(1).lower() if genre_match else "unknown"

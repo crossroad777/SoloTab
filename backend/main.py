@@ -248,9 +248,24 @@ async def upload_audio(file: UploadFile = File(...),
     with open(audio_path, "wb") as f:
         f.write(await file.read())
 
+    is_midi_file = audio_path.suffix.lower() in (".mid", ".midi")
+    midi_path = None
+
     # Convert to WAV if needed
     wav_path = session_dir / "converted.wav"
-    if audio_path.suffix.lower() != ".wav":
+    if is_midi_file:
+        midi_path = audio_path
+        # MIDIファイル用のダミー/合成WAV（再生用）を生成
+        try:
+            # 5秒以上の無音/サイン波ダミーWAVを生成 (ブラウザ同期再生用)
+            import soundfile as sf
+            import numpy as np
+            sr = 22050
+            dummy_sig = np.zeros(sr * 3, dtype=np.float32)
+            sf.write(str(wav_path), dummy_sig, sr)
+        except Exception:
+            pass
+    elif audio_path.suffix.lower() != ".wav":
         try:
             subprocess.run(
                 [FFMPEG_PATH, "-y", "-i", str(audio_path), "-ar", "22050", "-ac", "1", str(wav_path)],
@@ -267,11 +282,12 @@ async def upload_audio(file: UploadFile = File(...),
             "session_dir": str(session_dir),
             "filename": file.filename,
             "wav_path": str(wav_path),
+            "midi_path": str(midi_path) if midi_path else None,
             "status": SessionStatus.PENDING,
             "progress": "アップロード完了",
             "error": None,
             "tuning": tuning if tuning in TUNINGS else "standard",
-            "skip_demucs": skip_demucs,
+            "skip_demucs": skip_demucs or is_midi_file,
             "fast_moe": fast_moe,
             "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
             "transcription_profile": transcription_profile if transcription_profile in ("standard", "classic", "arpeggio") else "standard",
@@ -482,6 +498,7 @@ def _run_pipeline_bg(session_id: str):
             enable_technique_gp5=session.get("enable_technique_gp5", True),
             enable_technique_overlay=session.get("enable_technique_overlay", False),
             enable_technique_fingers=session.get("enable_technique_fingers", False),
+            midi_path=Path(session["midi_path"]) if session.get("midi_path") else None,
         )
 
         session["status"] = SessionStatus.COMPLETED

@@ -314,12 +314,12 @@ export default function SoloTabApp() {
       setProgressMsg(`ファイルが大きすぎます (${(file.size / 1024 / 1024).toFixed(0)}MB)。200MB以下のファイルを使用してください。`);
       return;
     }
-    const isAudio = file.name.match(/\.(mp3|wav|m4a|flac)$/i);
+    const isAudio = file.name.match(/\.(mp3|wav|m4a|flac|mid|midi)$/i);
     if (!isAudio) {
       // Try reading as text for YouTube URL (shortcut files etc.)
       if (file.size > 256000) {
         setStatus(STATUS.FAILED);
-        setProgressMsg("サポートされていない形式です (MP3, WAV, M4A, FLAC)");
+        setProgressMsg("サポートされていない形式です (MP3, WAV, M4A, FLAC, MIDI)");
         return;
       }
       const reader = new FileReader();
@@ -327,7 +327,7 @@ export default function SoloTabApp() {
         const content = ev.target.result;
         const ytMatch = content.match(/(https?:\/\/(?:www\.|music\.|m\.)?youtube\.com\/watch\?v=[^\s"']+(?:&[^\s"']+)?)|(https?:\/\/youtu\.be\/[^\s?]+(?:\?[^\s"']+)?)|(https?:\/\/(?:www\.|music\.)?youtube\.com\/shorts\/[^\s"']+)/i);
         if (ytMatch) { handleYouTubeUpload(ytMatch[0].trim()); }
-        else { setStatus(STATUS.FAILED); setProgressMsg("サポートされていない形式です。音声ファイルまたはYouTubeリンクをドロップしてください。"); }
+        else { setStatus(STATUS.FAILED); setProgressMsg("サポートされていない形式です。音声ファイル、MIDI、またはYouTubeリンクをドロップしてください。"); }
       };
       reader.readAsText(file);
       return;
