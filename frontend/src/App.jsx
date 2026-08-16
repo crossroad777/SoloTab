@@ -6,7 +6,7 @@ import { TabView } from "./components/TabView";
 // ローカル → 環境変数 or localhost:8002
 // 外部トンネル → tunnel_urls.json から solotab_be を取得
 const _envUrl = import.meta.env.VITE_API_URL;
-let API_BASE = _envUrl !== undefined ? _envUrl : "http://localhost:8000";
+let API_BASE = _envUrl !== undefined ? _envUrl : "http://127.0.0.1:8000";
 let PORTAL_URL = "https://guitar-suite.vercel.app/portal";
 
 // tunnel_urls.json から接続先URLを非同期取得
