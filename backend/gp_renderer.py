@@ -245,13 +245,10 @@ def notes_to_gp5(notes: List[dict], *,
 
     all_note_entries = melody_entries + backing_entries
 
-    # Calculate total bars
-    total_bars = 1
-    if all_note_entries:
-        total_bars = max(int(e["bar"]) for e in all_note_entries) + 1
-    elif beats:
-        total_bars = max(1, len(beats) // beats_per_bar)
-    total_bars = max(total_bars, 1)
+    # Calculate total bars (ensure entire audio beats span is covered)
+    notes_bars = (max(int(e["bar"]) for e in all_note_entries) + 1) if all_note_entries else 1
+    beats_bars = ((len(beats) + beats_per_bar - 1) // beats_per_bar) if beats else 1
+    total_bars = max(notes_bars, beats_bars, 1)
 
     # --- Build GP5 Song ---
     song = gp.Song()
