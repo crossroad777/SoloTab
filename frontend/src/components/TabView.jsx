@@ -518,20 +518,30 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             }
 
             const map = [];
+            let lastStartMs = -1;
             for (let i = 0; i < tickEntries.length; i++) {
-                const startMs = useBeats
+                let startMs = useBeats
                     ? tickToRealMs(tickEntries[i].ticks)
                     : tickEntries[i].timeMs * linearScale + offsetMs;
-                const endMs = i + 1 < tickEntries.length
+
+                // 単調増加性の厳密保証（逆戻り・ワープを完全防止）
+                if (startMs <= lastStartMs) {
+                    startMs = lastStartMs + 1;
+                }
+                lastStartMs = startMs;
+
+                const nextRawMs = (i + 1 < tickEntries.length)
                     ? (useBeats
                         ? tickToRealMs(tickEntries[i + 1].ticks)
                         : tickEntries[i + 1].timeMs * linearScale + offsetMs)
-                    : startMs + 1000;
-                map.push({ startMs, endMs, vb: tickEntries[i].vb });
+                    : startMs + 600;
+
+                const endMs = Math.max(startMs + 50, nextRawMs);
+                map.push({ startMs, endMs, vb: tickEntries[i].vb, ticks: tickEntries[i].ticks });
             }
 
             beatMapRef.current = map;
-            console.log(`[TabView] BeatMap (${useBeats ? 'beats.json piecewise' : 'linear'}): ${map.length} entries, ` +
+            console.log(`[TabView] BeatMap (${useBeats ? 'beats.json piecewise' : 'linear'}): ${map.length} entries (strictly monotonic), ` +
                 `range: ${(map[0].startMs/1000).toFixed(2)}s → ${(map[map.length-1].startMs/1000).toFixed(2)}s`);
             return true;
         }

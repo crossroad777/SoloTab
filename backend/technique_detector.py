@@ -729,8 +729,9 @@ def _detect_percussive_techniques(
     tuning: list = None,
 ) -> List[dict]:
     """
-    ソロギター・フィンガースタイル向け高精度パーカッシブ・アタックミュート検出＆音符注入エンジン。
-    HPSS（Harmonic-Percussive Source Separation）により、第1小節からの全打弦音（カチャ音）を100%検出。
+    ソロギター向け高精度パーカッシブ・アタックミュート検出エンジン。
+    HPSSにより打弦音（カチャ音）を検出し、既存音符にアタックミュート(x)を付与。
+    単独打音は拍グリッドを破壊しないよう、近接音符のない独立した強打音のみをクリーンに注入。
     """
     try:
         import librosa
@@ -744,48 +745,47 @@ def _detect_percussive_techniques(
         onset_env = librosa.onset.onset_strength(y=percussive, sr=sr, aggregate=np.median)
         onset_frames = librosa.onset.onset_detect(
             onset_envelope=onset_env, sr=sr,
-            backtrack=True, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delta=0.04, wait=3
+            backtrack=True, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delta=0.06, wait=4
         )
         onset_times = librosa.frames_to_time(onset_frames, sr=sr)
 
-        print(f"[TechDet] Detected {len(onset_times)} percussive transient onsets across the song")
+        print(f"[TechDet] Detected {len(onset_times)} clean percussive transient onsets")
 
-        # 3. 既存ノートとの照合 & アタックミュート(x)付与
-        MATCH_WINDOW = 0.050  # 50ms
+        # 3. 既存ノートとの照合 & アタックミュート(x)付与（最優先）
+        MATCH_WINDOW = 0.045  # 45ms
         matched_onsets = set()
 
         for note in notes:
             t = float(note.get("start", note.get("start_time", 0.0)))
-            # 近接するパーカッシブオンセットを検索
             close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
             if close_onsets:
                 note["technique"] = "x"
                 for o in close_onsets:
-                    matched_onsets.add(round(float(o), 3))
+                    matched_onsets.add(round(float(o), 2))
 
-        # 4. 単独の「カチャッ」打音（音符のない場所で叩かれたアタックミュート）を新規音符として注入
+        # 4. 音符の全くない隙間で鳴った単独の打音のみ、1つのクリーンなデッドノートとして注入
         new_injected = []
+        existing_starts = [float(n.get("start", 0)) for n in notes]
+
         for o_time in onset_times:
-            o_key = round(float(o_time), 3)
-            if o_key not in matched_onsets:
-                # 3弦・4弦・5弦の打弦（デッドノート）として音符を生成
-                t_val = float(o_time)
-                # 3弦(G) と 4弦(D) のパーカッシブ打音
-                for str_num, pitch_val in [(4, tuning[2]), (3, tuning[3])]:
-                    injected_note = {
-                        "start": t_val,
-                        "end": t_val + 0.06,
-                        "pitch": pitch_val,
-                        "string": str_num,
-                        "fret": 0,
-                        "velocity": 0.65,
-                        "technique": "x",
-                        "_injected_percussive": True
-                    }
-                    new_injected.append(injected_note)
+            o_val = float(o_time)
+            # 周囲 70ms に音符が全く存在しない場合のみ注入
+            if not any(abs(es - o_val) < 0.070 for es in existing_starts):
+                injected_note = {
+                    "start": o_val,
+                    "end": o_val + 0.05,
+                    "pitch": tuning[2],  # 4弦開放 (D音デッドノート)
+                    "string": 4,
+                    "fret": 0,
+                    "velocity": 0.60,
+                    "technique": "x",
+                    "_injected_percussive": True
+                }
+                new_injected.append(injected_note)
+                existing_starts.append(o_val)
 
         if new_injected:
-            print(f"[TechDet] Injected {len(new_injected)} standalone attack mute notes (from Bar 1)")
+            print(f"[TechDet] Injected {len(new_injected)} standalone clean attack mute notes")
             notes.extend(new_injected)
             notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
 
