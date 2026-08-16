@@ -1,0 +1,307 @@
+{
+  "technique_metrics": {
+    "dead_note": {
+      "GT_count": 778,
+      "Pred_count": 218,
+      "TP": 218,
+      "FP": 0,
+      "FN": 560,
+      "Recall": 0.2802,
+      "Precision": 1.0
+    },
+    "tap": {
+      "GT_count": 0,
+      "Pred_count": 0,
+      "TP": 0,
+      "FP": 0,
+      "FN": 0,
+      "Recall": 1.0,
+      "Precision": 1.0
+    },
+    "harmonic": {
+      "GT_count": 68,
+      "Pred_count": 67,
+      "TP": 41,
+      "FP": 26,
+      "FN": 27,
+      "Recall": 0.6029,
+      "Precision": 0.6119
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "bebebe",
+      "cgcgcg",
+      "daddad",
+      "dadf#ad",
+      "drop_b",
+      "drop_c",
+      "drop_d",
+      "full_down",
+      "half_down",
+      "nashville",
+      "open_am",
+      "other",
+      "standard"
+    ],
+    "matrix": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        2
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        2,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        9,
+        1,
+        0,
+        22
+      ]
+    ]
+  },
+  "misclassified_top10": [
+    {
+      "filename": "002-b-song.gp5",
+      "GT_tuning": "other",
+      "Pred_tuning": "bebebe",
+      "reason": "未登録の特殊変則チューニング"
+    },
+    {
+      "filename": "02.gp5",
+      "GT_tuning": "other",
+      "Pred_tuning": "drop_b",
+      "reason": "未登録の特殊変則チューニング"
+    },
+    {
+      "filename": "1-step-kloser.gp5",
+      "GT_tuning": "drop_d",
+      "Pred_tuning": "daddad",
+      "reason": "最低音半音近傍による類似チューニングへの誤スナップ"
+    },
+    {
+      "filename": "12-24-ballerina.gp5",
+      "GT_tuning": "other",
+      "Pred_tuning": "nashville",
+      "reason": "未登録の特殊変則チューニング"
+    },
+    {
+      "filename": "12-donkeys.gp5",
+      "GT_tuning": "full_down",
+      "Pred_tuning": "nashville",
+      "reason": "6弦開放音（最低音）の演奏イベント欠落"
+    },
+    {
+      "filename": "13.gp5",
+      "GT_tuning": "drop_c",
+      "Pred_tuning": "cgcgcg",
+      "reason": "最低音半音近傍による類似チューニングへの誤スナップ"
+    },
+    {
+      "filename": "16-dollars-2.gp5",
+      "GT_tuning": "full_down",
+      "Pred_tuning": "dadf#ad",
+      "reason": "最低音半音近傍による類似チューニングへの誤スナップ"
+    },
+    {
+      "filename": "16-dollars.gp5",
+      "GT_tuning": "full_down",
+      "Pred_tuning": "standard",
+      "reason": "最低音半音近傍による類似チューニングへの誤スナップ"
+    },
+    {
+      "filename": "1er-episodio.gp5",
+      "GT_tuning": "half_down",
+      "Pred_tuning": "standard",
+      "reason": "最低音半音近傍による類似チューニングへの誤スナップ"
+    },
+    {
+      "filename": "3-notes-per-string-alternate-picking.gp5",
+      "GT_tuning": "standard",
+      "Pred_tuning": "nashville",
+      "reason": "6弦開放音（最低音）の演奏イベント欠落"
+    }
+  ]
+}
