@@ -367,6 +367,10 @@ def run_step4_regression_guards():
     # 2. ミニベンチマーク F1 の確認
     f1_score = 0.8414  # デフォルト基準値
             
+    # 3. 本番パイプライン実楽曲E2Eゲート (TASK-928/TASK-929)
+    from benchmark.test_real_world_sakura import run_real_world_e2e_test
+    e2e_pass = run_real_world_e2e_test()
+    
     guard_results = {
         "romance_gp5": {
             "file": romance_path,
@@ -379,6 +383,11 @@ def run_step4_regression_guards():
             "f1_score": f1_score,
             "target": "0.8414 ±0.002",
             "status": "PASS"
+        },
+        "real_world_sakura_e2e": {
+            "test": "test_real_world_sakura.py",
+            "scope": "production pipeline (audio -> beats -> chords -> tuning -> gp5)",
+            "status": "PASS" if e2e_pass else "FAIL"
         }
     }
     

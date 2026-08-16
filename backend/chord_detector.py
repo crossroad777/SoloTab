@@ -367,10 +367,23 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
         confidence = c.get('confidence', 0.8)
         
         # 1. この区間で発音している音符（notes）を収集
-        segment_notes = [
+        raw_segment_notes = [
             n for n in notes
-            if start <= n['start'] < end or (n['start'] < start and n.get('end', n['start'] + 0.5) > start + 0.1)
+            if start <= float(n.get('start', n.get('start_time', 0))) < end or 
+               (float(n.get('start', n.get('start_time', 0))) < start and float(n.get('end', float(n.get('start', n.get('start_time', 0))) + 0.5)) > start + 0.1)
         ]
+        
+        # ピックアップ音の分離: セグメント開始から長時間(>=2.5s)無音が続き、末尾1.0s以内にのみ1音だけある場合はピックアップとみなし除外
+        segment_notes = []
+        if len(raw_segment_notes) == 1 and (end - start) >= 2.5:
+            n_start = float(raw_segment_notes[0].get('start', raw_segment_notes[0].get('start_time', 0)))
+            if (end - n_start) <= 1.2:
+                # ピックアップ音として現在のセグメントから除外
+                segment_notes = []
+            else:
+                segment_notes = raw_segment_notes
+        else:
+            segment_notes = raw_segment_notes
         
         if not segment_notes:
             c_nc = dict(c)
@@ -379,6 +392,19 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
             refined_chords.append(c_nc)
             continue
             
+        # N.C.の権威: 前段がN.C.の場合、以下の全条件を満たさない限りコードを「創造」してはならない
+        dur_sec = max(0.5, end - start)
+        total_vel = sum(float(n.get('velocity', 0.5)) for n in segment_notes)
+        note_density = len(segment_notes) / dur_sec
+        
+        if audio_chord == 'N.C.':
+            if len(segment_notes) < 3 or note_density < 1.0 or total_vel < 1.5:
+                c_nc = dict(c)
+                c_nc['chord'] = 'N.C.'
+                c_nc['confidence'] = 0.0
+                refined_chords.append(c_nc)
+                continue
+            
         # ピッチクラスごとの重み付け（velocityと長さを考慮）
         pc_weights = np.zeros(12)
         lowest_pitch = 999
@@ -386,10 +412,10 @@ def refine_chords_with_notes(chords: List[Dict], notes: List[Dict], key: str) ->
         highest_pitch = -1
         
         for n in segment_notes:
-            pitch = n.get('pitch', 60)
+            pitch = int(n.get('pitch', 60))
             pc = pitch % 12
             vel = float(n.get('velocity', 0.5))
-            dur = float(n.get('end', n['start'] + 0.5)) - float(n['start'])
+            dur = float(n.get('end', float(n.get('start', n.get('start_time', 0))) + 0.5)) - float(n.get('start', n.get('start_time', 0)))
             weight = vel * max(0.1, dur)
             pc_weights[pc] += weight
             
