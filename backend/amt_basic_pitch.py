@@ -31,25 +31,15 @@ except Exception as e:
 
 def transcribe_audio_to_notes(
     audio_path: Union[str, Path],
-    onset_threshold: float = 0.5,
-    frame_threshold: float = 0.3,
-    minimum_note_length: float = 58.0,  # ms
-    min_freq: Optional[float] = None,    # ギター低音域 (E2 = 82.4Hz, Drop D = 73.4Hz, Drop C = 65.4Hz)
+    onset_threshold: float = 0.65,       # ノイズ過剰検出防止のため0.50->0.65へ引き上げ
+    frame_threshold: float = 0.45,       # 持続フレーム閾値を0.30->0.45へ引き上げ
+    minimum_note_length: float = 70.0,   # 58.0ms -> 70.0ms (極小ゴーストノート除去)
+    min_freq: Optional[float] = None,    # ギター低音域 (E2 = 82.4Hz, Drop D = 73.4Hz)
     max_freq: Optional[float] = None,    # ギター高音域 (E6 = 1318.5Hz)
+    apply_theory_clean: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     Spotify Basic-Pitch を用いて音声からノートイベントリストを抽出。
-    
-    Returns:
-        List of dicts: [
-            {
-                "start": float (seconds),
-                "end": float (seconds),
-                "pitch": int (MIDI pitch 0-127),
-                "velocity": float (0.0-1.0),
-                "confidence": float (0.0-1.0),
-            }, ...
-        ]
     """
     if not BASIC_PITCH_AVAILABLE:
         raise RuntimeError(f"Basic-Pitch is not available: {_import_err}")
@@ -57,7 +47,6 @@ def transcribe_audio_to_notes(
     audio_path = str(audio_path)
     t0 = time.time()
     
-    # ギター向けの周波数範囲デフォルト設定 (Dropチューニング対応: 60Hz〜1500Hz)
     if min_freq is None:
         min_freq = 60.0
     if max_freq is None:
@@ -74,10 +63,10 @@ def transcribe_audio_to_notes(
     )
 
     notes = []
-    # note_events: List of (start_time_s, end_time_s, pitch_midi, amplitude, list_of_pitch_bends)
     for ev in note_events:
         start_time, end_time, pitch, amplitude = ev[0], ev[1], int(round(ev[2])), float(ev[3])
-        if end_time <= start_time:
+        dur = end_time - start_time
+        if dur <= 0.05 or amplitude < 0.25:  # 微小エネルギーゴーストノート除去
             continue
         notes.append({
             "start": float(start_time),
@@ -90,6 +79,15 @@ def transcribe_audio_to_notes(
 
     # 時間順にソート
     notes.sort(key=lambda n: (n["start"], n["pitch"]))
+    
+    # 音楽理論・倍音フィルタ (E2: ハーモニクス重複 / E3: ゴーストノイズ抹殺)
+    if apply_theory_clean and notes:
+        try:
+            from heuristic_pitch_correction import heuristic_pitch_correction
+            notes, _ = heuristic_pitch_correction(notes, genre="unknown")
+        except Exception:
+            pass
+
     elapsed = time.time() - t0
     print(f"[Basic-Pitch AMT] Transcribed {len(notes)} notes in {elapsed:.2f}s (Cost: $0.00, Engine: Local Apache-2.0)")
     
