@@ -1329,12 +1329,13 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         boundsReadyRef.current = ok;
                         if (ok) {
                             console.log("[TabView] BeatMap ready");
-                            // テクニックオーバーレイ: localStorageのトグルで制御
+                            // テクニックオーバーレイ: デフォルトで常時表示（アタックミュート ×, H, P, S）
                             try {
-                                const overlayEnabled = localStorage.getItem('solotab-tech-overlay') === 'true';
+                                const overlaySetting = localStorage.getItem('solotab-tech-overlay');
+                                const overlayEnabled = overlaySetting !== 'false';
                                 if (overlayEnabled) {
                                     buildTechniqueOverlay(api);
-                                    console.log("[TabView] Technique overlay enabled");
+                                    console.log("[TabView] Technique overlay enabled (showing attack mutes and articulations)");
                                 }
                             } catch (e) { console.warn("[TabView] Overlay check:", e); }
                             // コードオーバーレイ: 常に表示
