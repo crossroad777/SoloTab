@@ -1,0 +1,27 @@
+{
+  "task": "TASK-908 Step 3: ホールドアウト交叉検証 (Transformer V3)",
+  "sample_size_instances": 1000,
+  "elapsed_seconds": 0.36,
+  "string_match_accuracy": {
+    "mean": 0.971,
+    "percentage": 97.1
+  },
+  "exact_string_and_fret_accuracy": {
+    "mean": 0.971,
+    "percentage": 97.1
+  },
+  "average_fret_deviation": 0.14,
+  "song_level_accuracy_distribution": {
+    "mean": 0.971,
+    "median": 0.96,
+    "std": 0.0322,
+    "percentiles": {
+      "P10": 0.92,
+      "P50": 0.96,
+      "P90": 1.0,
+      "P95_worst_case": 0.92,
+      "P99": 0.8956
+    }
+  },
+  "mean_model_confidence": 0.9831
+}

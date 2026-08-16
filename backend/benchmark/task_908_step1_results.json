@@ -1,0 +1,49 @@
+{
+  "task": "TASK-908 Step 1: 大規模エルゴノミクス A/B テスト (N=1000)",
+  "sample_size": 1000,
+  "valid_songs_evaluated": 1000,
+  "elapsed_seconds": 213.87,
+  "movement_difference_optimized_minus_original": {
+    "mean": -31.31,
+    "std": 91.1,
+    "median": -30.0,
+    "percentiles": {
+      "P10": -124.0,
+      "P50": -30.0,
+      "P90": 42.0,
+      "P95_worst_case": 82.15,
+      "P99": 284.08
+    },
+    "classification": {
+      "improved_ratio_pct": 69.5,
+      "improved_count": 695,
+      "worsened_ratio_pct": 28.1,
+      "worsened_count": 281,
+      "unchanged_ratio_pct": 2.4,
+      "unchanged_count": 24
+    }
+  },
+  "excessive_jumps_difference_optimized_minus_original": {
+    "mean": -5.52,
+    "std": 12.9,
+    "median": -3.0,
+    "percentiles": {
+      "P10": -20.0,
+      "P50": -3.0,
+      "P90": 5.1,
+      "P95_worst_case": 10.05,
+      "P99": 27.02
+    },
+    "classification": {
+      "decreased_jumps_pct": 63.0,
+      "increased_jumps_pct": 24.1,
+      "unchanged_jumps_pct": 12.9
+    }
+  },
+  "overall_string_fret_match_rate_with_original": {
+    "mean": 0.3061,
+    "median": 0.28,
+    "P10": 0.0393,
+    "P90": 0.5867
+  }
+}

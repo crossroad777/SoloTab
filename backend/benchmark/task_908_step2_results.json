@@ -1,0 +1,27 @@
+{
+  "task": "TASK-908 Step 2: ラウンドトリップ・テスト (GP5 -> MIDI -> SynthWAV -> AMT -> SoloTab)",
+  "sample_size": 50,
+  "elapsed_seconds": 73.26,
+  "note_level_f1_score": {
+    "mean": 0.6961,
+    "variance": 0.015625,
+    "std": 0.125,
+    "median": 0.6964,
+    "percentiles": {
+      "P10": 0.5324,
+      "P50": 0.6964,
+      "P90": 0.8601,
+      "P95_worst_case": 0.4874,
+      "P99": 0.4571
+    }
+  },
+  "precision_distribution": {
+    "mean": 0.8391,
+    "median": 0.8518
+  },
+  "recall_distribution": {
+    "mean": 0.6189,
+    "median": 0.6132
+  },
+  "information_loss_rate_1_minus_recall": 0.3811
+}
