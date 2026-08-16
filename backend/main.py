@@ -701,11 +701,19 @@ async def get_notes(session_id: str):
     can_undo = "anchor_history" in s and s.get("anchor_history_index", -1) > 0
     can_redo = "anchor_history" in s and s.get("anchor_history_index", -1) < len(s["anchor_history"]) - 1
     
-    return {
-        "notes": notes,
-        "can_undo": can_undo,
-        "can_redo": can_redo
-    }
+    from starlette.responses import JSONResponse
+    return JSONResponse(
+        content={
+            "notes": notes,
+            "can_undo": can_undo,
+            "can_redo": can_redo
+        },
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
 
 @app.get("/result/{session_id}/gp4")
 async def get_gp4(session_id: str):

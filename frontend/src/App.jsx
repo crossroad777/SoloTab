@@ -1635,6 +1635,7 @@ export default function SoloTabApp() {
             <div className="tab-container" style={{ paddingBottom: 0 }}>
               <TabView
                 key={retuneKey}
+                reloadKey={retuneKey}
                 sessionId={session.id}
                 apiBase={API_BASE}
                 currentTime={currentTime}
