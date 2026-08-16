@@ -757,26 +757,28 @@ def _filter_noise(notes, gate):
                 j += 1
             else:
                 break
-        # 2ノート以上同時発音 → 全て保護
+        # 2ノート以上同時発音（コード/和音）→ 音楽の骨格のため無条件保護
         if len(group) >= 2:
             for idx, _ in group:
                 protected_indices.add(idx)
         i = j
 
-    # 絶対値（しきい値）ベースのカット値算出
-    # gate: 0.0 〜 0.80 -> threshold: 0.40 〜 0.80
-    threshold = 0.40 + gate * 0.50
+    # 単音（ノイズ候補）のインデックス
+    single_indices = [idx for idx in range(len(notes)) if idx not in protected_indices]
+    if not single_indices:
+        return notes.copy()
+
+    single_vels = [float(notes[idx].get("velocity", 0.5)) for idx in single_indices]
+    
+    # 動的パーセンタイルカット:
+    # ユーザーがスライダーで指定した gate (0.0〜0.80) に応じて、単音の velocity 下位 rank を足切り
+    cut_rank = int(len(single_vels) * min(float(gate), 0.85))
+    sorted_vels = sorted(single_vels)
+    cutoff_vel = sorted_vels[cut_rank] if cut_rank < len(sorted_vels) else max(single_vels)
 
     cut_indices = set()
-    for idx, n in enumerate(notes):
-        # 高確信度(velocity >= 0.85)のノートは保護
-        if float(n.get("velocity", 0.5)) >= 0.85:
-            continue
-        # 同時発音ノートも保護
-        if idx in protected_indices:
-            continue
-        # しきい値未満ならカット対象
-        if float(n.get("velocity", 0.5)) < threshold:
+    for idx in single_indices:
+        if float(notes[idx].get("velocity", 0.5)) < cutoff_vel:
             cut_indices.add(idx)
 
     # 万が一すべてのノートがカットされてしまった場合のセーフティ

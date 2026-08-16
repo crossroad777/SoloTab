@@ -499,6 +499,7 @@ def _run_pipeline_bg(session_id: str):
             enable_technique_gp5=session.get("enable_technique_gp5", True),
             enable_technique_overlay=session.get("enable_technique_overlay", False),
             enable_technique_fingers=session.get("enable_technique_fingers", False),
+            noise_gate=session.get("noise_gate"),
             midi_path=Path(session["midi_path"]) if session.get("midi_path") else None,
         )
 
@@ -1007,7 +1008,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
         title = title_clean
     except (UnicodeEncodeError, UnicodeDecodeError):
         title = _re.sub(r'[^\x20-\x7E]', '', title_clean).strip() or session_id
-    gate = noise_gate if noise_gate is not None else 0.20
+    gate = float(noise_gate) if noise_gate is not None else float(s.get("noise_gate", 0.0))
 
     # --- GP5再生成 ---
     final_note_entries = None
@@ -1112,7 +1113,7 @@ async def cut_noise(session_id: str, request: CutRequest):
 class RetuneRequest(BaseModel):
     tuning: str
     capo: Optional[int] = 0
-    noise_gate: Optional[float] = 0.0  # デフォルト0（CUTなし）
+    noise_gate: Optional[float] = None  # None = 変更なし(現在のセッション値を維持)
 
 
 @app.post("/result/{session_id}/retune")
@@ -1307,7 +1308,7 @@ async def retune(session_id: str, request: RetuneRequest):
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
     # Re-generate MusicXML and GP5 with explicit noise_gate (supporting 0.0)
-    effective_gate = request.noise_gate if request.noise_gate is not None else s.get("noise_gate", 0.15)
+    effective_gate = float(request.noise_gate) if request.noise_gate is not None else float(s.get("noise_gate", 0.0))
     _regenerate_musicxml(session_id, notes, tuning=capo_tuning, noise_gate=effective_gate)
 
     # techniques.jsonはカポ/チューニングに依存しない → オリジナルを保持

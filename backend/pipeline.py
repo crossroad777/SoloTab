@@ -164,6 +164,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                  enable_technique_gp5: bool = False,
                  enable_technique_overlay: bool = False,
                  enable_technique_fingers: bool = False,
+                 noise_gate: Optional[float] = None,
                  midi_path: Optional[Path] = None):
     def report(step: str, msg: str):
         if progress_cb:
@@ -795,8 +796,14 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- 音楽理論に基づくフィルタリング (MVS) (論文§6準拠: アルペジオ・微細ノート保護のためスキップ) ---
     report("assign", f"論文§6クリーンパス: 運指前のMVSフィルタを完全バイパス ({len(notes)} notesを維持)")
 
-    # 論文§6準拠: ソロギター・クラシック時は Noise Gate を完全開放 (0.0) し、弱音・繊細なタッチを100%保護
-    recommended_cut = 0.0 if (is_solo_guitar or is_classic_profile) else 0.15
+    # ユーザー指定の noise_gate があればそれを絶対的 SSOT として最優先採用
+    # 指定がない場合のみ、プロファイルに応じたデフォルト値（ソロ・クラシックは 0.0、他は 0.15）を適用
+    if noise_gate is not None:
+        recommended_cut = float(noise_gate)
+        report("assign", f"ユーザー指定 Noise Gate 適用 (絶対的SSOT): {recommended_cut:.2f}")
+    else:
+        recommended_cut = 0.0 if (is_solo_guitar or is_classic_profile) else 0.15
+        report("assign", f"プロファイル自動 Noise Gate 適用: {recommended_cut:.2f}")
 
     try:
         from string_assigner import assign_strings_dp  # type: ignore
