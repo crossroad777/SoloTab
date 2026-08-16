@@ -34,6 +34,7 @@ import uuid
 import subprocess
 import datetime as dt
 import time
+import copy
 from typing import Optional, List
 from pathlib import Path
 from enum import Enum
@@ -286,7 +287,7 @@ async def upload_audio(file: UploadFile = File(...),
             "status": SessionStatus.PENDING,
             "progress": "アップロード完了",
             "error": None,
-            "tuning": tuning if tuning in TUNINGS else "standard",
+            "tuning": tuning if (tuning in TUNINGS or tuning == "auto") else "standard",
             "skip_demucs": skip_demucs or is_midi_file,
             "fast_moe": fast_moe,
             "guitar_type": guitar_type if guitar_type in ("auto", "steel", "nylon") else "auto",
@@ -1244,7 +1245,7 @@ async def retune(session_id: str, request: RetuneRequest):
                 print(f"[retune] 共鳴音フィルタ: {sympa_removed}ノート修正/除去")
 
 
-    # Re-run string assignment (with chords and guitar_type to preserve fingering engine logic)
+    # Re-run string assignment (with chords, guitar_type, and user anchors to preserve edits)
     from string_assigner import assign_strings_dp
     chords = []
     chords_path = session_dir / "chords.json"
@@ -1257,16 +1258,29 @@ async def retune(session_id: str, request: RetuneRequest):
     guitar_type = s.get("guitar_type", "auto")
     key = s.get("key")
 
+    forced_positions = {}
+    for k, v in s.get("anchors", {}).items():
+        parts = k.split("_")
+        if len(parts) == 2:
+            try:
+                p_val = int(parts[0])
+                s_val = float(parts[1])
+                if "string" in v and "fret" in v:
+                    forced_positions[(p_val, s_val)] = (v["string"], v["fret"])
+            except ValueError:
+                pass
+
     notes = assign_strings_dp(
         notes,
         tuning=capo_tuning,
         chords=chords,
         guitar_type=guitar_type,
         key=key,
+        forced_positions=forced_positions if forced_positions else None,
     )
 
-    # フレットクランプ: パイプラインと同等の上限制約 (MAX_FRETを12から14に緩和)
-    MAX_FRET = 14
+    # フレットクランプ: ソロギターの高音域（15f-19f）を保護 (14->19)
+    MAX_FRET = 19
     for n in notes:
         if n.get("fret", 0) > MAX_FRET:
             pitch = n.get("pitch", 60)
@@ -1292,8 +1306,9 @@ async def retune(session_id: str, request: RetuneRequest):
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(notes, f, ensure_ascii=False, indent=2)
 
-    # Re-generate MusicXML
-    _regenerate_musicxml(session_id, notes, tuning=capo_tuning, noise_gate=request.noise_gate)
+    # Re-generate MusicXML and GP5 with explicit noise_gate (supporting 0.0)
+    effective_gate = request.noise_gate if request.noise_gate is not None else s.get("noise_gate", 0.15)
+    _regenerate_musicxml(session_id, notes, tuning=capo_tuning, noise_gate=effective_gate)
 
     # techniques.jsonはカポ/チューニングに依存しない → オリジナルを保持
     tech_original = session_dir / "techniques_original.json"
@@ -1306,12 +1321,10 @@ async def retune(session_id: str, request: RetuneRequest):
     # Update session
     s["tuning"] = tuning_name
     s["capo"] = capo
-    gate = request.noise_gate if request.noise_gate is not None else 0.20
     from gp_renderer import _filter_noise
-    filtered_count = len(_filter_noise(notes, gate))
+    filtered_count = len(_filter_noise(notes, effective_gate))
     s["total_notes"] = filtered_count
-    if request.noise_gate is not None:
-        s["noise_gate"] = request.noise_gate
+    s["noise_gate"] = effective_gate
     save_session(session_id)
 
     return {"status": "ok", "tuning": tuning_name, "capo": capo, "total_notes": filtered_count}
@@ -1789,13 +1802,12 @@ async def get_techniques(session_id: str):
 @app.get("/result/{session_id}/beats")
 async def get_beats(session_id: str):
     """ビートデータを返す（カーソル同期用）"""
-    if session_id not in sessions:
+    session_dir = Path(sessions[session_id]["session_dir"]) if session_id in sessions else (UPLOAD_DIR / session_id)
+    if not session_dir.exists():
         raise HTTPException(status_code=404, detail="Session not found")
-    s = sessions[session_id]
-    session_dir = Path(s["session_dir"])
     beats_path = session_dir / "beats.json"
     if not beats_path.exists():
-        return {"beats": [], "bpm": 120}
+        raise HTTPException(status_code=404, detail="Beats data not found")
     with open(beats_path, "r", encoding="utf-8") as f:
         return json.load(f)
 

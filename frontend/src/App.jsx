@@ -590,9 +590,11 @@ export default function SoloTabApp() {
   ];
   const TUNING_OPTIONS = TUNING_GROUPS.flatMap(g => g.options);
 
+  const retuneSeqRef = useRef(0);
+
   const handleRetune = async (newTuning, newCapo, newNoiseGate) => {
-    if (!session?.id || retuning) return;
-    // Always fallback to current session values — never send null/undefined to backend
+    if (!session?.id) return;
+    const currentSeq = ++retuneSeqRef.current;
     const tuningToUse = newTuning || session.tuning || "standard";
     const capoToUse = (newCapo !== undefined && newCapo !== null) ? newCapo : capo;
     const gateToUse = (newNoiseGate !== undefined && newNoiseGate !== null) ? newNoiseGate : noiseGate;
@@ -603,23 +605,24 @@ export default function SoloTabApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tuning: tuningToUse, capo: capoToUse, noise_gate: gateToUse }),
       });
+      if (currentSeq !== retuneSeqRef.current) return; // 古い非同期リクエストを破棄
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.detail || `Retune failed (${res.status})`);
       }
       const data = await res.json();
+      if (currentSeq !== retuneSeqRef.current) return;
       console.log('[handleRetune] Backend response:', data);
-      // Sync all state with backend — capo, noiseGate, tuning, totalNotes, badge
       setCapo(capoToUse);
       setNoiseGate(gateToUse);
       setSession(prev => ({
         ...prev,
         tuning: tuningToUse,
         totalNotes: data.total_notes,
-        detectedCapo: capoToUse,  // update badge display
+        detectedCapo: capoToUse,
       }));
-      // Wait for backend to flush GP5 file to disk before re-fetching
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 400));
+      if (currentSeq !== retuneSeqRef.current) return;
       setRetuneKey(k => k + 1);
       if (newCapo !== undefined && newCapo !== null) {
         _showToast(capoToUse > 0 ? `カポ ${capoToUse} に変更しました` : 'カポを外しました');
@@ -629,10 +632,14 @@ export default function SoloTabApp() {
         _showToast(`チューニングを${TUNING_OPTIONS.find(t => t.value === tuningToUse)?.label || tuningToUse}に変更しました`);
       }
     } catch (err) {
-      console.error('[handleRetune] failed:', err);
-      _showToast(`変更に失敗: ${err.message}`);
+      if (currentSeq === retuneSeqRef.current) {
+        console.error('[handleRetune] failed:', err);
+        _showToast(`変更に失敗: ${err.message}`);
+      }
     } finally {
-      setRetuning(false);
+      if (currentSeq === retuneSeqRef.current) {
+        setRetuning(false);
+      }
     }
   };
 

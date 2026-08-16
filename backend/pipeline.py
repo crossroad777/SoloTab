@@ -870,20 +870,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"運指最適化スキップ（元出力をそのまま使用）: {e}")
         report("assign", f"[TRACEBACK] {traceback.format_exc()}")
 
-    # --- Step: LSTM運指リファインメント ---
-    # 無効化: Viterbi DPのみの方がfret 12偏重が発生せず
-    # TAB表示が正常になることを確認済み (2026-05-11)
-    # 再有効化する場合はLSTMの学習データを見直す必要あり
-    # try:
-    #     from fingering_model import predict_strings as lstm_predict_strings
-    #     report("assign", "LSTM運指リファインメント中...")
-    #     t0_lstm = time.time()
-    #     notes = lstm_predict_strings(notes, tuning=dp_tuning)
-    #     report("assign", f"LSTM運指リファインメント完了 ({time.time()-t0_lstm:.1f}s)")
-    # except Exception as e:
-    #     report("assign", f"LSTMリファインメントスキップ: {e}")
-
-    MAX_FRET = 14  # 修正: 19→14 (ソロギターの実用上限)
+    MAX_FRET = 19  # ソロギターの高音域（15f-19f）を保護 (14->19)
     clamp_count = 0
     remove_high = []
     for idx, n in enumerate(notes):
@@ -1090,11 +1077,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("assign", f"ノート重複除去: {dedup_count}ノート統合")
 
     # --- 後処理1.5: 共鳴音(sympathetic resonance)フィルタ ---
-    # ギターの開放弦(E2=40,A2=45,D3=50,G3=55,B3=59,E4=64)は
-    # 他の弦を弾いた時に共鳴で鳴ることがある。
-    # 特にG3(55)は3弦開放で、アルペジオ中に誤検出されやすい。
+    # ギターの開放弦は他の弦を弾いた時に共鳴で鳴ることがある。
     # 判定基準: 開放弦pitchのノートが、前後のノートより有意にvelocityが低い場合は共鳴音。
-    OPEN_PITCHES = {40, 45, 50, 55, 59, 64}  # standard tuning open strings
+    OPEN_PITCHES = set(tuning)  # 有効チューニングの開放弦ピッチ群を動的に導出
     SYMPA_VEL_RATIO = 0.45  # 緩和: 0.6→0.45 (正当な開放弦音を保護)
     SYMPA_WINDOW = 0.3      # 前後0.3秒のノートを参照
     sympa_removed = 0

@@ -1289,9 +1289,17 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 // Note click is now handled via coordinate-based matching inside handleWrapperClick to ensure reliability.;
 
+                let renderTimeoutTimer = setTimeout(() => {
+                    if (!destroyed && !boundsReadyRef.current) {
+                        console.warn("[TabView] Render timeout (3s) reached. Resetting loading state.");
+                        setLoading(false);
+                    }
+                }, 3000);
+
                 api.renderStarted.on(() => setLoading(true));
                 api.postRenderFinished.on(() => {
                     if (destroyed) return;
+                    if (renderTimeoutTimer) clearTimeout(renderTimeoutTimer);
                     setLoading(false);
 
 
@@ -1326,6 +1334,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 });
                 api.error.on((e) => {
                     console.error("[AlphaTab Error]", e);
+                    if (renderTimeoutTimer) clearTimeout(renderTimeoutTimer);
                     if (!destroyed) { setError("TAB表示エラー"); setLoading(false); }
                 });
 
