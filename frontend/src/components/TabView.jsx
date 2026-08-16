@@ -1174,9 +1174,18 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                 // ノートデータ + beatsデータを取得（カーソル同期用）
                 try {
                     const [notesRes, beatsRes, chordsRes] = await Promise.all([
-                        fetch(`${apiBase}/result/${sessionId}/notes`),
-                        fetch(`${apiBase}/files/${sessionId}/beats.json`),
-                        fetch(`${apiBase}/files/${sessionId}/chords.json`),
+                        fetch(`${apiBase}/result/${sessionId}/notes?${cacheBuster}`, {
+                            cache: 'no-store',
+                            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+                        }),
+                        fetch(`${apiBase}/files/${sessionId}/beats.json?${cacheBuster}`, {
+                            cache: 'no-store',
+                            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+                        }),
+                        fetch(`${apiBase}/files/${sessionId}/chords.json?${cacheBuster}`, {
+                            cache: 'no-store',
+                            headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+                        }),
                     ]);
                     if (notesRes.ok) {
                         const notesData = await notesRes.json();
