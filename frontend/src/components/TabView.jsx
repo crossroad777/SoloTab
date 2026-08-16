@@ -1334,15 +1334,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         boundsReadyRef.current = ok;
                         if (ok) {
                             console.log("[TabView] BeatMap ready");
-                            // テクニックオーバーレイ: デフォルトで常時表示（アタックミュート ×, H, P, S）
-                            try {
-                                const overlaySetting = localStorage.getItem('solotab-tech-overlay');
-                                const overlayEnabled = overlaySetting !== 'false';
-                                if (overlayEnabled) {
-                                    buildTechniqueOverlay(api);
-                                    console.log("[TabView] Technique overlay enabled (showing attack mutes and articulations)");
-                                }
-                            } catch (e) { console.warn("[TabView] Overlay check:", e); }
+                            // 独自テキストオーバーレイ（波線や文字バッジ）は完全撤廃し、市販出版譜の美しいネイティブ記譜に一本化
                             // コードはAlphaTabが五線譜最上部に美しく1回のみネイティブ描画（二重表示を防止）
                             try {
                                 buildAnchorOverlay(api);
