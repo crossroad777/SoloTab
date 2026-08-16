@@ -795,8 +795,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     # --- 音楽理論に基づくフィルタリング (MVS) (論文§6準拠: アルペジオ・微細ノート保護のためスキップ) ---
     report("assign", f"論文§6クリーンパス: 運指前のMVSフィルタを完全バイパス ({len(notes)} notesを維持)")
 
-    # レンダラーおよび保存用 recommended_cut は微小なアルペジオ音も保護する 0.05 に設定
-    recommended_cut = 0.05 if is_solo_guitar else 0.15
+    # 論文§6準拠: ソロギター・クラシック時は Noise Gate を完全開放 (0.0) し、弱音・繊細なタッチを100%保護
+    recommended_cut = 0.0 if (is_solo_guitar or is_classic_profile) else 0.15
 
     try:
         from string_assigner import assign_strings_dp  # type: ignore
@@ -849,35 +849,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     if clamp_count > 0:
         report("assign", f"フレットクランプ: {clamp_count}ノートを0-{MAX_FRET}に修正")
 
-    # --- Step: コンテキストジャンプフィルタ (TASK-900-E: AMT専用に隔離、MIDIバイパス時は無効化) ---
-    if not is_midi_bypass:
-        context_removed = []
-        if len(notes) > 2:
-            for idx in range(len(notes)):
-                curr_fret = notes[idx].get("fret", 0)
-                curr_t = notes[idx].get("start", 0)
-                if curr_fret <= 5:  # ローポジションは安全
-                    continue
-                # 前後3ノートのフレットを収集
-                neighbors = []
-                for offset in [-3, -2, -1, 1, 2, 3]:
-                    ni = idx + offset
-                    if 0 <= ni < len(notes):
-                        nt = notes[ni].get("start", 0)
-                        if abs(nt - curr_t) < 1.0:  # 1秒以内のノート
-                            f_val = notes[ni].get("fret", 0)
-                            if f_val > 0:  # 開放弦は周辺フレット平均の計算から除外する（ソロギターのハイポジ音を保護）
-                                neighbors.append(f_val)
-                if not neighbors:
-                    continue
-                avg_neighbor = sum(neighbors) / len(neighbors)
-                # 周辺ノートの平均から8フレット以上離れていたら除外
-                if abs(curr_fret - avg_neighbor) >= 8:
-                    context_removed.append(idx)
-            if context_removed:
-                notes = [n for i, n in enumerate(notes) if i not in context_removed]
-                report("assign", f"コンテキストジャンプフィルタ: {len(context_removed)}ノート除外 "
-                       f"(周辺ノートから8f+離れた異常値)")
+    # --- Step: コンテキストジャンプフィルタ (論文§6準拠: 開放弦とハイポジションの往来・タッピング保護のため完全バイパス) ---
+    print("[pipeline] 論文§6準拠: コンテキストジャンプフィルタを完全バイパス (ソロギターのハイポジション音を保護)", flush=True)
 
     # --- Step: 左手指番号割り当て (finger_assigner.py) ---
     try:
