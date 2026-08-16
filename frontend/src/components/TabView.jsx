@@ -661,15 +661,67 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     const buildChordOverlay = (api) => {
-        if (!wrapperRef.current) return;
-        const parent = wrapperRef.current.parentElement;
-        if (!parent) return;
+        // 既存のSVGコードテキストをクリア
+        document.querySelectorAll('.solotab-svg-chord').forEach(e => e.remove());
 
-        const old = parent.querySelector('.solotab-chords-overlay');
-        if (old) old.remove();
-        // AlphaTab ネイティブのコードネーム描画に一本化（重複・衝突・ズレを完全防止）
-        return;
+        const chords = chordsDataRef.current;
+        if (!chords || !chords.length) return;
+
+        const bl = api?.renderer?.boundsLookup;
+        const score = api?.score;
+        if (!bl || !score?.masterBars) return;
+
+        const scoreSvgs = Array.from(document.querySelectorAll('svg')).filter(
+            s => s.getBoundingClientRect().height > 150
+        );
+        if (!scoreSvgs.length) return;
+
+        const secondsPerBar = (60.0 / (score.tempo || 90.9)) * 4.0;
+        let lastChordName = null;
+
+        for (let barIdx = 0; barIdx < score.masterBars.length; barIdx++) {
+            const mb = score.masterBars[barIdx];
+            const mbBounds = bl.findMasterBar(mb);
+            if (!mbBounds?.visualBounds) continue;
+
+            const barStartT = barIdx * secondsPerBar;
+            const barEndT = (barIdx + 1) * secondsPerBar;
+
+            const barChords = chords.filter(c => (c.end ?? 0) > barStartT && (c.start ?? 0) < barEndT);
+            if (!barChords.length) continue;
+
+            const cName = strVal(barChords[0].chord || barChords[0].name);
+            if (!cName || cName === 'N' || cName === 'None') continue;
+
+            if (cName === lastChordName && barIdx > 0) continue;
+            lastChordName = cName;
+
+            const systemIdx = Math.floor(barIdx / 4);
+            const targetSvg = scoreSvgs[systemIdx];
+            if (!targetSvg) continue;
+
+            const chordX = mbBounds.visualBounds.x + 4;
+            // 1段目はタイトルがあるため Y=95、2段目以降は Y=38（空隙わずか4〜6px）
+            const chordY = systemIdx === 0 ? 95 : 38;
+
+            const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            textEl.setAttribute('class', 'solotab-svg-chord');
+            textEl.setAttribute('x', String(chordX));
+            textEl.setAttribute('y', String(chordY));
+            textEl.setAttribute('font-family', "'Times New Roman', Georgia, serif");
+            textEl.setAttribute('font-size', '14px');
+            textEl.setAttribute('font-weight', 'bold');
+            textEl.setAttribute('font-style', 'italic');
+            textEl.setAttribute('fill', '#111111');
+            textEl.textContent = cName;
+
+            targetSvg.appendChild(textEl);
+        }
     };
+
+    function strVal(v) {
+        return typeof v === 'string' ? v.trim() : (v ? String(v).trim() : '');
+    }
 
     const findBeat = (audioMs) => {
         const map = beatMapRef.current;
@@ -772,7 +824,7 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                             cache: 'no-store',
                             headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
                         }),
-                        fetch(`${apiBase}/files/${sessionId}/chords.json?${cacheBuster}`, {
+                        fetch(`${apiBase}/result/${sessionId}/chords?${cacheBuster}`, {
                             cache: 'no-store',
                             headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
                         }),
@@ -795,6 +847,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                         const chordsData = await chordsRes.json();
                         chordsDataRef.current = Array.isArray(chordsData) ? chordsData : [];
                         console.log(`[TabView] Loaded ${chordsDataRef.current.length} chords`);
+                        if (apiRef.current) {
+                            try { buildChordOverlay(apiRef.current); } catch { /* ignore */ }
+                        }
                     }
                 } catch { /* ignore */ }
 
@@ -933,22 +988,32 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
                     if (renderTimeoutTimer) clearTimeout(renderTimeoutTimer);
                     setLoading(false);
 
+                    // コードネームを五線譜のすぐ頭上に極限まで縮めて描画
+                    try {
+                        buildChordOverlay(api);
+                    } catch (e) { console.warn("[TabView] Chord overlay:", e); }
+
+                    // レンダリング完了後に極限まで縮めたコードネームを確実に描画
+                    setTimeout(() => {
+                        if (!destroyed) {
+                            try { buildChordOverlay(api); } catch (e) { console.warn("[TabView] Chord overlay:", e); }
+                        }
+                    }, 150);
 
                     // Build BeatMap with retries
                     const tryBuild = (attempt) => {
-                        if (destroyed || boundsReadyRef.current) return;
-                        const ok = buildBeatMap(api);
-                        boundsReadyRef.current = ok;
-                        if (ok) {
-                            console.log("[TabView] BeatMap ready");
-                            try {
-                                buildChordOverlay(api);
-                            } catch (e) { console.warn("[TabView] Chord overlay:", e); }
-                            try {
-                                buildAnchorOverlay(api);
-                            } catch (e) { console.warn("[TabView] Anchor overlay:", e); }
-                        } else if (attempt < 4) {
-                            setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
+                        if (destroyed) return;
+                        if (!boundsReadyRef.current) {
+                            const ok = buildBeatMap(api);
+                            boundsReadyRef.current = ok;
+                            if (ok) {
+                                console.log("[TabView] BeatMap ready");
+                                try {
+                                    buildAnchorOverlay(api);
+                                } catch (e) { console.warn("[TabView] Anchor overlay:", e); }
+                            } else if (attempt < 4) {
+                                setTimeout(() => tryBuild(attempt + 1), [500, 1000, 2000, 3000][attempt]);
+                            }
                         }
                     };
                     tryBuild(0);

@@ -608,6 +608,28 @@ async def get_result(session_id: str):
     )
 
 
+@app.get("/result/{session_id}/chords")
+async def get_chords(session_id: str):
+    """セッションのコード解析結果（chords.json）を返す"""
+    if session_id in sessions:
+        session_dir = Path(sessions[session_id]["session_dir"])
+    else:
+        session_dir = UPLOAD_DIR / session_id
+        if not session_dir.exists():
+            session_dir = Path("uploads") / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    chords_file = session_dir / "chords.json"
+    if not chords_file.exists():
+        return JSONResponse(content=[])
+    try:
+        with open(chords_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse(content=data)
+    except Exception:
+        return JSONResponse(content=[])
+
+
 @app.get("/result/{session_id}/musicxml")
 async def get_musicxml(session_id: str):
     if session_id not in sessions:
