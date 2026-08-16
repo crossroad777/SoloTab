@@ -354,6 +354,17 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                             tech_el = ET.SubElement(notations, "technical")
                             ET.SubElement(tech_el, "string").text = str(string_num)
                             ET.SubElement(tech_el, "fret").text = str(fret_val)
+                            
+                            # 特殊奏法タグ (TASK-892)
+                            n_tech = str(entry.get("technique", "")).lower()
+                            if n_tech in ("x", "dead_note", "bh", "na"):
+                                ET.SubElement(tech_el, "dead-note")
+                                ET.SubElement(note_el, "notehead").text = "cross"
+                            elif n_tech in ("t", "tap", "th"):
+                                ET.SubElement(tech_el, "tap")
+                            elif n_tech in ("harmonic", "nh", "ah"):
+                                harm_el = ET.SubElement(tech_el, "harmonic")
+                                ET.SubElement(harm_el, "natural")
 
                         current_pos = min(bar_total, t_pos + dur)
 
@@ -393,6 +404,17 @@ def notes_to_tab_musicxml(notes: List[dict], *,
                     tech_el = ET.SubElement(notations, "technical")
                     ET.SubElement(tech_el, "string").text = str(b_entry.get("string", 6))
                     ET.SubElement(tech_el, "fret").text = str(b_entry.get("fret", 0))
+                    
+                    # 特殊奏法タグ (Voice 2)
+                    b_tech = str(b_entry.get("technique", "")).lower()
+                    if b_tech in ("x", "dead_note", "bh", "na"):
+                        ET.SubElement(tech_el, "dead-note")
+                        ET.SubElement(note_el, "notehead").text = "cross"
+                    elif b_tech in ("t", "tap", "th"):
+                        ET.SubElement(tech_el, "tap")
+                    elif b_tech in ("harmonic", "nh", "ah"):
+                        harm_el = ET.SubElement(tech_el, "harmonic")
+                        ET.SubElement(harm_el, "natural")
 
             # 1スタッフ構造: backup/forwardは不要
             # AlphaTab ScoreTabプロファイルが自動的にTAB段を生成する

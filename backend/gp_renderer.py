@@ -579,15 +579,15 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
             # ※ arm vibrato は後処理で設定
 
             # ── 5. ハーモニクス系 ─────────────────────────────────────
-            elif tech in ("harmonic", "n.h", "nh", "natural_harmonic"):
-                # ナチュラルハーモニクス (N.H): ◇ ヘッド表示
+            elif tech in ("harmonic", "n.h", "nh", "natural_harmonic", "ah", "artificial_harmonic"):
+                # ナチュラル/人工ハーモニクス (N.H): ◇ ヘッド表示
                 note.effect.harmonic = gp.NaturalHarmonic()
 
             elif tech in ("p_harmonic", "p.h", "ph", "pinch_harmonic"):
                 # ピッキングハーモニクス (P.H): 人工倍音
                 note.effect.harmonic = gp.PinchHarmonic()
 
-            elif tech in ("semi_harmonic", "tapped_harmonic"):
+            elif tech in ("semi_harmonic", "tapped_harmonic", "th"):
                 note.effect.harmonic = gp.TappedHarmonic()
 
             # ── 6. ミュート系 ─────────────────────────────────────────
@@ -595,9 +595,8 @@ def _build_voice_beats(groups, voice, bar_total_divs, is_triplet=False, force_le
                 # パームミュート (M): P.M.---ライン表示
                 note.effect.palmMute = True
 
-            elif tech in ("x", "dead_note", "mute", "brushing"):
-                # ブラッシング/デッドノート (×): × ヘッド表示
-                # NoteType.dead → AlphaTabがTAB上に×を描画
+            elif tech in ("x", "dead_note", "mute", "brushing", "bh", "na"):
+                # ブラッシング/デッドノート/ボディヒット/ネイルアタック (×): × ヘッド表示
                 note.type = gp.NoteType.dead
 
             # ── 7. その他 ─────────────────────────────────────────────

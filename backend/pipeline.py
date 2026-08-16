@@ -625,16 +625,23 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
         report("chords", f"コード検出スキップ: {e}")
 
 
-    # --- チューニング推定 ---
+    # --- チューニング推定 (TASK-892: ドローン解析 ＆ 動的バインド) ---
     tuning_suggestion = {"tuning": tuning_name, "confidence": 0}
     try:
-        from tuning_detector import detect_tuning  # type: ignore
-        tuning_suggestion = detect_tuning(notes, detected_key=detected_key)
-        if tuning_suggestion["tuning"] != tuning_name:
-            report("tuning_detect", f"推定チューニング: {tuning_suggestion.get('label', tuning_suggestion['tuning'])} "
-                   f"(確信度: {tuning_suggestion['confidence']:.2f})")
+        from tuning_detector import detect_tuning, detect_tuning_from_audio  # type: ignore
+        if str(tuning_name).lower() in ("auto", "standard", ""):
+            # 音声スペクトル（ドローン）から自動推定
+            tuning_suggestion = detect_tuning_from_audio(str(transcription_wav), detected_key=detected_key)
+            if tuning_suggestion["confidence"] >= 0.40 and tuning_suggestion["tuning"] != tuning_name:
+                tuning_name = tuning_suggestion["tuning"]
+                from solotab_utils import TUNINGS
+                tuning_notes = TUNINGS.get(tuning_name, [40, 45, 50, 55, 59, 64])
+                report("tuning_detect", f"動的チューニング適応: {tuning_suggestion.get('label', tuning_name)} (確信度: {tuning_suggestion['confidence']:.2f})")
+            else:
+                report("tuning_detect", f"チューニング確認: {tuning_name}")
         else:
-            report("tuning_detect", f"チューニング確認: {tuning_name}")
+            tuning_suggestion = detect_tuning(notes, detected_key=detected_key)
+            report("tuning_detect", f"指定チューニング適用: {tuning_name}")
     except Exception as e:
         report("tuning_detect", f"チューニング推定スキップ: {e}")
 

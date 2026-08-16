@@ -137,7 +137,6 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
 
 def _key_tuning_affinity(key: str, tuning_name: str) -> float:
     """キーとチューニングの親和性スコア"""
-    # Drop/Open系チューニングと特定キーの組み合わせ
     affinities = {
         ("D", "drop_d"): 1.5,
         ("Dm", "drop_d"): 1.0,
@@ -155,14 +154,77 @@ def _key_tuning_affinity(key: str, tuning_name: str) -> float:
     return affinities.get((key, tuning_name), 0.0)
 
 
+def detect_tuning_from_audio(
+    audio_path: str,
+    detected_key: Optional[str] = None,
+    sr: int = 22050
+) -> Dict:
+    """
+    音源（冒頭および持続区間）の低域スペクトルピーク（CQT/FFT）を解析し、
+    使用されているチューニング（DADGAD, Drop D, Open G等）を推定する。
+    """
+    try:
+        import librosa
+        # 冒頭 15 秒間をロード
+        y, _ = librosa.load(audio_path, sr=sr, duration=15.0, mono=True)
+        if len(y) < sr:
+            return detect_tuning([], detected_key=detected_key)
+            
+        # CQT解析 (C1: MIDI 24 〜 C6: MIDI 84, 12 bins/octave)
+        cqt = np.abs(librosa.cqt(y, sr=sr, fmin=librosa.note_to_hz('C1'), n_bins=60, bins_per_octave=12))
+        
+        # 時間平均エネルギー
+        cqt_mean = np.mean(cqt, axis=1)
+        
+        # 各チューニングの開放弦ピッチ (MIDI 24基準でインデックス化: idx = midi - 24)
+        scores = {}
+        for name, tuning_notes in TUNINGS.items():
+            score = 0.0
+            # 6弦開放 (最も低音)
+            lowest_midi = tuning_notes[0]
+            low_idx = lowest_midi - 24
+            if 0 <= low_idx < len(cqt_mean):
+                score += cqt_mean[low_idx] * 3.0
+                
+            # 全開放弦のエネルギー合計
+            for p in tuning_notes:
+                idx = p - 24
+                if 0 <= idx < len(cqt_mean):
+                    score += cqt_mean[idx]
+                    
+            if name == "standard":
+                score *= 1.05  # バイアス
+            if detected_key:
+                score += _key_tuning_affinity(detected_key, name) * np.mean(cqt_mean)
+                
+            scores[name] = float(score)
+            
+        sorted_tunings = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        best_name, best_score = sorted_tunings[0]
+        second_score = sorted_tunings[1][1] if len(sorted_tunings) > 1 else 0.0
+        
+        conf = min(1.0, max(0.2, (best_score - second_score) / (best_score + 1e-6)))
+        
+        return {
+            "tuning": best_name,
+            "confidence": float(conf),
+            "lowest_note": TUNINGS[best_name][0],
+            "label": TUNING_LABELS.get(best_name, best_name),
+            "alternatives": [
+                {"tuning": name, "label": TUNING_LABELS.get(name, name), "score": round(sc, 2)}
+                for name, sc in sorted_tunings[:3]
+            ],
+            "source": "audio_spectral_drone"
+        }
+    except Exception as e:
+        print(f"[tuning_detector] Audio spectral detection failed: {e}")
+        return detect_tuning([], detected_key=detected_key)
+
+
 if __name__ == "__main__":
-    # テスト
     test_notes = [
-        {"pitch": 40}, {"pitch": 45}, {"pitch": 50},  # E2, A2, D3
-        {"pitch": 55}, {"pitch": 59}, {"pitch": 64},  # G3, B3, E4
+        {"pitch": 40}, {"pitch": 45}, {"pitch": 50},
+        {"pitch": 55}, {"pitch": 59}, {"pitch": 64},
     ]
     result = detect_tuning(test_notes, detected_key="E")
     print(f"Tuning: {result['tuning']} ({result['label']})")
-    print(f"Confidence: {result['confidence']:.2f}")
-    print(f"Lowest note: MIDI {result['lowest_note']}")
-    print(f"Alternatives: {result['alternatives']}")
