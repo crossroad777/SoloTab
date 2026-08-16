@@ -660,72 +660,13 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         return;
     };
 
-    const buildChordOverlay = (api) => {
+    const buildChordOverlay = () => {
         const wrapper = wrapperRef.current;
-        if (!wrapper) return;
-
-        wrapper.style.position = 'relative';
-        const old = wrapper.querySelector('.solotab-chords-overlay');
-        if (old) old.remove();
-        document.querySelectorAll('.solotab-svg-chord').forEach(e => e.remove());
-
-        const chords = chordsDataRef.current;
-        if (!chords || !chords.length) return;
-
-        const bl = api?.renderer?.boundsLookup;
-        const score = api?.score;
-        if (!bl || !score?.masterBars) return;
-
-        const overlay = document.createElement('div');
-        overlay.className = 'solotab-chords-overlay';
-        overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;';
-
-        const secondsPerBar = (60.0 / (score.tempo || 90.9)) * 4.0;
-        let lastChordName = null;
-
-        for (let barIdx = 0; barIdx < score.masterBars.length; barIdx++) {
-            const mb = score.masterBars[barIdx];
-            const mbBounds = bl.findMasterBar(mb);
-            if (!mbBounds?.visualBounds) continue;
-
-            const barStartT = barIdx * secondsPerBar;
-            const barEndT = (barIdx + 1) * secondsPerBar;
-
-            const barChords = chords.filter(c => (c.end ?? 0) > barStartT && (c.start ?? 0) < barEndT);
-            if (!barChords.length) continue;
-
-            const cName = strVal(barChords[0].chord || barChords[0].name);
-            if (!cName || cName === 'N' || cName === 'None') continue;
-
-            if (cName === lastChordName && barIdx > 0) continue;
-            lastChordName = cName;
-
-            const systemIdx = Math.floor(barIdx / 4);
-            const chordX = mbBounds.visualBounds.x + 4;
-
-            // 1段目はタイトルがあるため Y=35px、2段目以降は各段の五線譜のすぐ真上（空隙4〜6px・被りゼロ）
-            const chordY = systemIdx === 0 ? 35 : (311 + (systemIdx - 1) * 258 + 20);
-
-            const el = document.createElement('span');
-            el.textContent = cName;
-            el.style.cssText = [
-                'position:absolute',
-                `left:${chordX}px`,
-                `top:${chordY}px`,
-                'font-size:14px',
-                'font-weight:bold',
-                'font-style:italic',
-                'color:#111111',
-                'font-family:"Times New Roman", Georgia, serif',
-                'line-height:1',
-                'pointer-events:none',
-                'user-select:none',
-                'white-space:nowrap',
-            ].join(';');
-            overlay.appendChild(el);
+        if (wrapper) {
+            const old = wrapper.querySelector('.solotab-chords-overlay');
+            if (old) old.remove();
+            document.querySelectorAll('.solotab-svg-chord').forEach(e => e.remove());
         }
-
-        wrapper.appendChild(overlay);
     };
 
     function strVal(v) {
