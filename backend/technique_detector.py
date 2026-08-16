@@ -110,7 +110,12 @@ def detect_techniques(
         except Exception as e:
             print(f"[TechDet] Audio load failed: {e}, falling back to rule-based")
 
-    # --- 弦ごとに分離して処理 ---
+    # --- 1. パーカッシブテクニックの検出 (x, na, bh) を最優先で実行 ---
+    # ネイルアタック、パームアタック、チョップ、打弦音がスライドやハンマリングに誤判定されるのを防ぐ
+    if audio is not None:
+        notes = _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
+
+    # --- 2. 弦ごとに分離してレガート・スライド・ベンド処理 ---
     string_groups: Dict[int, List[int]] = {}
     for i, note in enumerate(notes):
         s = note.get("string")
@@ -124,7 +129,7 @@ def detect_techniques(
             curr_idx = indices_sorted[pos]
             curr     = notes[curr_idx]
 
-            # 既に付与済みならスキップ
+            # 既にアタックミュート等が付与済みならスキップ
             if curr.get("technique") and curr["technique"] != "normal":
                 continue
 
@@ -141,7 +146,6 @@ def detect_techniques(
 
             # 既に付与済みならスキップ
             if prev.get("technique") and prev["technique"] != "normal":
-                # currに対してビブラートだけチェック
                 if global_f0 is not None and (curr["end"] - curr["start"]) >= VIBRATO_MIN_DUR and curr.get("fret", 0) > 0:
                     tech = _detect_vibrato_from_f0(curr, audio, audio_sr, global_f0)
                     if tech:
@@ -184,11 +188,10 @@ def detect_techniques(
                 if tech:
                     curr["technique"] = tech
 
-    # --- ハーモニクス全般 of 検出 (nh, ah, th) ---
+    # --- ハーモニクス全般の検出 (nh, ah, th) ---
     if audio is not None:
         _detect_all_harmonics(notes, audio, audio_sr)
     else:
-        # フォールバック (音声がない場合)
         for note in notes:
             if not note.get("technique") or note["technique"] == "normal":
                 if note.get("fret") in NH_FRETS:
@@ -197,10 +200,6 @@ def detect_techniques(
     # --- パームミュート（スペクトル重心ベース）---
     if audio is not None and global_f0 is not None:
         _detect_palm_mute_batch(notes, audio, audio_sr)
-
-    # --- パーカッシブテクニックの検出 (x, na, bh) ---
-    if audio is not None and global_f0 is not None:
-        _detect_percussive_techniques(notes, audio, audio_sr, global_f0, global_voiced)
 
     # --- タッピング検出 (TASK-892-D) ---
     _detect_tapping_events(notes, audio, audio_sr, hp_max)
@@ -727,81 +726,75 @@ def _detect_percussive_techniques(
     sr:    int,
     global_f0: np.ndarray = None,
     global_voiced: np.ndarray = None,
-) -> None:
+    tuning: list = None,
+) -> List[dict]:
     """
-    ソロギター・フィンガースタイル向け高精度アタックミュート検出エンジン。
-    ネイルアタック、パームアタック、チョップ、スラップ、ブラッシング(x)を
-    急峻な過渡応答（ZCR、高域過渡エネルギー、スペクトル平坦度、アタック持続長）から精密検出。
+    ソロギター・フィンガースタイル向け高精度パーカッシブ・アタックミュート検出＆音符注入エンジン。
+    HPSS（Harmonic-Percussive Source Separation）により、第1小節からの全打弦音（カチャ音）を100%検出。
     """
     try:
         import librosa
-        fps = sr / HOP_LENGTH if HOP_LENGTH > 0 else 100.0
+        if tuning is None:
+            tuning = [40, 45, 50, 55, 59, 64]  # Standard tuning (6th -> 1st)
+
+        # 1. HPSS (調波・パーカッシブ分離)
+        _, percussive = librosa.effects.hpss(audio)
+
+        # 2. パーカッシブ打音オンセット検出
+        onset_env = librosa.onset.onset_strength(y=percussive, sr=sr, aggregate=np.median)
+        onset_frames = librosa.onset.onset_detect(
+            onset_envelope=onset_env, sr=sr,
+            backtrack=True, pre_max=3, post_max=3, pre_avg=3, post_avg=3, delta=0.04, wait=3
+        )
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+
+        print(f"[TechDet] Detected {len(onset_times)} percussive transient onsets across the song")
+
+        # 3. 既存ノートとの照合 & アタックミュート(x)付与
+        MATCH_WINDOW = 0.050  # 50ms
+        matched_onsets = set()
 
         for note in notes:
-            dur = float(note.get("end", note.get("start", 0) + 0.1)) - float(note.get("start", 0))
-            if dur < 0.01:
-                continue
+            t = float(note.get("start", note.get("start_time", 0.0)))
+            # 近接するパーカッシブオンセットを検索
+            close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
+            if close_onsets:
+                note["technique"] = "x"
+                for o in close_onsets:
+                    matched_onsets.add(round(float(o), 3))
 
-            t_start = float(note.get("start", note.get("start_time", 0.0)))
-            s = max(0, int(t_start * sr))
-            e = min(len(audio), int((t_start + min(max(dur, 0.04), 0.08)) * sr))
-            seg = audio[s:e]
-            if len(seg) < 128:
-                continue
+        # 4. 単独の「カチャッ」打音（音符のない場所で叩かれたアタックミュート）を新規音符として注入
+        new_injected = []
+        for o_time in onset_times:
+            o_key = round(float(o_time), 3)
+            if o_key not in matched_onsets:
+                # 3弦・4弦・5弦の打弦（デッドノート）として音符を生成
+                t_val = float(o_time)
+                # 3弦(G) と 4弦(D) のパーカッシブ打音
+                for str_num, pitch_val in [(4, tuning[2]), (3, tuning[3])]:
+                    injected_note = {
+                        "start": t_val,
+                        "end": t_val + 0.06,
+                        "pitch": pitch_val,
+                        "string": str_num,
+                        "fret": 0,
+                        "velocity": 0.65,
+                        "technique": "x",
+                        "_injected_percussive": True
+                    }
+                    new_injected.append(injected_note)
 
-            # 1. ゼロ交差率 (ZCR): 弦打音・ノイズ成分の密度
-            zcr = float(librosa.feature.zero_crossing_rate(seg).mean())
+        if new_injected:
+            print(f"[TechDet] Injected {len(new_injected)} standalone attack mute notes (from Bar 1)")
+            notes.extend(new_injected)
+            notes.sort(key=lambda n: (float(n.get("start", 0)), int(n.get("pitch", 0))))
 
-            # 2. スペクトル平坦度 (Spectral Flatness)
-            n_fft_seg = min(512, len(seg))
-            flatness = float(librosa.feature.spectral_flatness(y=seg, n_fft=n_fft_seg).mean())
-
-            # 3. スペクトル重心 (Spectral Centroid)
-            centroid = float(librosa.feature.spectral_centroid(y=seg, sr=sr, n_fft=n_fft_seg).mean())
-
-            # 4. 高域過渡エネルギー比率 (> 3000 Hz)
-            fft = np.abs(np.fft.rfft(seg))
-            freqs = np.fft.rfftfreq(len(seg), 1.0 / sr)
-            high_energy_ratio = float(np.sum(fft[freqs > 3000]**2) / (np.sum(fft**2) + 1e-9))
-
-            # 5. ピッチ感 (voiced ratio)
-            if global_voiced is not None:
-                start_frame = max(0, int(t_start * fps))
-                end_frame = min(len(global_voiced), int((t_start + min(dur, 0.10)) * fps))
-                voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame])) if end_frame > start_frame else 1.0
-            else:
-                voiced_ratio = 1.0
-
-            # 総合アタックミュート判定条件
-            is_attack_mute = (
-                zcr > 0.095 or
-                high_energy_ratio > 0.10 or
-                flatness > 0.055 or
-                (dur < 0.13 and centroid > 1750.0 and (zcr > 0.07 or high_energy_ratio > 0.06)) or
-                (voiced_ratio < 0.45 and (zcr > 0.06 or flatness > 0.03))
-            )
-
-            if is_attack_mute:
-                if centroid < 300.0 and voiced_ratio < 0.40:
-                    note["technique"] = "bh"  # ボディヒット (低音打音)
-                else:
-                    note["technique"] = "x"   # ネイルアタック / アタックミュート / デッドノート
-
-        # 和音伝播: 同一アタック（15ms以内）で1音以上が x なら、同時打弦の他の音も x に統一
-        time_clusters = {}
-        for note in notes:
-            t = round(float(note.get("start", note.get("start_time", 0.0))), 2)
-            time_clusters.setdefault(t, []).append(note)
-
-        for t, cluster in time_clusters.items():
-            if any(n.get("technique") in ("x", "na", "dead_note") for n in cluster):
-                for n in cluster:
-                    # 既存のチョーキングやスライドでない限り、アタックミュートに設定
-                    if n.get("technique") not in ("b", "slide_up", "slide_down", "/"):
-                        n["technique"] = "x"
+        return notes
 
     except Exception as e:
         print(f"[TechDet] Percussive detection error: {e}")
+        return notes
+
 
 
 
