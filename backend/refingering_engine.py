@@ -61,22 +61,39 @@ def refinger_gp5(input_path: str, output_path: str, tuning: List[int] = None) ->
     GP5 ファイルを読み込み、Voice・アーティキュレーションを完全保持したまま
     運指（弦・フレット）を最適化して出力する。
     """
-    if tuning is None:
-        tuning = STANDARD_TUNING # [40, 45, 50, 55, 59, 64]
-        
     song = guitarpro.parse(input_path)
-    tuning_arr = [64, 59, 55, 50, 45, 40] # 1弦 -> 6弦
+    if not song.tracks:
+        raise ValueError(f"No tracks found in {input_path}")
+        
+    track = song.tracks[0]
+    
+    # トラック固有のチューニングを取得（6弦 -> 1弦: 低音 -> 高音）
+    track_tuning = STANDARD_TUNING
+    if hasattr(track, 'strings') and track.strings:
+        try:
+            track_tuning = [s.value for s in track.strings][::-1]
+        except Exception:
+            track_tuning = STANDARD_TUNING
+            
+    if tuning is None:
+        tuning = track_tuning
+        
+    tuning_arr = tuning[::-1] # 1弦 -> 6弦 (高音 -> 低音)
     
     # 1. GP5 から全ノートを抽出（Voice情報とオブジェクト参照を保持）
     raw_entries = []
     
-    for m_idx, measure in enumerate(song.tracks[0].measures):
+    for m_idx, measure in enumerate(track.measures):
         for v_idx, voice in enumerate(measure.voices):
             for b_idx, beat in enumerate(voice.beats):
                 for n_idx, note in enumerate(beat.notes):
                     original_string = note.string
                     original_fret = note.value
-                    pitch = tuning_arr[original_string - 1] + original_fret
+                    
+                    if original_string - 1 < len(tuning_arr):
+                        pitch = tuning_arr[original_string - 1] + original_fret
+                    else:
+                        pitch = 40 + original_fret
                     
                     start_t = float(measure.number - 1) * 3.0 + (float(beat.start) / 960.0)
                     dur_t = float(beat.duration.value) if hasattr(beat.duration, 'value') else 0.25
@@ -111,6 +128,7 @@ def refinger_gp5(input_path: str, output_path: str, tuning: List[int] = None) ->
     modified_count = 0
     preserved_voice_count = 0
     exact_matches_with_original = 0
+    folded_notes_count = sum(1 for a in assigned_notes if a.get("octave_shift", 0) != 0)
     
     for idx, (orig_note_obj, orig_meta, assigned) in enumerate(zip(note_refs, extracted_notes, assigned_notes)):
         new_s = assigned["string"]
@@ -141,6 +159,7 @@ def refinger_gp5(input_path: str, output_path: str, tuning: List[int] = None) ->
         "exact_matches_with_original_gp5": exact_matches_with_original,
         "string_fret_match_rate": match_rate,
         "refingered_notes_count": modified_count,
+        "folded_notes_count": folded_notes_count,
         "preserved_voices_count": preserved_voice_count,
         "original_ergonomic_cost": orig_cost,
         "optimized_ergonomic_cost": new_cost,

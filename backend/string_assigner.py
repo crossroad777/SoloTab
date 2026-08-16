@@ -2198,6 +2198,26 @@ def _group_simultaneous(notes: List[dict], threshold: float = 0.03) -> List[List
 # メインの弦割り当て関数
 # =============================================================================
 
+def fold_pitch_to_playable_range(pitch: int, tuning: List[int], max_fret: int = MAX_FRET) -> Tuple[int, int]:
+    """
+    演奏不能なピッチ（最低開放弦未満または24f超過）を演奏可能レンジへオクターブ畳み込み。
+    Returns: (folded_pitch, octave_shift)
+    """
+    if not tuning:
+        tuning = STANDARD_TUNING
+    min_p = min(tuning)
+    max_p = max(tuning) + max_fret
+    folded_p = pitch
+    shift = 0
+    while folded_p < min_p:
+        folded_p += 12
+        shift += 1
+    while folded_p > max_p:
+        folded_p -= 12
+        shift -= 1
+    return folded_p, shift
+
+
 def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                       max_fret: int = MAX_FRET,
                       initial_position: float = 0.0,
@@ -2215,28 +2235,31 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     - 音楽理論コスト: 典型フォーム一致/ルート音/構成音 (坂井論文準拠)
     - Minimax後処理: 最大難度の1手を回避
     - ポジション依存フレットスパン: ローポジションはスパン3、ハイはスパン5
-
-    Parameters
-    ----------
-    initial_position : float
-        キー検出結果から推定される初期ポジション中心フレット。
-    chords : List[dict], optional
-        コード検出結果。各要素: {'start': float, 'end': float, 'chord': str}
-        Viterbiの出力コストに音楽理論的制約を加えるために使用。
-    guitar_type : str
-        'steel', 'nylon', or 'auto'.
-        'nylon'時: CQT特徴量の信頼性が低いため、CNN重みを大幅に下げ
-        ピッチベースのViterbi DPを優先する。
     """
     if tuning is None:
         tuning = STANDARD_TUNING
 
+    if not notes:
+        return notes
+
+    # === [TASK-910: 演奏不能ピッチポリシー（オクターブ畳み込み）] ===
+    folded_count = 0
+    for note in notes:
+        orig_p = int(note.get("pitch", 60))
+        folded_p, shift = fold_pitch_to_playable_range(orig_p, tuning, max_fret)
+        if shift != 0:
+            folded_count += 1
+            note["original_pitch"] = orig_p
+            note["pitch"] = folded_p
+            note["octave_shift"] = shift
+            note["octave_notation"] = "8vb" if shift > 0 else "8va"
+
+    if folded_count > 0:
+        print(f"[string_assigner] [POLICY] 演奏不能ピッチ検出: {folded_count}ノートを演奏可能レンジへオクターブ畳み込み")
+
     # 音楽理論: キーに基づく主要スケールポジションの導出
     scale_positions = get_key_scale_positions(key)
     print(f"[string_assigner] キー '{key}' に基づくスケールポジション: {scale_positions}")
-
-    if not notes:
-        return notes
 
     # 音楽理論エンジン: 典型フォームDBをロード
     if chords:
@@ -2377,6 +2400,17 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
                     if valid_positions:
                         note["string"] = valid_positions[0][0]
                         note["fret"] = valid_positions[0][1]
+                        s = valid_positions[0][0]
+                        f = valid_positions[0][1]
+                    else:
+                        fp, _ = fold_pitch_to_playable_range(target_p, tuning, max_fret)
+                        valid_positions = get_possible_positions(fp, tuning, max_fret)
+                        note["string"] = valid_positions[0][0]
+                        note["fret"] = valid_positions[0][1]
+                        note["pitch"] = fp
+                        s = valid_positions[0][0]
+                        f = valid_positions[0][1]
+                assert tuning[6 - s] + f == int(note["pitch"]), f"Invariant Violation! computed {tuning[6-s]+f} != expected {note['pitch']}"
             return tf_result
 
     # フレーズに分割 (0.5秒以上の休符で区切る)
@@ -2456,7 +2490,7 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
     # v19.0: 動的右手運指（PIMA）アサインモデルの適用
     result = _assign_right_hand_fingers(result)
 
-    # === [TASK-900-E: ピッチ整合性不変条件の強制] ===
+    # === [TASK-900-E / TASK-910: ピッチ整合性不変条件の強制] ===
     # ∀ note: tuning[6 - string] + fret == pitch
     pitch_violations = 0
     for note in result:
@@ -2471,11 +2505,17 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
             if valid_positions:
                 note["string"] = valid_positions[0][0]
                 note["fret"] = valid_positions[0][1]
+                s = valid_positions[0][0]
+                f = valid_positions[0][1]
             else:
-                fallback_s = 1
-                fallback_f = min(max(0, target_p - tuning[5]), max_fret)
-                note["string"] = fallback_s
-                note["fret"] = fallback_f
+                fp, _ = fold_pitch_to_playable_range(target_p, tuning, max_fret)
+                valid_positions = get_possible_positions(fp, tuning, max_fret)
+                note["string"] = valid_positions[0][0]
+                note["fret"] = valid_positions[0][1]
+                note["pitch"] = fp
+                s = valid_positions[0][0]
+                f = valid_positions[0][1]
+        assert tuning[6 - s] + f == int(note["pitch"]), f"Invariant Violation! computed {tuning[6-s]+f} != expected {note['pitch']}"
     if pitch_violations > 0:
         print(f"[string_assigner] [INVARIANT] ピッチ不変条件違反: {pitch_violations}ノートを修復")
 

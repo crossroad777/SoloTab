@@ -1,0 +1,60 @@
+{
+  "task": "TASK-910 Step 2: 大規模エルゴノミクス A/B テスト再実行 (N=1000, 本来チューニング適用)",
+  "sample_size": 1000,
+  "valid_songs_evaluated": 1000,
+  "elapsed_seconds": 200.31,
+  "movement_difference_optimized_minus_original": {
+    "mean": -41.48,
+    "std": 66.92,
+    "median": -31.0,
+    "percentiles": {
+      "P10": -124.0,
+      "P50": -31.0,
+      "P90": 28.1,
+      "P95_worst_case": 43.0,
+      "P99": 90.03
+    },
+    "classification": {
+      "improved_ratio_pct": 73.2,
+      "improved_count": 732,
+      "worsened_ratio_pct": 23.4,
+      "worsened_count": 234,
+      "unchanged_ratio_pct": 3.4,
+      "unchanged_count": 34
+    },
+    "comparison_with_task_908": {
+      "task_908_improved_pct": 69.5,
+      "task_910_improved_pct": 73.2,
+      "improved_delta_pct": 3.7,
+      "task_908_worsened_pct": 28.1,
+      "task_910_worsened_pct": 23.4,
+      "worsened_delta_pct": -4.7,
+      "task_908_unchanged_pct": 2.4,
+      "task_910_unchanged_pct": 3.4,
+      "unchanged_delta_pct": 1.0
+    }
+  },
+  "excessive_jumps_difference_optimized_minus_original": {
+    "mean": -6.29,
+    "std": 10.74,
+    "median": -4.0,
+    "percentiles": {
+      "P10": -20.0,
+      "P50": -4.0,
+      "P90": 4.0,
+      "P95_worst_case": 7.0,
+      "P99": 13.01
+    },
+    "classification": {
+      "decreased_jumps_pct": 65.0,
+      "increased_jumps_pct": 20.7,
+      "unchanged_jumps_pct": 14.3
+    }
+  },
+  "overall_string_fret_match_rate_with_original": {
+    "mean": 0.3283,
+    "median": 0.3,
+    "P10": 0.0933,
+    "P90": 0.6
+  }
+}

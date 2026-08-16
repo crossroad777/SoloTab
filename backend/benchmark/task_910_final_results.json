@@ -1,0 +1,292 @@
+{
+  "task_id": "TASK-910",
+  "title": "チューニング伝播の修正と演奏不能ピッチポリシーの実装",
+  "step1_propagation_dumps": [
+    {
+      "filename": "001-no-sex-no-drugs-just-rockandroll.gp5",
+      "gp5_tuning": [
+        28,
+        33,
+        38,
+        43
+      ],
+      "passed_tuning": [
+        28,
+        33,
+        38,
+        43
+      ],
+      "match": true
+    },
+    {
+      "filename": "002-b-song.gp5",
+      "gp5_tuning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "passed_tuning": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "match": true
+    },
+    {
+      "filename": "003-happy.gp5",
+      "gp5_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "passed_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "match": true
+    },
+    {
+      "filename": "004-running.gp5",
+      "gp5_tuning": [
+        28,
+        33,
+        38,
+        43
+      ],
+      "passed_tuning": [
+        28,
+        33,
+        38,
+        43
+      ],
+      "match": true
+    },
+    {
+      "filename": "02.gp5",
+      "gp5_tuning": [
+        34,
+        41,
+        46,
+        51,
+        55,
+        60
+      ],
+      "passed_tuning": [
+        34,
+        41,
+        46,
+        51,
+        55,
+        60
+      ],
+      "match": true
+    },
+    {
+      "filename": "1-5-binge-by-buckethead-april-1992.gp5",
+      "gp5_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "passed_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "match": true
+    },
+    {
+      "filename": "1-step-kloser.gp5",
+      "gp5_tuning": [
+        38,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "passed_tuning": [
+        38,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "match": true
+    },
+    {
+      "filename": "10.gp5",
+      "gp5_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "passed_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "match": true
+    },
+    {
+      "filename": "11.gp5",
+      "gp5_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "passed_tuning": [
+        40,
+        45,
+        50,
+        55,
+        59,
+        64
+      ],
+      "match": true
+    },
+    {
+      "filename": "12-24-ballerina.gp5",
+      "gp5_tuning": [
+        52,
+        57,
+        62,
+        67,
+        71,
+        76
+      ],
+      "passed_tuning": [
+        52,
+        57,
+        62,
+        67,
+        71,
+        76
+      ],
+      "match": true
+    }
+  ],
+  "step2_ab_test_results": {
+    "task": "TASK-910 Step 2: 大規模エルゴノミクス A/B テスト再実行 (N=1000, 本来チューニング適用)",
+    "sample_size": 1000,
+    "valid_songs_evaluated": 1000,
+    "elapsed_seconds": 200.31,
+    "movement_difference_optimized_minus_original": {
+      "mean": -41.48,
+      "std": 66.92,
+      "median": -31.0,
+      "percentiles": {
+        "P10": -124.0,
+        "P50": -31.0,
+        "P90": 28.1,
+        "P95_worst_case": 43.0,
+        "P99": 90.03
+      },
+      "classification": {
+        "improved_ratio_pct": 73.2,
+        "improved_count": 732,
+        "worsened_ratio_pct": 23.4,
+        "worsened_count": 234,
+        "unchanged_ratio_pct": 3.4,
+        "unchanged_count": 34
+      },
+      "comparison_with_task_908": {
+        "task_908_improved_pct": 69.5,
+        "task_910_improved_pct": 73.2,
+        "improved_delta_pct": 3.7,
+        "task_908_worsened_pct": 28.1,
+        "task_910_worsened_pct": 23.4,
+        "worsened_delta_pct": -4.7,
+        "task_908_unchanged_pct": 2.4,
+        "task_910_unchanged_pct": 3.4,
+        "unchanged_delta_pct": 1.0
+      }
+    },
+    "excessive_jumps_difference_optimized_minus_original": {
+      "mean": -6.29,
+      "std": 10.74,
+      "median": -4.0,
+      "percentiles": {
+        "P10": -20.0,
+        "P50": -4.0,
+        "P90": 4.0,
+        "P95_worst_case": 7.0,
+        "P99": 13.01
+      },
+      "classification": {
+        "decreased_jumps_pct": 65.0,
+        "increased_jumps_pct": 20.7,
+        "unchanged_jumps_pct": 14.3
+      }
+    },
+    "overall_string_fret_match_rate_with_original": {
+      "mean": 0.3283,
+      "median": 0.3,
+      "P10": 0.0933,
+      "P90": 0.6
+    }
+  },
+  "step4_1_worst_3_forced_standard_verification": [
+    {
+      "filename": "poslednyaya-noch.gp5",
+      "total_notes": 150,
+      "folded_notes_count": 35,
+      "invariant_violations": 0
+    },
+    {
+      "filename": "welcome-to-the-blast-zone.gp5",
+      "total_notes": 150,
+      "folded_notes_count": 75,
+      "invariant_violations": 0
+    },
+    {
+      "filename": "epic-of-war.gp5",
+      "total_notes": 150,
+      "folded_notes_count": 53,
+      "invariant_violations": 0
+    }
+  ],
+  "step4_2_regression_guards": {
+    "romance_gp5": {
+      "file": "outputs/task_901_inspection/romance_translated.gp5",
+      "movement_frets": 138.0,
+      "string_fret_match_rate_pct": 86.41,
+      "folded_notes_count": 0,
+      "status": "PASS"
+    },
+    "mini_benchmark": {
+      "f1_score": 0.8414,
+      "target": "0.8414 ±0.002",
+      "status": "PASS"
+    }
+  }
+}
