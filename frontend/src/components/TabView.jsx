@@ -661,7 +661,12 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
     };
 
     const buildChordOverlay = (api) => {
-        // 既存のSVGコードテキストをクリア
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
+
+        wrapper.style.position = 'relative';
+        const old = wrapper.querySelector('.solotab-chords-overlay');
+        if (old) old.remove();
         document.querySelectorAll('.solotab-svg-chord').forEach(e => e.remove());
 
         const chords = chordsDataRef.current;
@@ -671,10 +676,9 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
         const score = api?.score;
         if (!bl || !score?.masterBars) return;
 
-        const scoreSvgs = Array.from(document.querySelectorAll('svg')).filter(
-            s => s.getBoundingClientRect().height > 150
-        );
-        if (!scoreSvgs.length) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'solotab-chords-overlay';
+        overlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;';
 
         const secondsPerBar = (60.0 / (score.tempo || 90.9)) * 4.0;
         let lastChordName = null;
@@ -697,26 +701,31 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
             lastChordName = cName;
 
             const systemIdx = Math.floor(barIdx / 4);
-            const targetSvg = scoreSvgs[systemIdx];
-            if (!targetSvg) continue;
-
             const chordX = mbBounds.visualBounds.x + 4;
-            // 1段目はタイトルがあるため Y=95、2段目以降は Y=38（空隙わずか4〜6px）
-            const chordY = systemIdx === 0 ? 95 : 38;
 
-            const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            textEl.setAttribute('class', 'solotab-svg-chord');
-            textEl.setAttribute('x', String(chordX));
-            textEl.setAttribute('y', String(chordY));
-            textEl.setAttribute('font-family', "'Times New Roman', Georgia, serif");
-            textEl.setAttribute('font-size', '14px');
-            textEl.setAttribute('font-weight', 'bold');
-            textEl.setAttribute('font-style', 'italic');
-            textEl.setAttribute('fill', '#111111');
-            textEl.textContent = cName;
+            // 1段目はタイトルがあるため Y=35px、2段目以降は各段の五線譜のすぐ真上（空隙4〜6px・被りゼロ）
+            const chordY = systemIdx === 0 ? 35 : (311 + (systemIdx - 1) * 258 + 20);
 
-            targetSvg.appendChild(textEl);
+            const el = document.createElement('span');
+            el.textContent = cName;
+            el.style.cssText = [
+                'position:absolute',
+                `left:${chordX}px`,
+                `top:${chordY}px`,
+                'font-size:14px',
+                'font-weight:bold',
+                'font-style:italic',
+                'color:#111111',
+                'font-family:"Times New Roman", Georgia, serif',
+                'line-height:1',
+                'pointer-events:none',
+                'user-select:none',
+                'white-space:nowrap',
+            ].join(';');
+            overlay.appendChild(el);
         }
+
+        wrapper.appendChild(overlay);
     };
 
     function strVal(v) {
