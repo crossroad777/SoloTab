@@ -1003,6 +1003,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             key_signature=detected_key_sig,
             noise_gate=recommended_cut,  # BPM適応: 遅い曲はCUT高め、速い曲は低め
             include_techniques=enable_technique_gp5,
+            chords=chords,
             return_entries=True,
         )
         gp5_path = session_dir / "tab.gp5"

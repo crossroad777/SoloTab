@@ -146,6 +146,7 @@ def notes_to_gp5(notes: List[dict], *,
                  rhythm_info: dict | None = None,
                  key_signature: str = "C",
                  include_techniques: bool = True,
+                 chords: List[dict] | None = None,
                  **kwargs) -> bytes | tuple[bytes, List[dict]]:
     """
     ノートデータからGP5バイナリを生成する。
@@ -361,6 +362,55 @@ def notes_to_gp5(notes: List[dict], *,
             for v in m.voices:
                 if not v.beats:
                     v.beats = _divs_to_gp_beats_rest(bar_total_divs, v, is_triplet)
+
+    # --- Chord Names Injection (小節の左上・コードチェンジ位置にコードネームを描画) ---
+    if chords and track1.measures:
+        seconds_per_bar = (60.0 / bpm) * beats_per_bar
+        last_chord_name = None
+
+        for bar_idx, m in enumerate(track1.measures):
+            bar_start_t = bar_idx * seconds_per_bar
+            voice = m.voices[0]
+            if not voice.beats:
+                continue
+
+            # ビートごとの時刻進行を追跡
+            beat_t = bar_start_t
+            for b in voice.beats:
+                dur_val = b.duration.value
+                # GP Duration: whole=1, half=2, quarter=4, eighth=8, sixteenth=16
+                quarters = 4.0 / max(1, dur_val)
+                if b.duration.isDotted:
+                    quarters *= 1.5
+                if b.duration.tuplet and b.duration.tuplet.enters == 3:
+                    quarters *= (2.0 / 3.0)
+                dur_secs = quarters * (60.0 / bpm)
+
+                # このビート時刻に該当するコードを検索
+                matching = [
+                    c for c in chords
+                    if float(c.get("start", 0)) <= beat_t + 0.05 < float(c.get("end", 9999))
+                ]
+                if matching:
+                    c_name = str(matching[0].get("chord", "")).strip()
+                    # 前のコードと異なる場合、または小節頭の最初のビートの場合にコードネームを設定
+                    if c_name and c_name not in ("N", "None", ""):
+                        if c_name != last_chord_name or b == voice.beats[0]:
+                            try:
+                                b.effect.chord = gp.Chord(
+                                    length=6,
+                                    name=c_name,
+                                    firstFret=1,
+                                    strings=[-1, -1, -1, -1, -1, -1],
+                                    sharp=False,
+                                    show=True,
+                                    newFormat=True
+                                )
+                                last_chord_name = c_name
+                            except Exception:
+                                pass
+
+                beat_t += dur_secs
 
     # --- Song Tempo Header (曲頭に1回のみ標準設定。毎小節の重複出力を防止) ---
     song.tempo = int(round(bpm))

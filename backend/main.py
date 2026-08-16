@@ -1020,6 +1020,15 @@ def _regenerate_musicxml(session_id: str, notes: list,
 
     # --- GP5再生成（1本の完全なソロギタートラックとして全音符を出力） ---
     final_note_entries = None
+    chords_data = None
+    chords_path = session_dir / "chords.json"
+    if chords_path.exists():
+        try:
+            with open(chords_path, "r", encoding="utf-8") as f:
+                chords_data = json.load(f)
+        except Exception:
+            pass
+
     try:
         from gp_renderer import notes_to_gp5
         gp5_bytes, final_note_entries = notes_to_gp5(
@@ -1027,6 +1036,7 @@ def _regenerate_musicxml(session_id: str, notes: list,
             tuning=tuning, time_signature=time_sig,
             rhythm_info=rhythm_info, noise_gate=gate,
             include_techniques=True,
+            chords=chords_data,
             return_entries=True,
         )
         with open(session_dir / "tab.gp5", "wb") as f:
