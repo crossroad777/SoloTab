@@ -1105,12 +1105,9 @@ async def cut_noise(session_id: str, request: CutRequest):
     from gp_renderer import _filter_noise
     filtered_notes = _filter_noise(notes, request.noise_gate)
 
+    # notes_assigned.json のみ更新（原本 notes_assigned_original.json は絶対に上書き破壊しない）
     with open(assigned_path, "w", encoding="utf-8") as f:
         json.dump(filtered_notes, f, ensure_ascii=False, indent=2)
-    
-    if original_path.exists():
-        with open(original_path, "w", encoding="utf-8") as f:
-            json.dump(filtered_notes, f, ensure_ascii=False, indent=2)
 
     filtered_count = len(filtered_notes)
     s["total_notes"] = filtered_count
