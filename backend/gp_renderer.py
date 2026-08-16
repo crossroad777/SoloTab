@@ -907,8 +907,5 @@ def _divs_to_gp_beats_rest(divs: int, voice, is_triplet: bool) -> list:
 
 
 def _vel_to_gp(v) -> int:
-    """velocity (0-1 or 0-127) to GP velocity (valid GP5 range: 1-127)."""
-    v = float(v)
-    if v <= 1.0:
-        v = v * 127
-    return max(1, min(127, int(v)))
+    """すべての音符が五線譜・TAB譜上でクッキリ濃く読めるよう、均一な濃色Velocity (95=Forte) を返す。"""
+    return 95

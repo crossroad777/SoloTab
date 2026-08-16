@@ -1264,6 +1264,14 @@ const TabViewInner = ({ sessionId, apiBase, currentTime, isPlaying, transpose = 
 
                 if (settings.display.resources) {
                     settings.display.resources.titleFont = new window.alphaTab.model.Font("Arial", 16, 1);
+                    // すべての音符・TAB数字・弱音・第2声部を完全な濃い黒（100%不透明）で描画
+                    if (window.alphaTab.model?.Color) {
+                        const solidBlack = new window.alphaTab.model.Color(0, 0, 0, 255);
+                        settings.display.resources.mainGlyphColor = solidBlack;
+                        settings.display.resources.secondaryGlyphColor = solidBlack;
+                        settings.display.resources.scoreInfoColor = solidBlack;
+                        settings.display.resources.fretNumberColor = solidBlack;
+                    }
                 }
 
                 // === Player: boundsLookup生成に必要なので有効化、カーソルは無効 ===

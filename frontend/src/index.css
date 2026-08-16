@@ -1141,3 +1141,18 @@ h6 {
   font-weight: bold;
   margin-top: 4px;
 }
+
+/* ================================================================
+   AlphaTab High-Contrast / Solid Score & TAB Font Rendering
+   弱音やVoice 2の半透明化を完全撤廃し、全ての数字・音符を濃く鮮明に描画
+   ================================================================ */
+.tab-print-container svg text,
+.tab-print-container svg path,
+.tab-print-container .at-cursor-beat,
+.tab-print-container .at-note,
+.tab-print-container .at-fret,
+.tab-print-container .at-voice-2 {
+  opacity: 1 !important;
+  fill-opacity: 1 !important;
+  stroke-opacity: 1 !important;
+}
