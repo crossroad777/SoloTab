@@ -73,9 +73,15 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
     
     # 各チューニングとのマッチスコア
     candidates = []
+    has_low_bass = (lowest_avg < 52.0)  # E3未満の低音が存在するか
+    
     for name, tuning_notes in TUNINGS.items():
         lowest_open = tuning_notes[0]
         
+        # a. Nashville ガード: 低音域が存在する場合、Nashville(高音弦のみ)を禁止
+        if name == "nashville" and has_low_bass:
+            continue
+            
         # スコア計算
         score = 0.0
         
@@ -89,11 +95,19 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
             score += 1.0  # 全音差
         else:
             score -= lowest_diff * 0.5  # 遠いほどペナルティ
+            
+        # b. Down系絶対ピッチ識別 (A4=440Hz基準 ±25セント)
+        if name in ("half_down", "full_down"):
+            # ピッチの小数部分からセント偏差を算出
+            cents_dev = (lowest_avg - lowest_open) * 100.0
+            if abs(cents_dev) <= 25.0:
+                score += 2.0
+            else:
+                score -= abs(cents_dev) * 0.02
         
         # 2. 開放弦ピッチの出現率
         open_hits = 0
         for open_pitch in tuning_notes:
-            # 開放弦の音(とそのオクターブ)がノート中に多いか
             count = sum(1 for p in pitches if p % 12 == open_pitch % 12)
             if count > 0:
                 open_hits += min(count / len(pitches) * 10, 1.0)
@@ -117,10 +131,8 @@ def detect_tuning(notes: List[Dict], detected_key: str = None) -> Dict:
     # スコアでソート
     candidates.sort(key=lambda c: -c["score"])
     
-    best = candidates[0]
-    
-    # 確信度 (top1 - top2 の差に基づく)
-    score_diff = candidates[0]["score"] - candidates[1]["score"] if len(candidates) > 1 else 5.0
+    best = candidates[0] if candidates else {"tuning": "standard", "score": 1.0, "label": "standard"}
+    score_diff = (candidates[0]["score"] - candidates[1]["score"]) if len(candidates) > 1 else 5.0
     confidence = min(1.0, score_diff / 5.0)
     
     return {

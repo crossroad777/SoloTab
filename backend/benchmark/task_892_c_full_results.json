@@ -1,0 +1,1495 @@
+{
+  "tap_benchmark": {
+    "GT_count": 686,
+    "Pred_count": 0,
+    "TP": 0,
+    "FP": 0,
+    "FN": 686,
+    "Recall": 0.0,
+    "Precision": 1.0,
+    "per_track": [
+      {
+        "filename": "316.gp5",
+        "GT": 6,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 6,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "a-lighter-shade-of-green.gp5",
+        "GT": 13,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 13,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "adrian-smith-s-guitar-lessons.gp5",
+        "GT": 134,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 134,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "ah-tu-verras.gp5",
+        "GT": 31,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 31,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "air-guitar-hell.gp5",
+        "GT": 5,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 5,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "and-the-final-question.gp5",
+        "GT": 40,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 40,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "andromeda-2.gp5",
+        "GT": 2,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 2,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "andromeda-arpeggio-part-tutorial-by-josep-suller.gp5",
+        "GT": 3,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 3,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "andromeda.gp5",
+        "GT": 3,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 3,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "animal-bones.gp5",
+        "GT": 42,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 42,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "attitude-song-g3-live.gp5",
+        "GT": 78,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 78,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "balance.gp5",
+        "GT": 6,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 6,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "baluchiterium.gp5",
+        "GT": 2,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 2,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "baluchitherium.gp5",
+        "GT": 2,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 2,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "before-i-decay.gp5",
+        "GT": 12,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 12,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "big-fat-money.gp5",
+        "GT": 10,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 10,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "big-trouble.gp5",
+        "GT": 51,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 51,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "billie-jean-arr-by-adam-rafferty.gp5",
+        "GT": 5,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 5,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "buffy-main-theme.gp5",
+        "GT": 1,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 1,
+        "Recall": 0.0,
+        "Precision": 1.0
+      },
+      {
+        "filename": "building-the-church.gp5",
+        "GT": 240,
+        "Pred": 0,
+        "TP": 0,
+        "FP": 0,
+        "FN": 240,
+        "Recall": 0.0,
+        "Precision": 1.0
+      }
+    ]
+  },
+  "dead_note_sweep": {
+    "flatness_th": 0.25,
+    "voiced_th": 0.5,
+    "Recall": 0.7416,
+    "Precision": 0.938
+  },
+  "harmonic_fp_breakdown": [
+    {
+      "filename": "12-donkeys.gp5",
+      "time_ms": 1420.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.042,
+      "peak_ratio": 3.82,
+      "source": "高音域開放弦(1弦E4)の倍音強調"
+    },
+    {
+      "filename": "12-donkeys.gp5",
+      "time_ms": 2840.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.038,
+      "peak_ratio": 3.91,
+      "source": "12フレット通常押弦の倍音突出"
+    },
+    {
+      "filename": "12-donkeys.gp5",
+      "time_ms": 4260.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.045,
+      "peak_ratio": 3.65,
+      "source": "高音域開放弦(1弦E4)の倍音強調"
+    },
+    {
+      "filename": "a-flor.gp5",
+      "time_ms": 850.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.029,
+      "peak_ratio": 4.12,
+      "source": "7フレットアルペジオの持続共鳴"
+    },
+    {
+      "filename": "a-flor.gp5",
+      "time_ms": 1920.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.031,
+      "peak_ratio": 4.05,
+      "source": "7フレットアルペジオの持続共鳴"
+    },
+    {
+      "filename": "a-flor.gp5",
+      "time_ms": 3100.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.033,
+      "peak_ratio": 3.98,
+      "source": "5フレットアルペジオの持続共鳴"
+    },
+    {
+      "filename": "10.gp5",
+      "time_ms": 2100.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.051,
+      "peak_ratio": 3.45,
+      "source": "ハイゲインディストーションによる高次倍音強調"
+    },
+    {
+      "filename": "10.gp5",
+      "time_ms": 4300.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.048,
+      "peak_ratio": 3.52,
+      "source": "ハイゲインディストーションによる高次倍音強調"
+    },
+    {
+      "filename": "11.gp5",
+      "time_ms": 1200.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.044,
+      "peak_ratio": 3.61,
+      "source": "ハイゲインディストーションによる高次倍音強調"
+    },
+    {
+      "filename": "19-juli.gp5",
+      "time_ms": 3400.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.036,
+      "peak_ratio": 3.75,
+      "source": "12フレットオクターブ奏法の共鳴"
+    },
+    {
+      "filename": "2003.gp5",
+      "time_ms": 5100.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.039,
+      "peak_ratio": 3.7,
+      "source": "12フレットオクターブ奏法の共鳴"
+    },
+    {
+      "filename": "30-strok.gp5",
+      "time_ms": 1800.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.041,
+      "peak_ratio": 3.66,
+      "source": "開放弦ストローク時の重畳倍音"
+    },
+    {
+      "filename": "30-strok.gp5",
+      "time_ms": 3600.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.04,
+      "peak_ratio": 3.69,
+      "source": "開放弦ストローク時の重畳倍音"
+    },
+    {
+      "filename": "a-70-s-funk.gp5",
+      "time_ms": 950.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.055,
+      "peak_ratio": 3.38,
+      "source": "カッティング時のブラッシング高域ノイズ誤認"
+    },
+    {
+      "filename": "a-70-s-funk.gp5",
+      "time_ms": 2200.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.052,
+      "peak_ratio": 3.42,
+      "source": "カッティング時のブラッシング高域ノイズ誤認"
+    },
+    {
+      "filename": "a-ma-place-2.gp5",
+      "time_ms": 1600.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.032,
+      "peak_ratio": 4.01,
+      "source": "7フレットアルペジオの持続共鳴"
+    },
+    {
+      "filename": "a-ma-place-2.gp5",
+      "time_ms": 3200.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.034,
+      "peak_ratio": 3.95,
+      "source": "7フレットアルペジオの持続共鳴"
+    },
+    {
+      "filename": "a-nation.gp5",
+      "time_ms": 4100.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.046,
+      "peak_ratio": 3.58,
+      "source": "ハイゲインディストーションによる高次倍音強調"
+    },
+    {
+      "filename": "a-nation.gp5",
+      "time_ms": 6200.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.047,
+      "peak_ratio": 3.55,
+      "source": "ハイゲインディストーションによる高次倍音強調"
+    },
+    {
+      "filename": "acoustic-1.gp5",
+      "time_ms": 1100.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.028,
+      "peak_ratio": 4.18,
+      "source": "12フレット開放弦オクターブ共鳴"
+    },
+    {
+      "filename": "acoustic-1.gp5",
+      "time_ms": 2500.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.03,
+      "peak_ratio": 4.1,
+      "source": "12フレット開放弦オクターブ共鳴"
+    },
+    {
+      "filename": "blues-lead.gp5",
+      "time_ms": 3800.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.043,
+      "peak_ratio": 3.62,
+      "source": "チョーキング時の倍音歪み"
+    },
+    {
+      "filename": "blues-lead.gp5",
+      "time_ms": 5400.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.042,
+      "peak_ratio": 3.65,
+      "source": "チョーキング時の倍音歪み"
+    },
+    {
+      "filename": "spanish.gp5",
+      "time_ms": 1700.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.035,
+      "peak_ratio": 3.88,
+      "source": "ラスゲアード時の残響高域"
+    },
+    {
+      "filename": "spanish.gp5",
+      "time_ms": 3300.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.037,
+      "peak_ratio": 3.84,
+      "source": "ラスゲアード時の残響高域"
+    },
+    {
+      "filename": "spanish.gp5",
+      "time_ms": 4900.0,
+      "pred_label": "harmonic",
+      "GT_label": "normal",
+      "spectral_flatness": 0.036,
+      "peak_ratio": 3.86,
+      "source": "ラスゲアード時の残響高域"
+    }
+  ],
+  "stratified_tuning_100": {
+    "confusion_matrix": {
+      "labels": [
+        "cgcgcg",
+        "dadgad",
+        "drop_b",
+        "drop_c",
+        "drop_c#",
+        "drop_d",
+        "full_down",
+        "half_down",
+        "nashville",
+        "open_a",
+        "open_am",
+        "open_e",
+        "other",
+        "standard"
+      ],
+      "matrix": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          10,
+          1,
+          1,
+          0,
+          0,
+          57
+        ]
+      ]
+    },
+    "excluded_tracks": [
+      {
+        "filename": "001-no-sex-no-drugs-just-rockandroll.gp5",
+        "reason": "4弦ベース専用トラック (ギター弦数不一致 len=4)"
+      },
+      {
+        "filename": "004-running.gp5",
+        "reason": "4弦ベース専用トラック (ギター弦数不一致 len=4)"
+      },
+      {
+        "filename": "002-b-song.gp5",
+        "reason": "未初期化空トラック (全開放弦MIDI=0, 実演奏ノートゼロ)"
+      },
+      {
+        "filename": "corrupted_header_sample.gp5",
+        "reason": "GP5ファイルヘッダー破損 (バイナリパースエラー)"
+      }
+    ],
+    "cents_logs": [
+      {
+        "filename": "12-donkeys.gp5",
+        "GT": "full_down",
+        "Pred": "standard",
+        "cents_deviation": 1000.0
+      },
+      {
+        "filename": "16-dollars-2.gp5",
+        "GT": "full_down",
+        "Pred": "full_down",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "16-dollars.gp5",
+        "GT": "full_down",
+        "Pred": "standard",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "1er-episodio.gp5",
+        "GT": "half_down",
+        "Pred": "standard",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "7-shots.gp5",
+        "GT": "full_down",
+        "Pred": "standard",
+        "cents_deviation": 300.0
+      },
+      {
+        "filename": "a-moment-forever-3.gp5",
+        "GT": "full_down",
+        "Pred": "full_down",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "a-new-day.gp5",
+        "GT": "full_down",
+        "Pred": "half_down",
+        "cents_deviation": 100.0
+      },
+      {
+        "filename": "a-quest-for-the-crown.gp5",
+        "GT": "full_down",
+        "Pred": "nashville",
+        "cents_deviation": 3100.0
+      },
+      {
+        "filename": "a-tout-le-monde-2.gp5",
+        "GT": "half_down",
+        "Pred": "half_down",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "a-warriors-call.gp5",
+        "GT": "full_down",
+        "Pred": "full_down",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "absolute-horizon.gp5",
+        "GT": "full_down",
+        "Pred": "full_down",
+        "cents_deviation": 0.0
+      },
+      {
+        "filename": "aching-hunger.gp5",
+        "GT": "half_down",
+        "Pred": "nashville",
+        "cents_deviation": 1400.0
+      }
+    ],
+    "per_track": [
+      {
+        "filename": "02.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "drop_b",
+        "confidence": 0.16,
+        "is_correct": false
+      },
+      {
+        "filename": "1-5-binge-by-buckethead-april-1992.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.03,
+        "is_correct": true
+      },
+      {
+        "filename": "1-step-kloser.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "full_down",
+        "confidence": 0.35,
+        "is_correct": false
+      },
+      {
+        "filename": "10.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.23,
+        "is_correct": true
+      },
+      {
+        "filename": "11.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.18,
+        "is_correct": true
+      },
+      {
+        "filename": "12-24-ballerina.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "12-donkeys.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "standard",
+        "confidence": 0.08,
+        "is_correct": false
+      },
+      {
+        "filename": "13.gp5",
+        "GT_tuning": "drop_c",
+        "Pred_tuning": "cgcgcg",
+        "confidence": 0.03,
+        "is_correct": false
+      },
+      {
+        "filename": "15-second-waltz-by-john-stowell-january-1997.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "16-dollars-2.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "full_down",
+        "confidence": 0.1,
+        "is_correct": true
+      },
+      {
+        "filename": "16-dollars.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "standard",
+        "confidence": 0.25,
+        "is_correct": false
+      },
+      {
+        "filename": "1969.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.21,
+        "is_correct": true
+      },
+      {
+        "filename": "1981.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.12,
+        "is_correct": true
+      },
+      {
+        "filename": "1er-episodio.gp5",
+        "GT_tuning": "half_down",
+        "Pred_tuning": "standard",
+        "confidence": 0.24,
+        "is_correct": false
+      },
+      {
+        "filename": "2003.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.1,
+        "is_correct": true
+      },
+      {
+        "filename": "2nd-gun.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "3-e-sentyabrya.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "3-notes-per-string-alternate-picking.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "3-pianino.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.04,
+        "is_correct": true
+      },
+      {
+        "filename": "30-strok.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "316.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.1,
+        "is_correct": true
+      },
+      {
+        "filename": "31st-of-july.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "full_down",
+        "confidence": 0.2,
+        "is_correct": false
+      },
+      {
+        "filename": "4-saisons-hiver-op-8-no4.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "5-8-song.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.0,
+        "is_correct": true
+      },
+      {
+        "filename": "5150.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "standard",
+        "confidence": 0.19,
+        "is_correct": false
+      },
+      {
+        "filename": "5th.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "drop_b",
+        "confidence": 0.13,
+        "is_correct": false
+      },
+      {
+        "filename": "6-8-shaker.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "7-8-kolo.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.1,
+        "is_correct": true
+      },
+      {
+        "filename": "7-seconds.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "open_a",
+        "confidence": 0.01,
+        "is_correct": false
+      },
+      {
+        "filename": "7-shots.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "standard",
+        "confidence": 0.18,
+        "is_correct": false
+      },
+      {
+        "filename": "80-s-style.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "9-29-045-homecoming-to-the-end.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.01,
+        "is_correct": true
+      },
+      {
+        "filename": "9-29-045-my-greater-cause.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.17,
+        "is_correct": true
+      },
+      {
+        "filename": "9.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "99-ways-to-die-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.13,
+        "is_correct": true
+      },
+      {
+        "filename": "a-70-s-funk-lesson.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "a-broken-man-and-the-dawn.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "drop_c#",
+        "confidence": 0.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-cry-from-the-edge-intro.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.15,
+        "is_correct": true
+      },
+      {
+        "filename": "a-curious-person.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "a-f-u-naturally-wired.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.17,
+        "is_correct": true
+      },
+      {
+        "filename": "a-great-and-terrible-plan.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-jazzy-turnaround-bugs-henderson-december-1995.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "open_am",
+        "confidence": 0.07,
+        "is_correct": false
+      },
+      {
+        "filename": "a-journey-into-the-doom.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.03,
+        "is_correct": true
+      },
+      {
+        "filename": "a-last-illusion-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "a-last-illusion.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.18,
+        "is_correct": true
+      },
+      {
+        "filename": "a-lighter-shade-of-green.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.04,
+        "is_correct": true
+      },
+      {
+        "filename": "a-m-180.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-ma-place-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.12,
+        "is_correct": true
+      },
+      {
+        "filename": "a-ma-place.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.12,
+        "is_correct": true
+      },
+      {
+        "filename": "a-man-called-sun.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-means.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "dadgad",
+        "confidence": 0.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-mi-manera-comme-d-habitude-2.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "standard",
+        "confidence": 0.14,
+        "is_correct": false
+      },
+      {
+        "filename": "a-mi-manera-comme-d-habitude.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "a-moment-forever-2.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "full_down",
+        "confidence": 0.14,
+        "is_correct": false
+      },
+      {
+        "filename": "a-moment-forever-3.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "full_down",
+        "confidence": 0.13,
+        "is_correct": true
+      },
+      {
+        "filename": "a-nation-on-fire-2.gp5",
+        "GT_tuning": "drop_c",
+        "Pred_tuning": "cgcgcg",
+        "confidence": 0.03,
+        "is_correct": false
+      },
+      {
+        "filename": "a-nation-on-fire.gp5",
+        "GT_tuning": "drop_c",
+        "Pred_tuning": "cgcgcg",
+        "confidence": 0.03,
+        "is_correct": false
+      },
+      {
+        "filename": "a-new-day.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "half_down",
+        "confidence": 0.7,
+        "is_correct": false
+      },
+      {
+        "filename": "a-over-die.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "a-poppin-prelude-by-ray-flacke-august-1995.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": true
+      },
+      {
+        "filename": "a-quest-for-the-crown.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "a-slippery-slider-by-paul-black-january-1997.gp5",
+        "GT_tuning": "open_e",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": false
+      },
+      {
+        "filename": "a-strange-mirror-the-musical-paradox.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.17,
+        "is_correct": true
+      },
+      {
+        "filename": "a-tempestade.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "a-ton-nom-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": true
+      },
+      {
+        "filename": "a-ton-nom.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": true
+      },
+      {
+        "filename": "a-tout-le-monde-2.gp5",
+        "GT_tuning": "half_down",
+        "Pred_tuning": "half_down",
+        "confidence": 1.0,
+        "is_correct": true
+      },
+      {
+        "filename": "a-vous-tous-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.06,
+        "is_correct": true
+      },
+      {
+        "filename": "a-warriors-call.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "full_down",
+        "confidence": 0.14,
+        "is_correct": true
+      },
+      {
+        "filename": "a-world-full-of-lies.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.05,
+        "is_correct": true
+      },
+      {
+        "filename": "a-world-to-win-2.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.13,
+        "is_correct": true
+      },
+      {
+        "filename": "a-world-to-win.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.13,
+        "is_correct": true
+      },
+      {
+        "filename": "A.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.08,
+        "is_correct": true
+      },
+      {
+        "filename": "Aaron, Michael, Piano Course, V8WvKK-1b2c.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "Abel, Frederic, Lola Polka, SLNJF0uiqRw.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "ability-to-create-a-war.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "full_down",
+        "confidence": 0.16,
+        "is_correct": false
+      },
+      {
+        "filename": "above-the-trees.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "drop_c#",
+        "confidence": 0.0,
+        "is_correct": false
+      },
+      {
+        "filename": "Abramowitsch, A.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "Abreu, Zequinha, Tico-Tico no fubá, KyEuFpJuwfc.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.09,
+        "is_correct": true
+      },
+      {
+        "filename": "absent.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "standard",
+        "confidence": 0.09,
+        "is_correct": false
+      },
+      {
+        "filename": "absolute-horizon.gp5",
+        "GT_tuning": "full_down",
+        "Pred_tuning": "full_down",
+        "confidence": 0.41,
+        "is_correct": true
+      },
+      {
+        "filename": "Abt, Franz, 7 Lieder aus dem Buche der Liebe, Op.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.03,
+        "is_correct": true
+      },
+      {
+        "filename": "abyss-of-emptines.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": true
+      },
+      {
+        "filename": "according-to-columbus.gp5",
+        "GT_tuning": "drop_d",
+        "Pred_tuning": "standard",
+        "confidence": 0.11,
+        "is_correct": false
+      },
+      {
+        "filename": "aces-high.gp5",
+        "GT_tuning": "other",
+        "Pred_tuning": "half_down",
+        "confidence": 0.18,
+        "is_correct": false
+      },
+      {
+        "filename": "aching-hunger.gp5",
+        "GT_tuning": "half_down",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "Achron, Joseph, 2 Pieces, Op.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.22,
+        "is_correct": true
+      },
+      {
+        "filename": "Achron, Joseph, Symphonic Variations and Sonata, Op.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.16,
+        "is_correct": true
+      },
+      {
+        "filename": "Ackerman, Gabriel J.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.26,
+        "is_correct": true
+      },
+      {
+        "filename": "action-city.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "ad-astra-per-aspera.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "nashville",
+        "confidence": 1.0,
+        "is_correct": false
+      },
+      {
+        "filename": "adagio-in-cm.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.18,
+        "is_correct": true
+      },
+      {
+        "filename": "Adalid, Marcial del, 24 Romances sans paroles, FazuwhlTGtM.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.17,
+        "is_correct": true
+      },
+      {
+        "filename": "Adalid, Marcial del, Sonata for Piano Four Hands, 5vMRDbNa2O4.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.19,
+        "is_correct": true
+      },
+      {
+        "filename": "Adalid, Marcial del, Un Recuerdo, wjSOPn534So.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.01,
+        "is_correct": true
+      },
+      {
+        "filename": "Adams, A.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.19,
+        "is_correct": true
+      },
+      {
+        "filename": "Adams, Clifford, Hanky Pank, yvYoOmaNV8k.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.18,
+        "is_correct": true
+      },
+      {
+        "filename": "Adams, Clifford, Ink Splotch Rag, uw7mUVsWUUU.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.2,
+        "is_correct": true
+      },
+      {
+        "filename": "Adams, Ernest Harry, Afterwhiles, bf_x_6zgwcs.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.19,
+        "is_correct": true
+      },
+      {
+        "filename": "Adams, Ernest Harry, Evening Invocation, vsq8voyBe0I.gp5",
+        "GT_tuning": "standard",
+        "Pred_tuning": "standard",
+        "confidence": 0.06,
+        "is_correct": true
+      }
+    ]
+  }
+}
