@@ -690,7 +690,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     rhythm_info = {'subdivision': 'straight', 'triplet_ratio': 0.0}
     detected_key_sig = detected_key or "C"
     try:
-        from music_theory import detect_rhythm_pattern, detect_key_signature, validate_notes_by_music_theory
+        from music_theory import detect_rhythm_pattern, detect_key_signature
         
         # MIDIベースのキー推定: オーディオベースの確信度が高い場合は上書きしない
         midi_key = detect_key_signature(notes)
