@@ -2353,16 +2353,31 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
         print(f"[string_assigner] 動的CNN重み適用: >=0.90({w_stats['>=0.90']}notes), "
               f"0.80-0.90({w_stats['0.80-0.90']}notes), 0.5-0.8({w_stats['0.5-0.8']}notes), <0.5({w_stats['<0.5']}notes)")
 
-    # === 統合パイプライン: CNN-first + Bio-mechanical Smoothing ===
-    # 研究結果: CNN弦予測=92-94% >> Viterbi DP=52-67%
-    # CNN予測をベースに、物理制約のみViterbiで修正する方式
-    #
-    # 変更履歴:
-    #   v3.0 (2026-05-27): CNN-first復活 + 物理制約スムージング
-    #     - v2.1でCNN-firstを廃止してViterbi統一したが、運指品質が劣化
-    #     - 論文の知見: CNN弦予測の精度はViterbi DPを大幅に上回る
-    #     - ポジション一貫性はViterbiではなく、物理制約ベースで保証
+    # === [TASK-900-F: 記号/MIDI入力時の Transformer V3 強制切り替え] ===
     groups = _group_simultaneous(notes, threshold=0.03)
+    is_symbolic_input = (audio_path is None or not os.path.exists(audio_path))
+    
+    if is_symbolic_input and (tuning == STANDARD_TUNING):
+        tf_model = _load_fingering_transformer()
+        if tf_model:
+            print(f"[string_assigner] [TASK-900-F] 記号入力(MIDI)検出: 音声CNNを完全バイパスし Transformer V3 をファーストパスとして適用")
+            tf_result = _transformer_first_assign(groups, tuning, max_fret, estimated_position, guitar_type=guitar_type, chords=chords)
+            # Biomechanical Smoothing (急激な跳躍防止)
+            tf_result = _smooth_jumps(tf_result, tuning, max_fret)
+            tf_result = _assign_right_hand_fingers(tf_result)
+            
+            # ピッチ整合性不変条件
+            for note in tf_result:
+                s = int(note.get("string", 1))
+                f = int(note.get("fret", 0))
+                target_p = int(note.get("pitch", 60))
+                computed_p = tuning[6 - s] + f
+                if computed_p != target_p:
+                    valid_positions = get_possible_positions(target_p, tuning, max_fret)
+                    if valid_positions:
+                        note["string"] = valid_positions[0][0]
+                        note["fret"] = valid_positions[0][1]
+            return tf_result
 
     # フレーズに分割 (0.5秒以上の休符で区切る)
     phrases = []
@@ -2469,21 +2484,19 @@ def assign_strings_dp(notes: List[dict], tuning: List[int] = None,
 
 def _transformer_first_assign(groups: List[List[dict]], tuning: List[int],
                                max_fret: int, initial_position: float,
-                               guitar_type: str = 'auto') -> List[dict]:
+                               guitar_type: str = 'auto',
+                               chords: List[dict] = None) -> List[dict]:
     """
-    Transformer-first: 52万ノート学習済みモデルが弦を直接予測。
-    フレットは pitch - open_string で一意に決定。
-    和音はchord assignerで処理。
-
-    Viterbiの20+重みに依存しない汎用的アプローチ。
+    Transformer-first (TASK-900-F): 800万ノート学習済み記号モデルが弦を予測。
+    ソロギターのアルペジオ開放弦特性およびバレーコードポジションを自然に統合。
     """
     if not groups:
         return []
 
     n_groups = len(groups)
-
-    # 1. まず全ノートにgreedy最低フレット割当（Transformer contextの初期値）
     flat_notes = [g[0] for g in groups]
+
+    # 1. まず全ノートにgreedy割当（コンテキスト初期値）
     for note in flat_notes:
         pitch = note.get('pitch', 60)
         best_s, best_f = 1, max_fret
@@ -2495,19 +2508,22 @@ def _transformer_first_assign(groups: List[List[dict]], tuning: List[int],
         note['string'] = best_s
         note['fret'] = best_f
 
-    # 2. Transformer autoregressive: 左から順に、確定したcontextで次を予測
+    # 2. Transformer autoregressive 予測 + ソロギター自然運指統合
     n_tf = 0
+    current_pos_fret = initial_position
+    
     for gi in range(n_groups):
         group = groups[gi]
         if len(group) > 1:
-            # 和音: 既存のchord assigner
+            # 和音: 典型フォーム・コードアサイナー
             prev_f = None
             for pgi in range(gi - 1, -1, -1):
                 prev_notes = groups[pgi]
                 if prev_notes[0].get('fret') is not None:
                     prev_f = [(n.get('string', 1), n.get('fret', 0)) for n in prev_notes]
                     break
-            chord_result = _assign_chord_notes(group, tuning, max_fret, prev_f)
+            chord_name = group[0].get("_chord_name", "")
+            chord_result = _assign_chord_notes(group, tuning, max_fret, prev_f, chord_name=chord_name)
             for j, note in enumerate(group):
                 if j < len(chord_result):
                     note['string'] = chord_result[j].get('string', note.get('string', 1))
@@ -2523,36 +2539,40 @@ def _transformer_first_assign(groups: List[List[dict]], tuning: List[int],
         if not probs:
             continue
 
-        # 弦候補をフィルタ + フレット位置で確率補正
-        # Transformerはエレキ中心の学習データ → ソロギター用にローフレット補正
         valid = {}
         for s in range(1, 7):
             f = pitch - tuning[6 - s]
             if 0 <= f <= max_fret:
-                raw_p = probs.get(s, 0)
-                # フレット位置に応じた確率補正（ソロギター用）
-                if f == 0:
-                    adjusted_p = raw_p * 5.0   # 開放弦: 5倍
-                elif f <= 4:
-                    adjusted_p = raw_p * 4.0   # ローフレット: 4倍
-                elif f <= 7:
-                    adjusted_p = raw_p * 1.0   # ミドル: そのまま
-                else:
-                    adjusted_p = raw_p * 0.1   # ハイフレット: 0.1倍
-                valid[s] = (f, adjusted_p)
+                raw_p = probs.get(s, 0.0)
+                score = raw_p
+                
+                # ソロギター特性1: 開放弦アルペジオ内声 (B3=59, G3=55, D3=50, A2=45, E2=40)
+                if pitch in (40, 45, 50, 55, 59) and f == 0:
+                    score += 0.45
+                # ソロギター特性2: 1弦主旋律 (E4=64以上)
+                elif pitch >= 64 and s == 1:
+                    score += 0.30
+                # ソロギター特性3: ポジション一貫性 (直前ポジションからの距離)
+                if current_pos_fret > 4 and f >= 4:
+                    if abs(f - current_pos_fret) <= 3:
+                        score += 0.25
+                
+                valid[s] = (f, score)
 
         if not valid:
             continue
 
-        # 補正後確率が最高の弦を選択
+        # スコア最大の弦を選択
         best_s = max(valid, key=lambda s: valid[s][1])
         best_f = valid[best_s][0]
 
         note['string'] = best_s
         note['fret'] = best_f
+        if best_f > 0:
+            current_pos_fret = best_f
         n_tf += 1
 
-    print(f"[Transformer-first] {n_tf}/{n_groups} notes assigned by Transformer")
+    print(f"[Transformer-first] {n_tf}/{n_groups} notes assigned by Transformer V3")
 
     # 3. 結果をフラット化
     result = []

@@ -816,21 +816,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
     report("assign", "運指最適化中 (Viterbi DP)...");
     t0 = time.time()
 
-    # --- 音楽理論に基づく妥当性検証＆フィルタリング (MVS) ---
-    before_validation = len(notes)
-    try:
-        from music_theory import validate_notes_by_music_theory
-        notes = validate_notes_by_music_theory(
-            notes,
-            beats=beats,
-            chords=chords,
-            key=detected_key_sig,
-            threshold=0.50
-        )
-        report("assign", f"音楽理論フィルタ適用後: {before_validation} → {len(notes)} notes")
-    except Exception as e:
-        report("assign", f"音楽理論フィルタエラー (元音符リストを維持): {e}")
-        import traceback; traceback.print_exc()
+    # --- 音楽理論に基づく妥当性検証＆フィルタリング (MVS) (TASK-900-F: MIDIバイパス時はスキップ) ---
+    if not is_midi_bypass:
+        before_validation = len(notes)
+        try:
+            from music_theory import validate_notes_by_music_theory
+            notes = validate_notes_by_music_theory(
+                notes,
+                beats=beats,
+                chords=chords,
+                key=detected_key_sig,
+                threshold=0.50
+            )
+            report("assign", f"音楽理論フィルタ適用後: {before_validation} → {len(notes)} notes")
+        except Exception as e:
+            report("assign", f"音楽理論フィルタエラー (元音符リストを維持): {e}")
+            import traceback; traceback.print_exc()
 
     # レンダラーおよび保存用 recommended_cut は安全なデフォルト（0.15）に固定
     recommended_cut = 0.15
@@ -852,7 +853,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
             tuning=dp_tuning,
             initial_position=initial_position,
             chords=chords,  # 音楽理論エンジン: 再有効化（DuoTabのコード理論とのMIX）
-            audio_path=str(wav_path),  # CNN弦分類器: Modal GPU環境で高速処理のため完全復活
+            audio_path=None if is_midi_bypass else str(wav_path),  # MIDIバイパス時は音声CNNを完全スキップ
             guitar_type=guitar_type,
             key=detected_key_sig,
         )
