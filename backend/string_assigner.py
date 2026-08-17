@@ -883,6 +883,14 @@ def _get_position_center(fret: int) -> int:
 
 def _human_pref_cost(s: int, f: int, pitch: int) -> float:
     """Human preference bonus: 26Kコレクションから学んだ人間の弦/フレット選好 (SoloTab-26K)。"""
+    # === [TASK-937 Step 4: 開放弦バイアス] ===
+    # ピッチが現チューニングの開放弦ピッチと一致するノートは 0f を最優先
+    if f == 0 and pitch in (40, 45, 50, 55, 59, 64):
+        return -50.0
+    # 開放弦で発音可能な音高でハイフレット(f>=7)を選ぶ場合はペナルティ
+    if pitch in (40, 45, 50, 55, 59, 64) and f >= 7:
+        return 35.0
+
     # 1. クラシック・アコースティック実測分布ルール (SoloTab-26K)
     if pitch in (64, 66, 67, 69, 71, 72, 74, 76) and s == 1:
         return -35.0

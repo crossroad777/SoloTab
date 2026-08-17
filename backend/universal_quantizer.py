@@ -134,7 +134,18 @@ def quantize_notes_universal(
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
         else:
-            if err_triplet < err_straight * 0.7 and err_triplet < 0.6:
+            # === [TASK-937: 均等8分音符グリッド優先] ===
+            if len(time_clusters) <= 2:
+                err_8th = calc_grid_error(time_clusters, GRID_STRAIGHT_8TH)
+                if err_8th <= 1.2:  # ±60ms 相当の許容範囲
+                    selected_grid = GRID_STRAIGHT_8TH
+                    is_triplet_beat = False
+                elif err_triplet < err_straight * 0.7 and err_triplet < 0.6:
+                    selected_grid = GRID_TRIPLET_8TH
+                    is_triplet_beat = True
+                else:
+                    selected_grid = GRID_STRAIGHT_16TH
+            elif err_triplet < err_straight * 0.7 and err_triplet < 0.6:
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
 

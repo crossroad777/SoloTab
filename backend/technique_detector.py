@@ -741,15 +741,34 @@ def _detect_percussive_techniques(
         # 3. 既存ノートとの照合 & アタックミュート(x)付与（全打音を漏れなく付与）
         MATCH_WINDOW = 0.045  # 45ms
 
-        for note in notes:
+        for idx, note in enumerate(notes):
             current_tech = note.get("technique")
             if current_tech and current_tech != "normal":
                 continue
 
             t = float(note.get("start", note.get("start_time", 0.0)))
             close_onsets = [o for o in onset_times if abs(o - t) <= MATCH_WINDOW]
-            if close_onsets:
-                note["technique"] = "x"
+            if not close_onsets:
+                continue
+
+            # === [TASK-937: レガート/ハンマリング文脈保護] ===
+            # 同弦上で0.3秒以内に先行ノートが存在する場合、スラー/ハンマリングとみなしデッドノート(x)にしない
+            is_legato_context = False
+            curr_str = note.get("string")
+            for prev_idx in range(max(0, idx - 4), idx):
+                prev_n = notes[prev_idx]
+                if prev_n.get("string") == curr_str:
+                    prev_t = float(prev_n.get("start", prev_n.get("start_time", 0.0)))
+                    if 0 < (t - prev_t) <= 0.30:
+                        is_legato_context = True
+                        break
+
+            # ピッチが存在し、通常の旋律またはレガート文脈ならデッドノート化をブロック
+            if is_legato_context or note.get("pitch", 0) > 0:
+                # 弦打音・ブラッシングのみ（ピッチなし or velocity極小かつ非レガート）に限定
+                continue
+
+            note["technique"] = "x"
 
         return notes
 
