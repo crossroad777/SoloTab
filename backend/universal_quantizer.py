@@ -163,6 +163,15 @@ def quantize_notes_universal(
             sub = c["frac"] * DIVISIONS
             best_snap = min(selected_grid, key=lambda g: abs(g - sub))
 
+            # === [TASK-939 Step 2: ノート単位8分スナップ (|offset| <= 90ms)] ===
+            # ビートグリッド選択に関わらず、最寄り8分点(0 or 6)から90ms以内(sub_divsで約1.8divs以内)なら8分に吸着
+            dist_to_8th_0 = abs(sub - 0)
+            dist_to_8th_6 = abs(sub - 6)
+            min_dist_8th = min(dist_to_8th_0, dist_to_8th_6)
+            # 90ms in divisions: 90ms / (local_dur / 12) ≈ 1.8 divs (at BPM 75, local_dur=0.8s, 1 div=66.7ms)
+            if min_dist_8th <= 1.8:
+                best_snap = 0 if dist_to_8th_0 <= dist_to_8th_6 else 6
+
             for it in c["items"]:
                 it["bar"] = bar
                 it["beat_in_bar"] = beat_in_bar
