@@ -3,16 +3,18 @@ import subprocess
 import threading
 import time
 import os
+import signal
+from pathlib import Path
 
 def tail_process(process, prefix):
     for line in iter(process.stdout.readline, b''):
         try:
-            # UTF-8を試し、失敗したらcp932（Windows日本語コンソール）
             try:
                 text = line.decode('utf-8').rstrip()
             except UnicodeDecodeError:
                 text = line.decode('cp932', errors='replace').rstrip()
-            print(f"{prefix} {text}")
+            if text:
+                print(f"{prefix} {text}")
         except Exception:
             pass
 
@@ -32,27 +34,23 @@ def _kill_port(port: int):
                             ["taskkill", "/F", "/PID", pid],
                             capture_output=True, timeout=5
                         )
-                        print(f"  Killed PID {pid} on port {port}")
+                        print(f"  [cleanup] ポート {port} 上のプロセス (PID: {pid}) を強制終了しました")
     except Exception as e:
         print(f"  Port {port} cleanup skipped: {e}")
 
-
 def main():
-    print("=======================================")
-    print(" SoloTab - 統合一発起動スクリプト")
-    print("=======================================")
+    print("===================================================")
+    print(" SoloTab - 強力リフレッシュ サーバー起動マネージャー")
+    print("===================================================")
     
     # --- ゾンビプロセスの確実な掃除 ---
-    print("[cleanup] 残存プロセスを掃除中...")
-    _kill_port(8002)
-    _kill_port(5174)
+    print("[cleanup] 残存している古いプロセスを完全終了中...")
+    for port in [8000, 8001, 8002, 5173, 5174, 5175]:
+        _kill_port(port)
     
-    import shutil
-    from pathlib import Path
-
     PROJECT_ROOT = Path(__file__).resolve().parent
 
-    # 前回セッションの中間生成ファイルを削除（tab_dual, pdf等の古い結果）
+    # 前回セッションの中間生成ファイルを削除
     uploads_dir = PROJECT_ROOT / "uploads"
     if uploads_dir.exists():
         stale_files = ["tab_dual.musicxml", "tab.pdf"]
@@ -69,39 +67,31 @@ def main():
                     except Exception:
                         pass
         if stale_count:
-            print(f"[cleanup] 前回セッションの中間ファイル x{stale_count} を削除しました")
+            print(f"[cleanup] 前回の中間キャッシュファイル x{stale_count} をクリーンアップしました")
 
-    # 仮想環境があれば優先使用し、無ければシステムの python を使用する
-    venv_python = PROJECT_ROOT.parent / "nextchord" / "venv312" / "Scripts" / "python.exe"
-    python_bin = str(venv_python) if venv_python.exists() else "python"
+    # システムの Python 3.13 / 仮想環境の検出
+    python_bin = sys.executable or "python"
 
     backend_cmd = [
         python_bin,
-        "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002",
-        # --reload は削除: ファイル変更のたびにワーカーが再起動し、
-        # 処理中のMoE推論(約4分)とSSE接続を強制切断するため。
-        # コード変更後はサーバーを手動で再起動すること。
+        "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000",
     ]
     
-    # [重要] $env:CI="true" を付与しないと Vite は非対話ターミナルですぐ死ぬ
     frontend_env = os.environ.copy()
     frontend_env["CI"] = "true"  
     
-    # バックエンド用: 文字化け防止 + TF Warning抑制
     backend_env = os.environ.copy()
     backend_env["PYTHONIOENCODING"] = "utf-8"
     backend_env["PYTHONUTF8"] = "1"
-    backend_env["TF_CPP_MIN_LOG_LEVEL"] = "3"  # TF INFO/WARNING/ERROR抑制
-    backend_env["TF_ENABLE_ONEDNN_OPTS"] = "0"  # oneDNN Warning抑制
-    # BasicPitch/TFLite/requests の Python Warningを抑制
+    backend_env["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    backend_env["TF_ENABLE_ONEDNN_OPTS"] = "0"
     backend_env["PYTHONWARNINGS"] = "ignore::UserWarning,ignore::DeprecationWarning"
 
     frontend_cmd = ["cmd", "/c", "npm run dev"]
     
-    # Windowsでプロセスグループを作ってCtrl+Cでまとめてキルしやすくするフラグ
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
     
-    print("[1/2] Starting Backend...  (Port 8002)")
+    print("[1/2] バックエンドを起動中... (Port 8000)")
     p_backend = subprocess.Popen(
         backend_cmd,
         cwd=str(PROJECT_ROOT / "backend"),
@@ -112,7 +102,7 @@ def main():
         creationflags=creationflags
     )
     
-    print("[2/2] Starting Frontend... (Port 5174)")
+    print("[2/2] フロントエンドを起動中... (Port 5174)")
     p_frontend = subprocess.Popen(
         frontend_cmd,
         cwd=str(PROJECT_ROOT / "frontend"),
@@ -123,7 +113,6 @@ def main():
         creationflags=creationflags
     )
     
-    # ログ出力用スレッド開始
     t_backend = threading.Thread(target=tail_process, args=(p_backend, "[BACKEND] "))
     t_frontend = threading.Thread(target=tail_process, args=(p_frontend, "[FRONTEND]"))
     
@@ -132,35 +121,37 @@ def main():
     t_backend.start()
     t_frontend.start()
     
-    print("\n>>> Done! \n>>> Backend: http://localhost:8002 \n>>> Frontend: http://localhost:5174")
-    print(">>> 終了時は [Ctrl+C] を押してください。\n")
+    print("\n===================================================")
+    print(">>> 起動完了！最新コードで正常稼働中")
+    print(">>> バックエンド:   http://localhost:8000")
+    print(">>> フロントエンド: http://localhost:5174")
+    print(">>> 終了時は [Ctrl+C] を押してください。")
+    print("===================================================\n")
     
     try:
         while True:
             time.sleep(1)
-            # もしどちらかが死んだ場合のエラーハンドリング
             if p_backend.poll() is not None:
-                print("=======================================")
-                print("[!] Backend が予期せず終了しました。")
-                print("=======================================")
+                print("\n[!] Backend が終了しました。")
                 break
             if p_frontend.poll() is not None:
-                print("=======================================")
-                print("[!] Frontend が予期せず終了しました。")
-                print("=======================================")
+                print("\n[!] Frontend が終了しました。")
                 break
     except KeyboardInterrupt:
-        print("\n[Ctrl+C] シャットダウンシグナルを受け取りました...")
+        print("\n[shutdown] サーバーを終了しています...")
     finally:
-        # 子プロセスのクリーンキル (タスクマネージャ送り対策)
-        print("プロセスを停止中...")
+        # プロセスを確実に道連れ終了
         try:
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p_backend.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p_frontend.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            p_backend.terminate()
+            p_frontend.terminate()
+            time.sleep(0.5)
+            p_backend.kill()
+            p_frontend.kill()
         except Exception:
             pass
-        print("終了しました。")
-        sys.exit(0)
+        for port in [8000, 5174]:
+            _kill_port(port)
+        print("[shutdown] 全プロセスをクリーンアップ完了しました。")
 
 if __name__ == "__main__":
     main()
