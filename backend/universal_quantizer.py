@@ -134,20 +134,18 @@ def quantize_notes_universal(
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
         else:
-            # === [TASK-937: 均等8分音符グリッド優先] ===
-            if len(time_clusters) <= 2:
-                err_8th = calc_grid_error(time_clusters, GRID_STRAIGHT_8TH)
-                if err_8th <= 1.2:  # ±60ms 相当の許容範囲
-                    selected_grid = GRID_STRAIGHT_8TH
-                    is_triplet_beat = False
-                elif err_triplet < err_straight * 0.7 and err_triplet < 0.6:
-                    selected_grid = GRID_TRIPLET_8TH
-                    is_triplet_beat = True
-                else:
-                    selected_grid = GRID_STRAIGHT_16TH
-            elif err_triplet < err_straight * 0.7 and err_triplet < 0.6:
+            # === [TASK-938: 均等8分音符グリッド優先と緩和] ===
+            err_8th = calc_grid_error(time_clusters, GRID_STRAIGHT_8TH)
+            if len(time_clusters) <= 3 and err_8th <= 4.5:
+                # ±100ms以内の揺らぎはアコギのグルーヴ・タメとみなし8分グリッドへスナップ
+                selected_grid = GRID_STRAIGHT_8TH
+                is_triplet_beat = False
+            elif err_triplet < err_straight * 0.7 and err_triplet < 1.5:
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
+            else:
+                selected_grid = GRID_STRAIGHT_16TH
+                is_triplet_beat = False
 
         # 1拍内に4つ以上の音符がある場合: 16分3連符(6連符)または16分音符グリッドに昇格し、音符を一切間引かず100%保護
         if len(time_clusters) >= 4:

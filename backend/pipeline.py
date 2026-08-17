@@ -379,31 +379,30 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                         "velocity": float(note.velocity) / 127.0 if hasattr(note, "velocity") else 0.5,
                     })
 
-            # === [TASK-937: イントロ救出 (0〜8秒の弱音アルペジオ保護)] ===
-            # 初回検出ノートより前のイントロ区間にノートが存在しない場合、onset=0.30でイントロを救出
-            intro_notes = [n for n in _bp_notes if n["start"] < 8.0]
-            if len(intro_notes) < 4:
-                try:
-                    _, intro_midi, _ = bp_predict(str(transcription_wav_path),
-                                                  model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
-                                                  onset_threshold=0.30,
-                                                  frame_threshold=0.20,
-                                                  minimum_note_length=45.0)
-                    for inst in intro_midi.instruments:
-                        for note in inst.notes:
-                            if float(note.start) < 8.0:
-                                # 既存ノートと重複しないものだけ追加
-                                if not any(abs(n["start"] - float(note.start)) < 0.05 and n["pitch"] == int(note.pitch) for n in _bp_notes):
-                                    _bp_notes.append({
-                                        "start": float(note.start),
-                                        "end": float(note.end),
-                                        "pitch": int(note.pitch),
-                                        "velocity": float(note.velocity) / 127.0 if hasattr(note, "velocity") else 0.5,
-                                    })
-                    _bp_notes.sort(key=lambda n: n["start"])
-                    report("notes", f"[Intro Rescue §TASK-937] イントロ救出完了: 0〜8sノート数={len([n for n in _bp_notes if n['start'] < 8.0])}")
-                except Exception as e:
-                    report("notes", f"イントロ救出スキップ: {e}")
+            # === [TASK-938 Step 2: 更深いイントロ救出パス (0〜8秒区間)] ===
+            try:
+                _, intro_midi, _ = bp_predict(str(transcription_wav_path),
+                                              model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
+                                              onset_threshold=0.20,
+                                              frame_threshold=0.15,
+                                              minimum_note_length=40.0)
+                intro_added = 0
+                for inst in intro_midi.instruments:
+                    for note in inst.notes:
+                        if float(note.start) < 8.0:
+                            # 既存ノートと重複（50ms以内かつ同ピッチ）しないものだけ追加
+                            if not any(abs(n["start"] - float(note.start)) < 0.05 and n["pitch"] == int(note.pitch) for n in _bp_notes):
+                                _bp_notes.append({
+                                    "start": float(note.start),
+                                    "end": float(note.end),
+                                    "pitch": int(note.pitch),
+                                    "velocity": float(note.velocity) / 127.0 if hasattr(note, "velocity") else 0.5,
+                                })
+                                intro_added += 1
+                _bp_notes.sort(key=lambda n: n["start"])
+                report("notes", f"[Deep Intro Rescue §TASK-938] イントロ追加: {intro_added}音 → 0〜8s総ノート数={len([n for n in _bp_notes if n['start'] < 8.0])}")
+            except Exception as e:
+                report("notes", f"深いイントロ救出スキップ: {e}")
 
             report("notes", f"BasicPitch: {len(_bp_notes)} notes ({time.time()-t0:.1f}s)")
         except Exception as e:
