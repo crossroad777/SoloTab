@@ -14,7 +14,7 @@ def tail_process(process, prefix):
             except UnicodeDecodeError:
                 text = line.decode('cp932', errors='replace').rstrip()
             if text:
-                print(f"{prefix} {text}")
+                print(f"{prefix} {text}", flush=True)
         except Exception:
             pass
 
@@ -34,14 +34,14 @@ def _kill_port(port: int):
                             ["taskkill", "/F", "/PID", pid],
                             capture_output=True, timeout=5
                         )
-                        print(f"  [cleanup] ポート {port} 上のプロセス (PID: {pid}) を強制終了しました")
+                        print(f"  [cleanup] ポート {port} 上のプロセス (PID: {pid}) を強制終了しました", flush=True)
     except Exception as e:
-        print(f"  Port {port} cleanup skipped: {e}")
+        print(f"  Port {port} cleanup skipped: {e}", flush=True)
 
 def main():
-    print("===================================================")
-    print(" SoloTab - 強力リフレッシュ サーバー起動マネージャー")
-    print("===================================================")
+    print("===================================================", flush=True)
+    print(" SoloTab - 強力リフレッシュ サーバー起動マネージャー", flush=True)
+    print("===================================================", flush=True)
     
     # --- ゾンビプロセスの確実な掃除 ---
     print("[cleanup] 残存している古いプロセスを完全終了中...")
@@ -74,43 +74,42 @@ def main():
 
     backend_cmd = [
         python_bin,
-        "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000",
+        "-u", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000",
     ]
     
     frontend_env = os.environ.copy()
     frontend_env["CI"] = "true"  
     
     backend_env = os.environ.copy()
+    backend_env["PYTHONUNBUFFERED"] = "1"
     backend_env["PYTHONIOENCODING"] = "utf-8"
     backend_env["PYTHONUTF8"] = "1"
     backend_env["TF_CPP_MIN_LOG_LEVEL"] = "3"
     backend_env["TF_ENABLE_ONEDNN_OPTS"] = "0"
     backend_env["PYTHONWARNINGS"] = "ignore::UserWarning,ignore::DeprecationWarning"
 
-    frontend_cmd = ["cmd", "/c", "npm run dev"]
+    # Windows では npm.cmd を明示的に指定
+    npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+    frontend_cmd = [npm_cmd, "run", "dev"]
     
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
-    
-    print("[1/2] バックエンドを起動中... (Port 8000)")
+    print("[1/2] バックエンドを起動中... (Port 8000)", flush=True)
     p_backend = subprocess.Popen(
         backend_cmd,
         cwd=str(PROJECT_ROOT / "backend"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=backend_env,
-        bufsize=0,
-        creationflags=creationflags
+        bufsize=0
     )
     
-    print("[2/2] フロントエンドを起動中... (Port 5174)")
+    print("[2/2] フロントエンドを起動中... (Port 5174)", flush=True)
     p_frontend = subprocess.Popen(
         frontend_cmd,
         cwd=str(PROJECT_ROOT / "frontend"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=frontend_env,
-        bufsize=0,
-        creationflags=creationflags
+        bufsize=0
     )
     
     t_backend = threading.Thread(target=tail_process, args=(p_backend, "[BACKEND] "))

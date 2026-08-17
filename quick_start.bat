@@ -18,19 +18,30 @@ for %%P in (8000 8001 8002 5173 5174 5175) do (
 echo [2/3] サーバー（バックエンド ^& フロントエンド）を起動中...
 start "SoloTab Server [Port 8000 / 5174]" cmd /k "python start_servers.py"
 
-echo [3/3] サーバーの待受準備を待機中...
-timeout /t 3 /nobreak >nul
+echo [3/3] サーバーの待受準備を確認中...
+set count=0
+:WAIT_LOOP
+timeout /t 1 /nobreak >nul
+set /a count+=1
 
-echo ブラウザを起動します...
-start http://localhost:5174/
+powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/' -UseBasicParsing -TimeoutSec 1; if ($r.StatusCode -eq 200) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+if %ERRORLEVEL% equ 0 goto READY
 
+if %count% geq 15 goto READY
+goto WAIT_LOOP
+
+:READY
 echo.
 echo ===================================================
-echo   SoloTab を最新状態で起動しました！
+echo   SoloTab が正常に起動しました！ブラウザを開きます...
 echo ===================================================
 echo   フロントエンド: http://localhost:5174
 echo   バックエンド:   http://localhost:8000
 echo.
 echo   このウィンドウは閉じても問題ありません。
 echo   サーバー停止は黒いコンソール画面で [Ctrl+C] を押してください。
+echo.
+
+start http://localhost:5174/
+timeout /t 3 /nobreak >nul
 exit
