@@ -64,6 +64,31 @@ pipeline_res = run_pipeline(
 # 出力GP5と突き合わせ
 out_gp5_path = session_dir / "tab.gp5"
 out_gp = guitarpro.parse(str(out_gp5_path))
+
+print("\n=== 禁じられた遊び (Romance) 冒頭4小節 TAB ダンプ ===")
+for m_idx, m in enumerate(out_gp.tracks[0].measures[:4]):
+    bar_num = m_idx + 1
+    notes_in_bar = []
+    for v in m.voices:
+        for b in v.beats:
+            for n in b.notes:
+                notes_in_bar.append(f"s{n.string}:f{n.value}")
+    print(f"Measure {bar_num} ({len(notes_in_bar)} notes):", " ".join(notes_in_bar))
+
+triplet_beats = 0
+total_beats = 0
+for m in out_gp.tracks[0].measures:
+    for v in m.voices:
+        for b in v.beats:
+            if b.notes:
+                total_beats += 1
+                t_enters = getattr(b.duration.tuplet, "enters", 1)
+                t_times = getattr(b.duration.tuplet, "times", 1)
+                if t_enters == 3 or t_times == 3:
+                    triplet_beats += 1
+
+print(f"\n3連符として記譜されたビートの割合: {triplet_beats}/{total_beats} ({triplet_beats/max(1, total_beats)*100:.1f}%)")
+
 out_notes = []
 tuning_arr = [64, 59, 55, 50, 45, 40]
 for m in out_gp.tracks[0].measures:

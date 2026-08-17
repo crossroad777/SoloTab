@@ -134,18 +134,25 @@ def quantize_notes_universal(
                 selected_grid = GRID_TRIPLET_8TH
                 is_triplet_beat = True
         else:
-            # === [TASK-938: 均等8分音符グリッド優先と緩和] ===
-            err_8th = calc_grid_error(time_clusters, GRID_STRAIGHT_8TH)
-            if len(time_clusters) <= 3 and err_8th <= 4.5:
-                # ±100ms以内の揺らぎはアコギのグルーヴ・タメとみなし8分グリッドへスナップ
-                selected_grid = GRID_STRAIGHT_8TH
-                is_triplet_beat = False
-            elif err_triplet < err_straight * 0.7 and err_triplet < 1.5:
-                selected_grid = GRID_TRIPLET_8TH
-                is_triplet_beat = True
+            # === [TASK-941: ソロギター 4/4 プロファイル限定 8分グリッド緩和] ===
+            if time_signature != "3/4":
+                err_8th = calc_grid_error(time_clusters, GRID_STRAIGHT_8TH)
+                if len(time_clusters) <= 3 and err_8th <= 4.5:
+                    selected_grid = GRID_STRAIGHT_8TH
+                    is_triplet_beat = False
+                elif err_triplet < err_straight * 0.7 and err_triplet < 1.5:
+                    selected_grid = GRID_TRIPLET_8TH
+                    is_triplet_beat = True
+                else:
+                    selected_grid = GRID_STRAIGHT_16TH
+                    is_triplet_beat = False
             else:
-                selected_grid = GRID_STRAIGHT_16TH
-                is_triplet_beat = False
+                if err_triplet < err_straight * 0.8:
+                    selected_grid = GRID_TRIPLET_8TH
+                    is_triplet_beat = True
+                else:
+                    selected_grid = GRID_STRAIGHT_16TH
+                    is_triplet_beat = False
 
         # 1拍内に4つ以上の音符がある場合: 16分3連符(6連符)または16分音符グリッドに昇格し、音符を一切間引かず100%保護
         if len(time_clusters) >= 4:
@@ -163,14 +170,13 @@ def quantize_notes_universal(
             sub = c["frac"] * DIVISIONS
             best_snap = min(selected_grid, key=lambda g: abs(g - sub))
 
-            # === [TASK-939 Step 2: ノート単位8分スナップ (|offset| <= 90ms)] ===
-            # ビートグリッド選択に関わらず、最寄り8分点(0 or 6)から90ms以内(sub_divsで約1.8divs以内)なら8分に吸着
-            dist_to_8th_0 = abs(sub - 0)
-            dist_to_8th_6 = abs(sub - 6)
-            min_dist_8th = min(dist_to_8th_0, dist_to_8th_6)
-            # 90ms in divisions: 90ms / (local_dur / 12) ≈ 1.8 divs (at BPM 75, local_dur=0.8s, 1 div=66.7ms)
-            if min_dist_8th <= 1.8:
-                best_snap = 0 if dist_to_8th_0 <= dist_to_8th_6 else 6
+            # === [TASK-941: ノート単位8分スナップは 4/4 非3連符ビートにのみ限定] ===
+            if time_signature != "3/4" and not is_triplet_beat:
+                dist_to_8th_0 = abs(sub - 0)
+                dist_to_8th_6 = abs(sub - 6)
+                min_dist_8th = min(dist_to_8th_0, dist_to_8th_6)
+                if min_dist_8th <= 1.8:
+                    best_snap = 0 if dist_to_8th_0 <= dist_to_8th_6 else 6
 
             for it in c["items"]:
                 it["bar"] = bar

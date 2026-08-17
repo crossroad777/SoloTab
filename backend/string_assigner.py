@@ -881,23 +881,21 @@ def _get_position_center(fret: int) -> int:
     return max(1, fret - 1)  # 人差指がfret-1にある想定
 
 
-def _human_pref_cost(s: int, f: int, pitch: int) -> float:
+def _human_pref_cost(s: int, f: int, pitch: int, guitar_type: str = "auto") -> float:
     """Human preference bonus: 26Kコレクションから学んだ人間の弦/フレット選好 (SoloTab-26K)。"""
-    # === [TASK-939 Step 3: オクターブ折り返し＆開放弦バイアス強化] ===
-    # 1. ピッチが現チューニングの開放弦ピッチと一致するノートは 0f を最優先 (-80.0)
-    if f == 0 and pitch in (40, 45, 50, 55, 59, 64):
-        return -80.0
-    # 2. 開放弦で発音可能な音高でハイフレット(f>=7)を選ぶ場合は強いペナルティ (50.0)
-    if pitch in (40, 45, 50, 55, 59, 64) and f >= 7:
-        return 50.0
+    # === [TASK-941: クラシック(nylon)とソロギター(steel/standard)の分離] ===
+    if guitar_type != "nylon":
+        # ソロギター(アコギ/スチール)時: TASK-937〜939の開放弦優先とハイポジ抑制
+        if f == 0 and pitch in (40, 45, 50, 55, 59, 64):
+            return -80.0
+        if pitch in (40, 45, 50, 55, 59, 64) and f >= 7:
+            return 50.0
+        if f >= 10:
+            return 40.0
+        elif f <= 5:
+            return -15.0
 
-    # 3. フレット >= 10 のハイポジション抑制 (ローポジションで演奏可能な場合はロー側を優遇)
-    if f >= 10:
-        return 40.0
-    elif f <= 5:
-        return -15.0
-
-    # 1. クラシック・アコースティック実測分布ルール (SoloTab-26K)
+    # 1. クラシック・アコースティック実測分布ルール (SoloTab-26K 共通ベース)
     if pitch in (64, 66, 67, 69, 71, 72, 74, 76) and s == 1:
         return -35.0
     elif pitch == 59 and s == 2 and f == 0:
@@ -1510,7 +1508,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
         # Human preference bonus
         if len(groups[0]) == 1:
             note_pitch = groups[0][0].get('pitch', 0)
-            hp_cost = _human_pref_cost(s, f, note_pitch)
+            hp_cost = _human_pref_cost(s, f, note_pitch, guitar_type=guitar_type)
         else:
             hp_cost = 0.0
         total = pos_cost + tmb_cost + cnn_bonus + init_cost + chord_form_cost + hp_cost
@@ -1590,7 +1588,7 @@ def _viterbi_single_notes(groups: List[List[dict]], tuning: List[int],
             # Human preference bonus (SoloTab-26K 実測分布)
             if is_single:
                 note_pitch = groups[gi][0].get('pitch', 0)
-                emission += _human_pref_cost(s, f, note_pitch)
+                emission += _human_pref_cost(s, f, note_pitch, guitar_type=guitar_type)
                 if note_pitch >= 64 and s == 2 and f >= 5:
                     # メロディ音域で2弦ハイポジションへ逃げる不自然な運指を抑制
                     emission += 40.0
