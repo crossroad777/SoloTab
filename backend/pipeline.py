@@ -379,13 +379,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                         "velocity": float(note.velocity) / 127.0 if hasattr(note, "velocity") else 0.5,
                     })
 
-            # === [TASK-939 Step 4: イントロ追加パス (onset=0.15)] ===
+            # === [TASK-940: イントロ追加パス（TASK-938設定へロールバック・凍結）] ===
             try:
                 _, intro_midi, _ = bp_predict(str(transcription_wav_path),
                                               model_or_model_path=bp_model or basic_pitch.ICASSP_2022_MODEL_PATH,
-                                              onset_threshold=0.15,
-                                              frame_threshold=0.10,
-                                              minimum_note_length=35.0)
+                                              onset_threshold=0.20,
+                                              frame_threshold=0.15,
+                                              minimum_note_length=40.0)
                 intro_added = 0
                 for inst in intro_midi.instruments:
                     for note in inst.notes:
@@ -399,7 +399,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, *,
                                 })
                                 intro_added += 1
                 _bp_notes.sort(key=lambda n: n["start"])
-                report("notes", f"[Intro Pass §TASK-939] イントロ追加: {intro_added}音 → 0〜8s総ノート数={len([n for n in _bp_notes if n['start'] < 8.0])}")
+                report("notes", f"[Intro Pass §TASK-940] イントロ追加: {intro_added}音 → 0〜8s総ノート数={len([n for n in _bp_notes if n['start'] < 8.0])}")
             except Exception as e:
                 report("notes", f"イントロパススキップ: {e}")
 
